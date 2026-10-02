@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand};
 
 use crate::adapters::std_env::StdEnv;
 use crate::adapters::std_fs::StdFileSystem;
-use crate::commands;
+use crate::commands::{self, Output};
 use crate::context::Context;
 use crate::error::{CliError, NvmExitCode};
 
@@ -24,7 +24,7 @@ enum Command {
     Version { pattern: String },
 }
 
-fn dispatch(command: &Command, context: &Context<'_>) -> Result<String, CliError> {
+fn dispatch(command: &Command, context: &Context<'_>) -> Result<Output, CliError> {
     match command {
         Command::Version { pattern } => commands::version::run(context, pattern),
     }
@@ -62,16 +62,32 @@ where
         }
     };
     match dispatch(&cli.command, context) {
-        Ok(text) => exit_code_for_write(emit(out, &format!("{text}\n")), NvmExitCode::Success),
+        Ok(output) => finish(&output, out, err, NvmExitCode::Success),
         // nvm.sh prints N/A on stdout, not stderr.
-        Err(error @ CliError::NotInstalled) => {
-            exit_code_for_write(emit(out, &format!("{error}\n")), error.exit_code())
-        }
+        Err(error @ CliError::NotInstalled) => finish(
+            &Output::stdout(error.to_string()),
+            out,
+            err,
+            error.exit_code(),
+        ),
         Err(error) => {
-            let _ = emit(err, &format!("{error}\n"));
-            error.exit_code().code()
+            let output = Output::default().with_stderr(error.to_string());
+            finish(&output, out, err, error.exit_code())
         }
     }
+}
+
+/// Prints diagnostics first, then the result, and maps a failed stdout write
+/// to a failure exit code.
+fn finish(output: &Output, out: &mut dyn Write, err: &mut dyn Write, success: NvmExitCode) -> u8 {
+    if !output.stderr.is_empty() {
+        // Nowhere left to report a failed stderr write.
+        let _ = emit(err, &format!("{}\n", output.stderr));
+    }
+    if output.stdout.is_empty() {
+        return success.code();
+    }
+    exit_code_for_write(emit(out, &format!("{}\n", output.stdout)), success)
 }
 
 /// Entry point shared by the `nvmrc` and `nvm` binaries.
@@ -170,18 +186,20 @@ mod tests {
     }
 
     #[test]
-    fn a_failed_stderr_write_does_not_panic() {
-        let fs = FakeFileSystem::default();
+    fn a_failed_stderr_write_keeps_the_exit_code() {
+        let fs = FakeFileSystem::default()
+            .with_file("/n/alias/a", "b")
+            .with_file("/n/alias/b", "a");
         let env = FakeEnv::default().with_var("NVM_DIR", "/n");
         let mut out = Vec::new();
-        let args = ["nvm", "version", "a=b"];
+        let args = ["nvm", "version", "a"];
         let code = run(
             args,
             &Context { fs: &fs, env: &env },
             &mut out,
             &mut BrokenPipe,
         );
-        assert_ne!(code, 0);
+        assert_eq!(code, 8);
     }
 
     #[test]

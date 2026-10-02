@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::adapters::fs_alias_store::FsAliasStore;
+use crate::domain::alias::AliasStore;
 use crate::domain::version::Version;
 use crate::error::CliError;
 use crate::ports::{Env, FileSystem};
@@ -27,6 +29,14 @@ impl Context<'_> {
             }
         };
         Ok(dir.components().collect())
+    }
+
+    /// The alias files under `$NVM_DIR/alias`.
+    ///
+    /// # Errors
+    /// Returns [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
+    pub fn alias_store(&self) -> Result<impl AliasStore, CliError> {
+        Ok(FsAliasStore::new(self.fs, &self.nvm_dir()?))
     }
 
     /// Every version installed under `versions/node` and `versions/io.js`.
@@ -125,6 +135,15 @@ mod tests {
             .with_var_os("NVM_DIR", raw.clone())
             .with_var("HOME", "/home/me");
         assert_eq!(nvm_dir_for(&env).unwrap(), PathBuf::from(raw));
+    }
+
+    #[test]
+    fn alias_store_reads_the_alias_directory() {
+        let fs = FakeFileSystem::default().with_file("/n/alias/default", "v20");
+        let env = FakeEnv::default().with_var("NVM_DIR", "/n");
+        let context = Context { fs: &fs, env: &env };
+        let store = context.alias_store().unwrap();
+        assert_eq!(store.target("default"), Some("v20".to_owned()));
     }
 
     #[test]
