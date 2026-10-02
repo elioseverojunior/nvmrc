@@ -70,7 +70,8 @@ where
         Err(error) if error.use_stderr() => {
             // Nowhere left to report a failed stderr write.
             let _ = emit(err, &error.to_string());
-            return NvmExitCode::Failure.code();
+            // nvm.sh: unknown commands and usage errors are 127.
+            return NvmExitCode::NotFound.code();
         }
         Err(error) => {
             return exit_code_for_write(emit(out, &error.to_string()), NvmExitCode::Success);

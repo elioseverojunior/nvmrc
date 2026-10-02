@@ -15,6 +15,7 @@ pub fn run(context: &Context<'_>, name: &str) -> Result<Output, CliError> {
     }
     match resolve_installed(context, name)? {
         Resolved::Installed(version) => Ok(Output::stdout(version.to_string())),
+        Resolved::System => Ok(Output::stdout("system")),
         Resolved::Missing { .. } => Err(CliError::NotInstalled),
     }
 }
@@ -72,5 +73,24 @@ mod tests {
             .with_file("/n/alias/b", "a");
         let error = run_with(&fs, "a").unwrap_err();
         assert_eq!(error.exit_code(), NvmExitCode::AliasLoop);
+    }
+
+    #[test]
+    fn an_alias_to_system_prints_system() {
+        let fs = installed()
+            .with_file("/usr/bin/node", "")
+            .with_file("/n/alias/default", "system");
+        let env = FakeEnv::default()
+            .with_var("NVM_DIR", "/n")
+            .with_var("PATH", "/usr/bin");
+        let output = run(&Context { fs: &fs, env: &env }, "default").unwrap();
+        assert_eq!(output, Output::stdout("system"));
+    }
+
+    #[test]
+    fn an_alias_to_system_without_a_system_node_is_not_installed() {
+        let fs = installed().with_file("/n/alias/default", "system");
+        let error = run_with(&fs, "default").unwrap_err();
+        assert!(matches!(error, CliError::NotInstalled));
     }
 }

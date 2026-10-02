@@ -49,11 +49,9 @@ fn validate_name(name: &str) -> Result<(), CliError> {
 /// What `target` resolves to now: a version, `system`, `N/A` when nothing
 /// installed matches, or `∞` when its alias chain loops.
 fn version_text(context: &Context<'_>, target: &str) -> Result<String, CliError> {
-    if target == "system" {
-        return Ok("system".to_owned());
-    }
     match resolve_installed(context, target) {
         Ok(Resolved::Installed(version)) => Ok(version.to_string()),
+        Ok(Resolved::System) => Ok("system".to_owned()),
         Ok(Resolved::Missing { .. }) => Ok("N/A".to_owned()),
         Err(CliError::Alias(_)) => Ok("∞".to_owned()),
         Err(error) => Err(error),
@@ -90,6 +88,16 @@ mod tests {
         run(&Context { fs, env: &env }, name, target)
     }
 
+    fn alias_with_system_node(name: &str, target: &str) -> Result<Output, CliError> {
+        let fs = installed()
+            .with_file("/usr/bin/node", "")
+            .with_file("/n/alias/default", "system");
+        let env = FakeEnv::default()
+            .with_var("NVM_DIR", "/n")
+            .with_var("PATH", "/usr/bin");
+        run(&Context { fs: &fs, env: &env }, name, target)
+    }
+
     fn stored(fs: &FakeFileSystem, name: &str) -> Option<String> {
         fs.read_to_string(&Path::new("/n/alias").join(name)).ok()
     }
@@ -123,9 +131,22 @@ mod tests {
     }
 
     #[test]
-    fn system_is_a_valid_target_without_a_warning() {
-        let output = alias(&FakeFileSystem::default(), "default", "system").unwrap();
+    fn system_with_a_system_node_is_a_valid_target_without_a_warning() {
+        let output = alias_with_system_node("default", "system").unwrap();
         assert_eq!(output, Output::stdout("default -> system *"));
+    }
+
+    #[test]
+    fn an_alias_to_an_alias_of_system_shows_system() {
+        let output = alias_with_system_node("foo", "default").unwrap();
+        assert_eq!(output, Output::stdout("foo -> default (-> system *)"));
+    }
+
+    #[test]
+    fn system_without_a_system_node_warns_like_any_missing_target() {
+        let output = alias(&FakeFileSystem::default(), "default", "system").unwrap();
+        assert_eq!(output.stdout, "default -> system (-> N/A)");
+        assert_eq!(output.stderr, "! WARNING: Version 'system' does not exist.");
     }
 
     #[test]

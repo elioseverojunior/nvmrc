@@ -100,6 +100,7 @@ fn usage_errors_exit_127() {
     let dir = tempfile::tempdir().unwrap();
     assert_eq!(nvm(dir.path(), &["which"]).status.code(), Some(127));
     assert_eq!(nvm(dir.path(), &["unalias"]).status.code(), Some(127));
+    assert_eq!(nvm(dir.path(), &["bogus"]).status.code(), Some(127));
 }
 
 #[test]

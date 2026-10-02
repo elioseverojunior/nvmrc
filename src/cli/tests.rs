@@ -181,8 +181,24 @@ fn a_failed_stderr_write_keeps_the_exit_code() {
 }
 
 #[test]
-fn a_usage_error_exits_non_zero_without_stdout() {
-    let (code, out, err) = run_cli(&["nvm", "bogus"]);
-    assert_ne!(code, 0);
-    assert!(out.is_empty() && !err.is_empty());
+fn a_usage_error_exits_127_without_stdout() {
+    for args in [
+        &["nvm", "bogus"][..],
+        &["nvm", "alias", "x"],
+        &["nvm", "alias", "x", "y", "z"],
+        &["nvm", "which", "--silent", "20"],
+    ] {
+        let (code, out, err) = run_cli(args);
+        assert_eq!(code, 127, "{args:?}");
+        assert!(out.is_empty() && !err.is_empty(), "{args:?}");
+    }
+}
+
+#[test]
+fn help_and_version_go_to_stdout_with_exit_0() {
+    for flag in ["--help", "--version"] {
+        let (code, out, err) = run_cli(&["nvm", flag]);
+        assert_eq!(code, 0, "{flag}");
+        assert!(!out.is_empty() && err.is_empty(), "{flag}");
+    }
 }

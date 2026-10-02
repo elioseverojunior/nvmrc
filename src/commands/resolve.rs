@@ -1,14 +1,20 @@
 //! Shared by the commands that take a version or alias: resolve the name
 //! through the alias files, then match it against the installed versions.
 
+use std::path::PathBuf;
+
 use crate::context::Context;
 use crate::domain::alias;
+use crate::domain::path_search::find_in_dirs;
 use crate::domain::version::{Flavor, Version, VersionPattern};
 use crate::error::CliError;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Resolved {
     Installed(Version),
+    /// The alias chain ended at `system` and a `node` exists on `PATH`
+    /// outside `$NVM_DIR`.
+    System,
     /// No installed version matches. `resolved` is where the alias chain
     /// ended, which is the name itself when it is not an alias.
     Missing {
@@ -21,9 +27,25 @@ pub enum Resolved {
 /// - [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
 pub fn resolve_installed(context: &Context<'_>, name: &str) -> Result<Resolved, CliError> {
     let resolved = alias::resolve(&context.alias_store()?, name)?;
+    if resolved == "system" && system_node(context)?.is_some() {
+        return Ok(Resolved::System);
+    }
     let installed = context.installed_versions()?;
     let found = find_installed(&resolved, &installed);
     Ok(found.map_or(Resolved::Missing { resolved }, Resolved::Installed))
+}
+
+/// The first `node` on `PATH` that does not live under `$NVM_DIR`.
+///
+/// # Errors
+/// Returns [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
+pub fn system_node(context: &Context<'_>) -> Result<Option<PathBuf>, CliError> {
+    let nvm_dir = context.nvm_dir()?;
+    let path_variable = context.env.var_os("PATH").unwrap_or_default();
+    let outside_nvm = std::env::split_paths(&path_variable)
+        .filter(|directory| !directory.starts_with(&nvm_dir))
+        .collect::<Vec<_>>();
+    Ok(find_in_dirs(context.fs, outside_nvm, "node"))
 }
 
 /// `node` and `iojs` are built-in aliases for the latest installed version of
@@ -54,7 +76,13 @@ mod tests {
     use crate::fakes::{FakeEnv, FakeFileSystem};
 
     fn resolve_with(fs: &FakeFileSystem, name: &str) -> Result<Resolved, CliError> {
-        let env = FakeEnv::default().with_var("NVM_DIR", "/n");
+        resolve_on_path(fs, "/nonexistent", name)
+    }
+
+    fn resolve_on_path(fs: &FakeFileSystem, path: &str, name: &str) -> Result<Resolved, CliError> {
+        let env = FakeEnv::default()
+            .with_var("NVM_DIR", "/n")
+            .with_var("PATH", path);
         resolve_installed(&Context { fs, env: &env }, name)
     }
 
@@ -147,5 +175,46 @@ mod tests {
             .with_file("/n/alias/b", "a");
         let error = resolve_with(&fs, "a").unwrap_err();
         assert!(matches!(error, CliError::Alias(AliasError::Loop(_))));
+    }
+
+    #[test]
+    fn system_is_resolved_when_a_node_exists_outside_nvm_dir() {
+        let fs = installed().with_file("/usr/bin/node", "");
+        let path = "/n/versions/node/v20.1.0/bin:/usr/bin";
+        assert_eq!(
+            resolve_on_path(&fs, path, "system").unwrap(),
+            Resolved::System
+        );
+    }
+
+    #[test]
+    fn an_alias_chain_ending_at_system_is_system() {
+        let fs = installed()
+            .with_file("/usr/bin/node", "")
+            .with_file("/n/alias/default", "system");
+        let resolved = resolve_on_path(&fs, "/usr/bin", "default").unwrap();
+        assert_eq!(resolved, Resolved::System);
+    }
+
+    #[test]
+    fn system_without_a_system_node_is_missing() {
+        let path = "/n/versions/node/v20.1.0/bin";
+        let resolved = resolve_on_path(&installed(), path, "system").unwrap();
+        assert_eq!(
+            resolved,
+            Resolved::Missing {
+                resolved: "system".into()
+            }
+        );
+    }
+
+    #[test]
+    fn system_node_is_the_first_node_outside_nvm_dir() {
+        let fs = installed().with_file("/usr/bin/node", "");
+        let env = FakeEnv::default()
+            .with_var("NVM_DIR", "/n")
+            .with_var("PATH", "/n/versions/node/v20.1.0/bin:/usr/bin");
+        let found = system_node(&Context { fs: &fs, env: &env }).unwrap();
+        assert_eq!(found, Some(PathBuf::from("/usr/bin/node")));
     }
 }

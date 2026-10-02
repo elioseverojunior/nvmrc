@@ -4,9 +4,8 @@ use std::path::PathBuf;
 
 use crate::commands::Output;
 use crate::commands::current;
-use crate::commands::resolve::{Resolved, resolve_installed};
+use crate::commands::resolve::{Resolved, resolve_installed, system_node};
 use crate::context::Context;
-use crate::domain::path_search::find_in_dirs;
 use crate::domain::version::Version;
 use crate::error::CliError;
 
@@ -17,27 +16,47 @@ Run `nvm --help` for full help.";
 /// # Errors
 /// - [`CliError::Usage`] when no version is given.
 /// - [`CliError::Alias`] when the alias chain loops.
-/// - [`CliError::VersionNotInstalled`] when the version is not installed.
+/// - [`CliError::VersionNotInstalled`] when the version is not installed, or
+///   its `node` binary is missing.
 /// - [`CliError::SystemNodeNotFound`] for `system` without a system node.
 pub fn run(context: &Context<'_>, name: Option<&str>) -> Result<Output, CliError> {
     let name = name.ok_or_else(|| CliError::Usage(USAGE.to_owned()))?;
-    let name = if name == "current" {
+    let lookup = if name == "current" {
         current::detect(context)?.to_string()
     } else {
         name.to_owned()
     };
-    if name == "system" {
-        return system_node(context);
+    match resolve_installed(context, &lookup)? {
+        Resolved::Installed(version) => installed_binary(context, name, &version),
+        Resolved::System => system_binary(context),
+        Resolved::Missing { .. } if name == "system" => Err(CliError::SystemNodeNotFound),
+        Resolved::Missing { resolved } => Err(not_installed(name, &resolved)),
     }
-    match resolve_installed(context, &name)? {
-        Resolved::Installed(version) => {
-            let binary = node_binary(context, &version)?;
-            Ok(Output::stdout(binary.to_string_lossy()))
-        }
-        Resolved::Missing { resolved } => Err(CliError::VersionNotInstalled(
-            not_installed_message(&name, &resolved),
-        )),
+}
+
+fn installed_binary(
+    context: &Context<'_>,
+    name: &str,
+    version: &Version,
+) -> Result<Output, CliError> {
+    let binary = node_binary(context, version)?;
+    if context.fs.is_file(&binary) {
+        Ok(Output::stdout(binary.to_string_lossy()))
+    } else {
+        Err(not_installed(name, name))
     }
+}
+
+fn system_binary(context: &Context<'_>) -> Result<Output, CliError> {
+    system_node(context)?
+        .map(|node| Output::stdout(node.to_string_lossy()))
+        .ok_or(CliError::SystemNodeNotFound)
+}
+
+fn not_installed(name: &str, resolved: &str) -> CliError {
+    // `current` keeps its typed name, whatever it was detected as.
+    let resolved = if name == "current" { name } else { resolved };
+    CliError::VersionNotInstalled(not_installed_message(name, resolved))
 }
 
 fn node_binary(context: &Context<'_>, version: &Version) -> Result<PathBuf, CliError> {
@@ -48,18 +67,6 @@ fn node_binary(context: &Context<'_>, version: &Version) -> Result<PathBuf, CliE
         .join(version.directory_name())
         .join("bin")
         .join("node"))
-}
-
-/// The first `node` on `PATH` that does not live under `$NVM_DIR`.
-fn system_node(context: &Context<'_>) -> Result<Output, CliError> {
-    let nvm_dir = context.nvm_dir()?;
-    let path_variable = context.env.var_os("PATH").unwrap_or_default();
-    let outside_nvm = std::env::split_paths(&path_variable)
-        .filter(|directory| !directory.starts_with(&nvm_dir))
-        .collect::<Vec<_>>();
-    find_in_dirs(context.fs, outside_nvm, "node")
-        .map(|node| Output::stdout(node.to_string_lossy()))
-        .ok_or(CliError::SystemNodeNotFound)
 }
 
 /// `20` is shown as `v20`, like `nvm_ensure_version_prefix`.
@@ -193,5 +200,42 @@ mod tests {
                 .starts_with("Usage: nvm which [current | <version>]")
         );
         assert_eq!(error.exit_code(), NvmExitCode::NotFound);
+    }
+
+    #[test]
+    fn an_alias_to_system_prints_the_system_node() {
+        let fs = installed()
+            .with_file("/usr/bin/node", "")
+            .with_file("/n/alias/default", "system");
+        let output = which_with(&fs, "/usr/bin", Some("default")).unwrap();
+        assert_eq!(output, Output::stdout("/usr/bin/node"));
+    }
+
+    #[test]
+    fn an_alias_to_system_without_a_system_node_is_not_installed() {
+        let fs = installed().with_file("/n/alias/default", "system");
+        let error = which_with(&fs, "/usr/bin", Some("default")).unwrap_err();
+        let expected = "N/A: version \"default -> system\" is not yet installed.\n\n\
+                        You need to run `nvm install default` to install and use it.";
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(error.exit_code(), NvmExitCode::Failure);
+    }
+
+    #[test]
+    fn an_empty_version_directory_is_not_installed() {
+        let fs = FakeFileSystem::default().with_dir("/n/versions/node/v18.0.0");
+        let error = which_with(&fs, "/usr/bin", Some("18")).unwrap_err();
+        let expected = "N/A: version \"v18\" is not yet installed.\n\n\
+                        You need to run `nvm install 18` to install and use it.";
+        assert_eq!(error.to_string(), expected);
+        assert_eq!(error.exit_code(), NvmExitCode::Failure);
+    }
+
+    #[test]
+    fn current_without_an_active_node_keeps_the_typed_name() {
+        let error = which_with(&installed(), "/usr/bin", Some("current")).unwrap_err();
+        let expected = "N/A: version \"current\" is not yet installed.\n\n\
+                        You need to run `nvm install current` to install and use it.";
+        assert_eq!(error.to_string(), expected);
     }
 }
