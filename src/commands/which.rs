@@ -114,6 +114,12 @@ mod tests {
     }
 
     #[test]
+    fn node_is_the_latest_installed_node() {
+        let output = which("node").unwrap();
+        assert_eq!(output, Output::stdout("/n/versions/node/v20.1.0/bin/node"));
+    }
+
+    #[test]
     fn follows_aliases() {
         let fs = installed().with_file("/n/alias/default", "v18");
         let output = which_with(&fs, "/usr/bin", Some("default")).unwrap();

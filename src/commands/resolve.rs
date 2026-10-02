@@ -3,7 +3,7 @@
 
 use crate::context::Context;
 use crate::domain::alias;
-use crate::domain::version::{Version, VersionPattern};
+use crate::domain::version::{Flavor, Version, VersionPattern};
 use crate::error::CliError;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -22,11 +22,29 @@ pub enum Resolved {
 pub fn resolve_installed(context: &Context<'_>, name: &str) -> Result<Resolved, CliError> {
     let resolved = alias::resolve(&context.alias_store()?, name)?;
     let installed = context.installed_versions()?;
-    let found = resolved
-        .parse::<VersionPattern>()
-        .ok()
-        .and_then(|pattern| pattern.highest_match(&installed).copied());
+    let found = find_installed(&resolved, &installed);
     Ok(found.map_or(Resolved::Missing { resolved }, Resolved::Installed))
+}
+
+/// `node` and `iojs` are built-in aliases for the latest installed version of
+/// that flavor; anything else is matched as a version pattern.
+fn find_installed(resolved: &str, installed: &[Version]) -> Option<Version> {
+    match resolved {
+        "node" => latest_of(installed, Flavor::Node),
+        "iojs" => latest_of(installed, Flavor::IoJs),
+        other => other
+            .parse::<VersionPattern>()
+            .ok()
+            .and_then(|pattern| pattern.highest_match(installed).copied()),
+    }
+}
+
+fn latest_of(installed: &[Version], flavor: Flavor) -> Option<Version> {
+    installed
+        .iter()
+        .filter(|version| version.flavor == flavor)
+        .max()
+        .copied()
 }
 
 #[cfg(test)]
@@ -55,6 +73,41 @@ mod tests {
     fn a_pattern_resolves_to_the_highest_installed_match() {
         let resolved = resolve_with(&installed(), "20").unwrap();
         assert_eq!(resolved, Resolved::Installed(version("v20.10.0")));
+    }
+
+    #[test]
+    fn node_is_the_latest_installed_node_ignoring_iojs() {
+        let fs = installed().with_file("/n/versions/io.js/v3.0.0/bin/node", "");
+        let resolved = resolve_with(&fs, "node").unwrap();
+        assert_eq!(resolved, Resolved::Installed(version("v20.10.0")));
+    }
+
+    #[test]
+    fn iojs_is_the_latest_installed_iojs() {
+        let fs = installed()
+            .with_file("/n/versions/io.js/v3.0.0/bin/node", "")
+            .with_file("/n/versions/io.js/v2.5.0/bin/node", "");
+        let resolved = resolve_with(&fs, "iojs").unwrap();
+        assert_eq!(resolved, Resolved::Installed(version("iojs-v3.0.0")));
+    }
+
+    #[test]
+    fn a_built_in_alias_can_be_the_target_of_another_alias() {
+        let fs = installed().with_file("/n/alias/default", "node");
+        let resolved = resolve_with(&fs, "default").unwrap();
+        assert_eq!(resolved, Resolved::Installed(version("v20.10.0")));
+    }
+
+    #[test]
+    fn a_built_in_alias_without_a_matching_install_is_missing() {
+        let fs = FakeFileSystem::default().with_dir("/n/versions/node");
+        let resolved = resolve_with(&fs, "node").unwrap();
+        assert_eq!(
+            resolved,
+            Resolved::Missing {
+                resolved: "node".into()
+            }
+        );
     }
 
     #[test]
