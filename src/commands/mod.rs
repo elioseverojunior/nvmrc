@@ -1,16 +1,20 @@
 pub mod alias;
 pub mod current;
+pub mod ls;
 pub mod resolve;
 pub mod unalias;
 pub mod version;
 pub mod which;
 
-/// What a command wants printed. Text carries no trailing newline: the CLI
-/// adds one to each non-empty stream.
+use crate::error::NvmExitCode;
+
+/// What a command wants printed, and the exit status to finish with. Text
+/// carries no trailing newline: the CLI adds one to each non-empty stream.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Output {
     pub stdout: String,
     pub stderr: String,
+    pub status: NvmExitCode,
 }
 
 impl Output {
@@ -18,7 +22,7 @@ impl Output {
     pub fn stdout(text: impl Into<String>) -> Self {
         Self {
             stdout: text.into(),
-            stderr: String::new(),
+            ..Self::default()
         }
     }
 
@@ -27,11 +31,26 @@ impl Output {
         self.stderr = text.into();
         self
     }
+
+    /// For a result that is printed and still not a success, like `nvm ls`
+    /// finding nothing.
+    #[must_use]
+    pub fn with_status(mut self, status: NvmExitCode) -> Self {
+        self.status = status;
+        self
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_default_status_is_success_and_can_be_changed() {
+        assert_eq!(Output::stdout("x").status, NvmExitCode::Success);
+        let output = Output::stdout("x").with_status(NvmExitCode::InvalidVersion);
+        assert_eq!(output.status, NvmExitCode::InvalidVersion);
+    }
 
     #[test]
     fn stdout_output_has_an_empty_stderr() {

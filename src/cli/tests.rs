@@ -101,6 +101,21 @@ fn current_prints_the_active_version() {
 }
 
 #[test]
+fn ls_prints_the_rows_and_list_is_the_same_command() {
+    let expected = (0, "        v20.1.0 *\n".to_owned(), String::new());
+    assert_eq!(run_cli(&["nvm", "ls"]), expected);
+    assert_eq!(run_cli(&["nvm", "list"]), expected);
+}
+
+#[test]
+fn ls_of_a_missing_version_prints_na_on_stdout_and_exits_3() {
+    assert_eq!(
+        run_cli(&["nvm", "ls", "16"]),
+        (3, "            N/A\n".to_owned(), String::new())
+    );
+}
+
+#[test]
 fn version_without_an_argument_means_current() {
     assert_eq!(
         run_cli(&["nvm", "version"]),

@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 /// Public exit-code contract, taken from `nvm.sh`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum NvmExitCode {
+    #[default]
     Success = 0,
     Failure = 1,
     InvalidVersion = 3,

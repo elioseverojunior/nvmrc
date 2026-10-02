@@ -26,6 +26,9 @@ enum Command {
     Version { pattern: Option<String> },
     /// Print the version of the node that is active in this shell.
     Current,
+    /// List the installed versions, optionally only those matching a pattern.
+    #[command(visible_alias = "list")]
+    Ls { pattern: Option<String> },
     /// Print the path to the node binary of a version or alias.
     Which { version: Option<String> },
     /// Create an alias for a version (an empty target deletes the alias).
@@ -40,6 +43,7 @@ fn dispatch(command: &Command, context: &Context<'_>) -> Result<Output, CliError
             commands::version::run(context, pattern.as_deref().unwrap_or("current"))
         }
         Command::Current => commands::current::run(context),
+        Command::Ls { pattern } => commands::ls::run(context, pattern.as_deref()),
         Command::Which { version } => commands::which::run(context, version.as_deref()),
         Command::Alias { name, target } => commands::alias::run(context, name, target),
         Command::Unalias { names } => commands::unalias::run(context, names),
@@ -79,32 +83,32 @@ where
         }
     };
     match dispatch(&cli.command, context) {
-        Ok(output) => finish(&output, out, err, NvmExitCode::Success),
+        Ok(output) => finish(&output, out, err),
         // nvm.sh prints N/A on stdout, not stderr.
-        Err(error @ CliError::NotInstalled) => finish(
-            &Output::stdout(error.to_string()),
-            out,
-            err,
-            error.exit_code(),
-        ),
+        Err(error @ CliError::NotInstalled) => {
+            let output = Output::stdout(error.to_string()).with_status(error.exit_code());
+            finish(&output, out, err)
+        }
         Err(error) => {
-            let output = Output::default().with_stderr(error.to_string());
-            finish(&output, out, err, error.exit_code())
+            let output = Output::default()
+                .with_stderr(error.to_string())
+                .with_status(error.exit_code());
+            finish(&output, out, err)
         }
     }
 }
 
-/// Prints diagnostics first, then the result, and maps a failed stdout write
-/// to a failure exit code.
-fn finish(output: &Output, out: &mut dyn Write, err: &mut dyn Write, success: NvmExitCode) -> u8 {
+/// Prints diagnostics first, then the result, and finishes with the status the
+/// command asked for, unless writing the result failed.
+fn finish(output: &Output, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     if !output.stderr.is_empty() {
         // Nowhere left to report a failed stderr write.
         let _ = emit(err, &format!("{}\n", output.stderr));
     }
     if output.stdout.is_empty() {
-        return success.code();
+        return output.status.code();
     }
-    exit_code_for_write(emit(out, &format!("{}\n", output.stdout)), success)
+    exit_code_for_write(emit(out, &format!("{}\n", output.stdout)), output.status)
 }
 
 /// Entry point shared by the `nvmrc` and `nvm` binaries.
