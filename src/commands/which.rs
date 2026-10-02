@@ -69,10 +69,15 @@ fn node_binary(context: &Context<'_>, version: &Version) -> Result<PathBuf, CliE
         .join("node"))
 }
 
-/// `20` is shown as `v20`, like `nvm_ensure_version_prefix`.
+/// `20` is shown as `v20` and `iojs-3` as `iojs-v3`, like
+/// `nvm_ensure_version_prefix`.
 fn with_v_prefix(name: &str) -> String {
-    if name.starts_with(|first: char| first.is_ascii_digit()) {
-        format!("v{name}")
+    let (prefix, rest) = match name.strip_prefix("iojs-") {
+        Some(rest) => ("iojs-", rest),
+        None => ("", name),
+    };
+    if rest.starts_with(|first: char| first.is_ascii_digit()) {
+        format!("{prefix}v{rest}")
     } else {
         name.to_owned()
     }
@@ -124,6 +129,14 @@ mod tests {
     fn node_is_the_latest_installed_node() {
         let output = which("node").unwrap();
         assert_eq!(output, Output::stdout("/n/versions/node/v20.1.0/bin/node"));
+    }
+
+    #[test]
+    fn the_v_prefix_is_added_after_the_iojs_prefix() {
+        assert_eq!(with_v_prefix("20"), "v20");
+        assert_eq!(with_v_prefix("iojs-3"), "iojs-v3");
+        assert_eq!(with_v_prefix("iojs-v3"), "iojs-v3");
+        assert_eq!(with_v_prefix("lts/iron"), "lts/iron");
     }
 
     #[test]

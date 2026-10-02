@@ -22,10 +22,15 @@ pub fn run(context: &Context<'_>, name: &str, target: &str) -> Result<Output, Cl
     validate_name(name)?;
     let version = version_text(context, target)?;
     let alias_dir = context.alias_dir()?;
-    context.fs.create_dir_all(&alias_dir)?;
     context
         .fs
-        .write_file(&alias_dir.join(name), &format!("{target}\n"))?;
+        .create_dir_all(&alias_dir)
+        .map_err(|source| CliError::io(&alias_dir, source))?;
+    let alias_file = alias_dir.join(name);
+    context
+        .fs
+        .write_file(&alias_file, &format!("{target}\n"))
+        .map_err(|source| CliError::io(&alias_file, source))?;
     let output = Output::stdout(format_line(name, target, &version));
     if version == "N/A" {
         return Ok(output.with_stderr(format!("! WARNING: Version '{target}' does not exist.")));

@@ -26,7 +26,10 @@ pub fn run(context: &Context<'_>, names: &[String]) -> Result<Output, CliError> 
         return missing(name);
     }
     let original = context.alias_store()?.target(name).unwrap_or_default();
-    context.fs.remove_file(&path)?;
+    context
+        .fs
+        .remove_file(&path)
+        .map_err(|source| CliError::io(&path, source))?;
     Ok(Output::stdout(format!(
         "Deleted alias {name} - restore it with `nvm alias \"{name}\" \"{original}\"`"
     )))

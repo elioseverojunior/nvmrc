@@ -34,9 +34,18 @@ impl AliasStore for FsAliasStore<'_> {
             return None;
         }
         let contents = self.fs.read_to_string(&self.alias_dir.join(name)).ok()?;
-        let line = contents.lines().next()?.trim();
-        (!line.is_empty()).then(|| line.to_owned())
+        first_meaningful_line(&contents)
     }
+}
+
+/// Like `nvm_print_alias_file`: everything after a `#` is a comment, blank
+/// lines are skipped, and the first line left is the target.
+fn first_meaningful_line(contents: &str) -> Option<String> {
+    contents
+        .lines()
+        .map(|line| line.split('#').next().unwrap_or_default().trim())
+        .find(|line| !line.is_empty())
+        .map(str::to_owned)
 }
 
 #[cfg(test)]
@@ -68,6 +77,17 @@ mod tests {
         let fs = FakeFileSystem::default().with_file("/nvm/alias/empty", "\n");
         assert_eq!(store(&fs).target("nope"), None);
         assert_eq!(store(&fs).target("empty"), None);
+    }
+
+    #[test]
+    fn comments_and_blank_lines_are_skipped() {
+        let fs = FakeFileSystem::default()
+            .with_file("/nvm/alias/commented", "v20 # the current LTS\n")
+            .with_file("/nvm/alias/blank-first", "\n\n  v18  \nv16\n")
+            .with_file("/nvm/alias/only-comment", "# nothing here\n\n");
+        assert_eq!(store(&fs).target("commented"), Some("v20".to_owned()));
+        assert_eq!(store(&fs).target("blank-first"), Some("v18".to_owned()));
+        assert_eq!(store(&fs).target("only-comment"), None);
     }
 
     #[test]

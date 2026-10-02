@@ -1,5 +1,7 @@
 //! Typed errors and the single mapping from errors to process exit codes.
 
+use std::path::{Path, PathBuf};
+
 use thiserror::Error;
 
 /// Public exit-code contract, taken from `nvm.sh`.
@@ -64,11 +66,23 @@ pub enum CliError {
     /// A rejected argument, with the message to print.
     #[error("{0}")]
     InvalidArgument(String),
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
+    /// A failed file-system change, naming the path it was made on.
+    #[error("{}: {source}", path.display())]
+    Io {
+        path: PathBuf,
+        source: std::io::Error,
+    },
 }
 
 impl CliError {
+    #[must_use]
+    pub fn io(path: &Path, source: std::io::Error) -> Self {
+        Self::Io {
+            path: path.to_path_buf(),
+            source,
+        }
+    }
+
     #[must_use]
     pub fn exit_code(&self) -> NvmExitCode {
         match self {
@@ -76,7 +90,7 @@ impl CliError {
             Self::NvmDirUnresolved
             | Self::VersionNotInstalled(_)
             | Self::InvalidArgument(_)
-            | Self::Io(_) => NvmExitCode::Failure,
+            | Self::Io { .. } => NvmExitCode::Failure,
             Self::Usage(_) | Self::SystemNodeNotFound => NvmExitCode::NotFound,
             Self::Floor(_) => NvmExitCode::BelowVersionFloor,
             Self::Alias(_) => NvmExitCode::AliasLoop,
@@ -124,7 +138,15 @@ mod tests {
         assert_eq!(no_system_node.exit_code(), NvmExitCode::NotFound);
         let invalid = CliError::InvalidArgument("x".into());
         assert_eq!(invalid.exit_code(), NvmExitCode::Failure);
-        let io_error = CliError::from(std::io::Error::from(std::io::ErrorKind::NotFound));
+        let source = std::io::Error::from(std::io::ErrorKind::NotFound);
+        let io_error = CliError::io(Path::new("/n/alias/work"), source);
         assert_eq!(io_error.exit_code(), NvmExitCode::Failure);
+    }
+
+    #[test]
+    fn io_errors_name_the_path() {
+        let source = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        let message = CliError::io(Path::new("/n/alias/work"), source).to_string();
+        assert!(message.starts_with("/n/alias/work: "), "{message}");
     }
 }
