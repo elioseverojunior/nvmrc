@@ -22,8 +22,8 @@ profile = "default"
 # tooling; declaring it keeps fresh clones and CI reproducible (not IDE-only).
 components = ["rustfmt", "clippy", "llvm-tools", "rust-src"]
 targets = [
-    "wasm32-unknown-unknown",
     "x86_64-unknown-linux-gnu",
     "aarch64-unknown-linux-gnu",
     "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
 ]
