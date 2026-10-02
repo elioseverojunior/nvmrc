@@ -5,14 +5,25 @@ use std::path::PathBuf;
 
 use crate::ports::FileSystem;
 
-/// The first `PATH` entry that contains a file called `name`. Empty entries
-/// are skipped rather than read as the current directory.
+/// The first of `directories` that contains a file called `name`. Empty
+/// entries are skipped rather than read as the current directory.
 #[must_use]
-pub fn find_in_path(fs: &dyn FileSystem, path_variable: &OsStr, name: &str) -> Option<PathBuf> {
-    std::env::split_paths(path_variable)
+pub fn find_in_dirs(
+    fs: &dyn FileSystem,
+    directories: impl IntoIterator<Item = PathBuf>,
+    name: &str,
+) -> Option<PathBuf> {
+    directories
+        .into_iter()
         .filter(|directory| !directory.as_os_str().is_empty())
         .map(|directory| directory.join(name))
         .find(|candidate| fs.is_file(candidate))
+}
+
+/// The first `PATH` entry that contains a file called `name`.
+#[must_use]
+pub fn find_in_path(fs: &dyn FileSystem, path_variable: &OsStr, name: &str) -> Option<PathBuf> {
+    find_in_dirs(fs, std::env::split_paths(path_variable), name)
 }
 
 #[cfg(test)]

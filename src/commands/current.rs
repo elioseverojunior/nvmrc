@@ -6,14 +6,21 @@ use crate::domain::current::{Current, classify};
 use crate::domain::path_search::find_in_path;
 use crate::error::CliError;
 
+/// The classification of the `node` that is first on `PATH`.
+///
+/// # Errors
+/// Returns [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
+pub fn detect(context: &Context<'_>) -> Result<Current, CliError> {
+    let nvm_dir = context.nvm_dir()?;
+    let path_variable = context.env.var_os("PATH").unwrap_or_default();
+    Ok(find_in_path(context.fs, &path_variable, "node")
+        .map_or(Current::None, |node| classify(&node, &nvm_dir)))
+}
+
 /// # Errors
 /// Returns [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
 pub fn run(context: &Context<'_>) -> Result<Output, CliError> {
-    let nvm_dir = context.nvm_dir()?;
-    let path_variable = context.env.var_os("PATH").unwrap_or_default();
-    let current = find_in_path(context.fs, &path_variable, "node")
-        .map_or(Current::None, |node| classify(&node, &nvm_dir));
-    Ok(Output::stdout(current.to_string()))
+    Ok(Output::stdout(detect(context)?.to_string()))
 }
 
 #[cfg(test)]

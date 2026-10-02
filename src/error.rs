@@ -10,6 +10,8 @@ pub enum NvmExitCode {
     InvalidVersion = 3,
     BelowVersionFloor = 7,
     AliasLoop = 8,
+    /// A usage error, or a requested system version that does not exist.
+    NotFound = 127,
 }
 
 impl NvmExitCode {
@@ -51,6 +53,14 @@ pub enum CliError {
     NotInstalled,
     #[error("Neither NVM_DIR nor HOME is set; cannot locate the nvm directory.")]
     NvmDirUnresolved,
+    /// A multi-line usage message, printed as is.
+    #[error("{0}")]
+    Usage(String),
+    /// The full "not yet installed" message, printed as is.
+    #[error("{0}")]
+    VersionNotInstalled(String),
+    #[error("System version of node not found.")]
+    SystemNodeNotFound,
 }
 
 impl CliError {
@@ -58,7 +68,8 @@ impl CliError {
     pub fn exit_code(&self) -> NvmExitCode {
         match self {
             Self::Version(_) | Self::NotInstalled => NvmExitCode::InvalidVersion,
-            Self::NvmDirUnresolved => NvmExitCode::Failure,
+            Self::NvmDirUnresolved | Self::VersionNotInstalled(_) => NvmExitCode::Failure,
+            Self::Usage(_) | Self::SystemNodeNotFound => NvmExitCode::NotFound,
             Self::Floor(_) => NvmExitCode::BelowVersionFloor,
             Self::Alias(_) => NvmExitCode::AliasLoop,
         }
@@ -75,6 +86,7 @@ mod tests {
         assert_eq!(NvmExitCode::InvalidVersion.code(), 3);
         assert_eq!(NvmExitCode::BelowVersionFloor.code(), 7);
         assert_eq!(NvmExitCode::AliasLoop.code(), 8);
+        assert_eq!(NvmExitCode::NotFound.code(), 127);
     }
 
     #[test]
@@ -96,5 +108,11 @@ mod tests {
             NvmExitCode::InvalidVersion
         );
         assert_eq!(CliError::NvmDirUnresolved.exit_code(), NvmExitCode::Failure);
+        let not_installed = CliError::VersionNotInstalled("x".into());
+        assert_eq!(not_installed.exit_code(), NvmExitCode::Failure);
+        let usage = CliError::Usage("x".into());
+        assert_eq!(usage.exit_code(), NvmExitCode::NotFound);
+        let no_system_node = CliError::SystemNodeNotFound;
+        assert_eq!(no_system_node.exit_code(), NvmExitCode::NotFound);
     }
 }

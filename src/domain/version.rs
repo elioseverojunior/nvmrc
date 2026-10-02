@@ -87,15 +87,28 @@ impl fmt::Display for Version {
             Flavor::Node => "",
             Flavor::IoJs => "iojs-",
         };
-        write!(
-            formatter,
-            "{prefix}v{}.{}.{}",
-            self.major, self.minor, self.patch
-        )
+        write!(formatter, "{prefix}{}", self.directory_name())
+    }
+}
+
+impl Flavor {
+    /// The directory under `$NVM_DIR/versions` holding this flavor.
+    #[must_use]
+    pub fn versions_directory(self) -> &'static str {
+        match self {
+            Self::Node => "node",
+            Self::IoJs => "io.js",
+        }
     }
 }
 
 impl Version {
+    /// The on-disk directory name, without the `iojs-` prefix: `v3.0.0`.
+    #[must_use]
+    pub fn directory_name(&self) -> String {
+        format!("v{}.{}.{}", self.major, self.minor, self.patch)
+    }
+
     /// The numeric part, ignoring flavor (used for floor comparison).
     #[must_use]
     pub fn triple(&self) -> (u64, u64, u64) {
@@ -150,6 +163,18 @@ mod tests {
         let parsed = version("iojs-v3.0.0");
         assert_eq!(parsed.flavor, Flavor::IoJs);
         assert_eq!(parsed.to_string(), "iojs-v3.0.0");
+    }
+
+    #[test]
+    fn directory_name_drops_the_iojs_prefix() {
+        assert_eq!(version("iojs-v3.0.0").directory_name(), "v3.0.0");
+        assert_eq!(version("20.1.2").directory_name(), "v20.1.2");
+    }
+
+    #[test]
+    fn flavors_name_their_versions_directory() {
+        assert_eq!(Flavor::Node.versions_directory(), "node");
+        assert_eq!(Flavor::IoJs.versions_directory(), "io.js");
     }
 
     #[test]

@@ -1,6 +1,7 @@
 pub mod current;
 pub mod resolve;
 pub mod version;
+pub mod which;
 
 /// What a command wants printed. Text carries no trailing newline: the CLI
 /// adds one to each non-empty stream.

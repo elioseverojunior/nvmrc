@@ -25,6 +25,8 @@ enum Command {
     Version { pattern: Option<String> },
     /// Print the version of the node that is active in this shell.
     Current,
+    /// Print the path to the node binary of a version or alias.
+    Which { version: Option<String> },
 }
 
 fn dispatch(command: &Command, context: &Context<'_>) -> Result<Output, CliError> {
@@ -33,6 +35,7 @@ fn dispatch(command: &Command, context: &Context<'_>) -> Result<Output, CliError
             commands::version::run(context, pattern.as_deref().unwrap_or("current"))
         }
         Command::Current => commands::current::run(context),
+        Command::Which { version } => commands::which::run(context, version.as_deref()),
     }
 }
 
@@ -134,6 +137,33 @@ mod tests {
             run_cli(&["nvm", "version", "20"]),
             (0, "v20.1.0\n".into(), String::new())
         );
+    }
+
+    #[test]
+    fn which_prints_the_binary_path() {
+        assert_eq!(
+            run_cli(&["nvm", "which", "20"]),
+            (
+                0,
+                "/n/versions/node/v20.1.0/bin/node\n".into(),
+                String::new()
+            )
+        );
+    }
+
+    #[test]
+    fn which_of_a_missing_version_fails_on_stderr_with_exit_1() {
+        let (code, out, err) = run_cli(&["nvm", "which", "16"]);
+        assert_eq!(code, 1);
+        assert!(out.is_empty());
+        assert!(err.starts_with("N/A: version \"v16\" is not yet installed."));
+    }
+
+    #[test]
+    fn which_without_an_argument_is_a_usage_error_with_exit_127() {
+        let (code, out, err) = run_cli(&["nvm", "which"]);
+        assert_eq!(code, 127);
+        assert!(out.is_empty() && err.starts_with("Usage: nvm which"));
     }
 
     #[test]
