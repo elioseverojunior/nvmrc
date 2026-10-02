@@ -28,7 +28,7 @@ mod tests {
 
     fn run_with(fs: &FakeFileSystem, name: &str) -> Result<Output, CliError> {
         let env = FakeEnv::default().with_var("NVM_DIR", "/n");
-        run(&Context { fs, env: &env }, name)
+        run(&Context::new(fs, &env), name)
     }
 
     fn installed() -> FakeFileSystem {
@@ -49,7 +49,7 @@ mod tests {
         let env = FakeEnv::default()
             .with_var("NVM_DIR", "/n")
             .with_var("PATH", "/n/versions/node/v20.1.0/bin:/usr/bin");
-        let output = run(&Context { fs: &fs, env: &env }, "current").unwrap();
+        let output = run(&Context::new(&fs, &env), "current").unwrap();
         assert_eq!(output, Output::stdout("v20.1.0"));
     }
 
@@ -83,7 +83,7 @@ mod tests {
         let env = FakeEnv::default()
             .with_var("NVM_DIR", "/n")
             .with_var("PATH", "/usr/bin");
-        let output = run(&Context { fs: &fs, env: &env }, "default").unwrap();
+        let output = run(&Context::new(&fs, &env), "default").unwrap();
         assert_eq!(output, Output::stdout("system"));
     }
 

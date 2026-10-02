@@ -6,7 +6,7 @@ fn run_cli(args: &[&str]) -> (u8, String, String) {
     let fs = FakeFileSystem::default().with_file("/n/versions/node/v20.1.0/bin/node", "");
     let env = FakeEnv::default().with_var("NVM_DIR", "/n");
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    let code = run(args, &Context { fs: &fs, env: &env }, &mut out, &mut err);
+    let code = run(args, &Context::new(&fs, &env), &mut out, &mut err);
     (
         code,
         String::from_utf8(out).unwrap(),
@@ -55,7 +55,7 @@ fn unalias_removes_the_alias_and_says_how_to_restore_it() {
     let env = FakeEnv::default().with_var("NVM_DIR", "/n");
     let (mut out, mut err) = (Vec::new(), Vec::new());
     let args = ["nvm", "unalias", "work"];
-    let code = run(args, &Context { fs: &fs, env: &env }, &mut out, &mut err);
+    let code = run(args, &Context::new(&fs, &env), &mut out, &mut err);
     assert_eq!(code, 0);
     let printed = String::from_utf8(out).unwrap();
     assert!(printed.starts_with("Deleted alias work - restore it"));
@@ -68,7 +68,7 @@ fn alias_creates_the_file_and_prints_the_formatted_line() {
     let env = FakeEnv::default().with_var("NVM_DIR", "/n");
     let (mut out, mut err) = (Vec::new(), Vec::new());
     let args = ["nvm", "alias", "work", "20"];
-    let code = run(args, &Context { fs: &fs, env: &env }, &mut out, &mut err);
+    let code = run(args, &Context::new(&fs, &env), &mut out, &mut err);
     assert_eq!(
         (code, out, err),
         (0, b"work -> 20 (-> v20.1.0 *)\n".to_vec(), Vec::new())
@@ -93,7 +93,7 @@ fn current_prints_the_active_version() {
     let (mut out, mut err) = (Vec::new(), Vec::new());
     let code = run(
         ["nvm", "current"],
-        &Context { fs: &fs, env: &env },
+        &Context::new(&fs, &env),
         &mut out,
         &mut err,
     );
@@ -132,7 +132,7 @@ fn an_alias_loop_is_reported_on_stderr_with_exit_8() {
     let env = FakeEnv::default().with_var("NVM_DIR", "/n");
     let (mut out, mut err) = (Vec::new(), Vec::new());
     let args = ["nvm", "version", "a"];
-    let code = run(args, &Context { fs: &fs, env: &env }, &mut out, &mut err);
+    let code = run(args, &Context::new(&fs, &env), &mut out, &mut err);
     assert_eq!(code, 8);
     assert!(out.is_empty() && !err.is_empty());
 }
@@ -154,12 +154,7 @@ fn a_failed_stdout_write_exits_1() {
     let env = FakeEnv::default().with_var("NVM_DIR", "/n");
     let mut err = Vec::new();
     let args = ["nvm", "version", "20"];
-    let code = run(
-        args,
-        &Context { fs: &fs, env: &env },
-        &mut BrokenPipe,
-        &mut err,
-    );
+    let code = run(args, &Context::new(&fs, &env), &mut BrokenPipe, &mut err);
     assert_eq!(code, 1);
 }
 
@@ -171,12 +166,7 @@ fn a_failed_stderr_write_keeps_the_exit_code() {
     let env = FakeEnv::default().with_var("NVM_DIR", "/n");
     let mut out = Vec::new();
     let args = ["nvm", "version", "a"];
-    let code = run(
-        args,
-        &Context { fs: &fs, env: &env },
-        &mut out,
-        &mut BrokenPipe,
-    );
+    let code = run(args, &Context::new(&fs, &env), &mut out, &mut BrokenPipe);
     assert_eq!(code, 8);
 }
 

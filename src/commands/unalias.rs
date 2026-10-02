@@ -55,7 +55,7 @@ mod tests {
     fn unalias(fs: &FakeFileSystem, names: &[&str]) -> Result<Output, CliError> {
         let env = FakeEnv::default().with_var("NVM_DIR", "/n");
         let names: Vec<String> = names.iter().map(ToString::to_string).collect();
-        run(&Context { fs, env: &env }, &names)
+        run(&Context::new(fs, &env), &names)
     }
 
     #[test]

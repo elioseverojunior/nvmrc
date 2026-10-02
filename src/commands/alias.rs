@@ -75,7 +75,7 @@ mod tests {
 
     fn alias(fs: &FakeFileSystem, name: &str, target: &str) -> Result<Output, CliError> {
         let env = FakeEnv::default().with_var("NVM_DIR", "/n");
-        run(&Context { fs, env: &env }, name, target)
+        run(&Context::new(fs, &env), name, target)
     }
 
     fn alias_with_system_node(name: &str, target: &str) -> Result<Output, CliError> {
@@ -85,7 +85,7 @@ mod tests {
         let env = FakeEnv::default()
             .with_var("NVM_DIR", "/n")
             .with_var("PATH", "/usr/bin");
-        run(&Context { fs: &fs, env: &env }, name, target)
+        run(&Context::new(&fs, &env), name, target)
     }
 
     fn stored(fs: &FakeFileSystem, name: &str) -> Option<String> {

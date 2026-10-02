@@ -3,14 +3,39 @@
 use std::path::{Path, PathBuf};
 
 use crate::adapters::fs_alias_store::FsAliasStore;
+use crate::adapters::no_process::NoProcess;
 use crate::domain::alias::AliasStore;
 use crate::domain::version::Version;
 use crate::error::CliError;
-use crate::ports::{Env, FileSystem};
+use crate::ports::{Env, FileSystem, Process};
 
 pub struct Context<'a> {
     pub fs: &'a dyn FileSystem,
     pub env: &'a dyn Env,
+    process: &'a dyn Process,
+}
+
+impl<'a> Context<'a> {
+    /// A context that cannot run programs; add that with [`Self::with_process`].
+    #[must_use]
+    pub fn new(fs: &'a dyn FileSystem, env: &'a dyn Env) -> Self {
+        Self {
+            fs,
+            env,
+            process: &NoProcess,
+        }
+    }
+
+    #[must_use]
+    pub fn with_process(mut self, process: &'a dyn Process) -> Self {
+        self.process = process;
+        self
+    }
+
+    #[must_use]
+    pub fn process(&self) -> &dyn Process {
+        self.process
+    }
 }
 
 impl Context<'_> {
@@ -85,12 +110,12 @@ mod tests {
 
     fn nvm_dir_for(env: &FakeEnv) -> Result<PathBuf, CliError> {
         let fs = FakeFileSystem::default();
-        Context { fs: &fs, env }.nvm_dir()
+        Context::new(&fs, env).nvm_dir()
     }
 
     fn installed(fs: &FakeFileSystem) -> Vec<String> {
         let env = FakeEnv::default().with_var("NVM_DIR", "/n");
-        let context = Context { fs, env: &env };
+        let context = Context::new(fs, &env);
         let mut found: Vec<String> = context
             .installed_versions()
             .unwrap()
@@ -149,7 +174,7 @@ mod tests {
     fn alias_dir_is_under_nvm_dir() {
         let fs = FakeFileSystem::default();
         let env = FakeEnv::default().with_var("NVM_DIR", "/n");
-        let context = Context { fs: &fs, env: &env };
+        let context = Context::new(&fs, &env);
         assert_eq!(context.alias_dir().unwrap(), PathBuf::from("/n/alias"));
     }
 
@@ -157,7 +182,7 @@ mod tests {
     fn alias_store_reads_the_alias_directory() {
         let fs = FakeFileSystem::default().with_file("/n/alias/default", "v20");
         let env = FakeEnv::default().with_var("NVM_DIR", "/n");
-        let context = Context { fs: &fs, env: &env };
+        let context = Context::new(&fs, &env);
         let store = context.alias_store().unwrap();
         assert_eq!(store.target("default"), Some("v20".to_owned()));
     }

@@ -112,7 +112,7 @@ mod tests {
         let env = FakeEnv::default()
             .with_var("NVM_DIR", "/n")
             .with_var("PATH", path);
-        run(&Context { fs, env: &env }, name)
+        run(&Context::new(fs, &env), name)
     }
 
     fn which(name: &str) -> Result<Output, CliError> {

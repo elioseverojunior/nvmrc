@@ -42,6 +42,21 @@ pub trait FileSystem {
     fn create_dir_all(&self, path: &Path) -> io::Result<()>;
 }
 
+/// What a finished child process left behind.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcessOutput {
+    pub success: bool,
+    pub stdout: String,
+}
+
+pub trait Process {
+    /// Runs `program` with `args` and waits for it.
+    ///
+    /// # Errors
+    /// Fails when the program cannot be started.
+    fn run(&self, program: &Path, args: &[&str]) -> io::Result<ProcessOutput>;
+}
+
 pub trait Env {
     /// The variable as text; `None` when unset or not valid UTF-8.
     fn var(&self, key: &str) -> Option<String>;

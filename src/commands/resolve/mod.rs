@@ -51,6 +51,25 @@ pub fn system_node(context: &Context<'_>) -> Result<Option<PathBuf>, CliError> {
     Ok(find_in_dirs(context.fs, outside_nvm, "node"))
 }
 
+/// The version the system `node` reports, or `None` when there is no system
+/// `node` or it does not answer `--version`.
+///
+/// # Errors
+/// Returns [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
+pub fn system_version(context: &Context<'_>) -> Result<Option<String>, CliError> {
+    let Some(node) = system_node(context)? else {
+        return Ok(None);
+    };
+    let version = context
+        .process()
+        .run(&node, &["--version"])
+        .ok()
+        .filter(|output| output.success)
+        .map(|output| output.stdout.trim().to_owned())
+        .filter(|version| !version.is_empty());
+    Ok(version)
+}
+
 /// `node`, `stable`, `unstable` and `iojs` are implicit aliases for the latest
 /// installed release line of their kind; anything else is matched as a version
 /// pattern.

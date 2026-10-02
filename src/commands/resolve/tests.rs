@@ -1,6 +1,6 @@
 use super::*;
 use crate::error::AliasError;
-use crate::fakes::{FakeEnv, FakeFileSystem};
+use crate::fakes::{FakeEnv, FakeFileSystem, FakeProcess};
 
 fn resolve_with(fs: &FakeFileSystem, name: &str) -> Result<Resolved, CliError> {
     resolve_on_path(fs, "/nonexistent", name)
@@ -10,7 +10,7 @@ fn resolve_on_path(fs: &FakeFileSystem, path: &str, name: &str) -> Result<Resolv
     let env = FakeEnv::default()
         .with_var("NVM_DIR", "/n")
         .with_var("PATH", path);
-    resolve_installed(&Context { fs, env: &env }, name)
+    resolve_installed(&Context::new(fs, &env), name)
 }
 
 fn installed() -> FakeFileSystem {
@@ -44,6 +44,38 @@ fn iojs_is_the_latest_installed_iojs() {
         .with_file("/n/versions/io.js/v2.5.0/bin/node", "");
     let resolved = resolve_with(&fs, "iojs").unwrap();
     assert_eq!(resolved, Resolved::Installed(version("iojs-v3.0.0")));
+}
+
+fn version_of_system_node(process: &FakeProcess) -> Option<String> {
+    let fs = FakeFileSystem::default().with_file("/usr/bin/node", "");
+    let env = FakeEnv::default()
+        .with_var("NVM_DIR", "/n")
+        .with_var("PATH", "/usr/bin");
+    let context = Context::new(&fs, &env).with_process(process);
+    system_version(&context).unwrap()
+}
+
+#[test]
+fn the_system_version_is_what_node_prints() {
+    let process = FakeProcess::default().with_output("/usr/bin/node", "v22.1.0\n");
+    assert_eq!(version_of_system_node(&process), Some("v22.1.0".to_owned()));
+}
+
+#[test]
+fn the_system_version_is_none_when_node_fails_or_cannot_run() {
+    let failing = FakeProcess::default().with_failure("/usr/bin/node");
+    assert_eq!(version_of_system_node(&failing), None);
+    assert_eq!(version_of_system_node(&FakeProcess::default()), None);
+}
+
+#[test]
+fn without_a_system_node_there_is_no_system_version() {
+    let fs = FakeFileSystem::default();
+    let env = FakeEnv::default()
+        .with_var("NVM_DIR", "/n")
+        .with_var("PATH", "/usr/bin");
+    let context = Context::new(&fs, &env);
+    assert_eq!(system_version(&context).unwrap(), None);
 }
 
 #[test]
@@ -83,7 +115,7 @@ fn shown_tells_versions_system_missing_and_loops_apart() {
     let env = FakeEnv::default()
         .with_var("NVM_DIR", "/n")
         .with_var("PATH", "/usr/bin");
-    let context = Context { fs: &fs, env: &env };
+    let context = Context::new(&fs, &env);
     let texts: Vec<String> = ["20", "system", "16", "loop"]
         .iter()
         .map(|name| shown(&context, name).unwrap().to_string())
@@ -189,6 +221,6 @@ fn system_node_is_the_first_node_outside_nvm_dir() {
     let env = FakeEnv::default()
         .with_var("NVM_DIR", "/n")
         .with_var("PATH", "/n/versions/node/v20.1.0/bin:/usr/bin");
-    let found = system_node(&Context { fs: &fs, env: &env }).unwrap();
+    let found = system_node(&Context::new(&fs, &env)).unwrap();
     assert_eq!(found, Some(PathBuf::from("/usr/bin/node")));
 }

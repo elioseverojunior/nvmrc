@@ -32,7 +32,7 @@ mod tests {
         let env = FakeEnv::default()
             .with_var("NVM_DIR", "/n")
             .with_var("PATH", path);
-        run(&Context { fs, env: &env }).unwrap().stdout
+        run(&Context::new(fs, &env)).unwrap().stdout
     }
 
     #[test]
@@ -59,7 +59,7 @@ mod tests {
     fn reports_none_when_path_is_unset() {
         let env = FakeEnv::default().with_var("NVM_DIR", "/n");
         let fs = FakeFileSystem::default();
-        let output = run(&Context { fs: &fs, env: &env }).unwrap();
+        let output = run(&Context::new(&fs, &env)).unwrap();
         assert_eq!(output.stdout, "none");
     }
 }

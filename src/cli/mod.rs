@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand};
 
 use crate::adapters::std_env::StdEnv;
 use crate::adapters::std_fs::StdFileSystem;
+use crate::adapters::std_process::StdProcess;
 use crate::commands::{self, Output};
 use crate::context::Context;
 use crate::error::{CliError, NvmExitCode};
@@ -109,10 +110,7 @@ fn finish(output: &Output, out: &mut dyn Write, err: &mut dyn Write, success: Nv
 /// Entry point shared by the `nvmrc` and `nvm` binaries.
 #[must_use]
 pub fn run_from_env() -> u8 {
-    let context = Context {
-        fs: &StdFileSystem,
-        env: &StdEnv,
-    };
+    let context = Context::new(&StdFileSystem, &StdEnv).with_process(&StdProcess);
     run(
         std::env::args_os(),
         &context,
