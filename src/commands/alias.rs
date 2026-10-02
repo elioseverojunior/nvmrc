@@ -4,7 +4,7 @@
 //! shares its formatting. Output is always plain, as `nvm.sh` prints when
 //! stdout is not a terminal.
 
-use crate::commands::resolve::{Resolved, resolve_installed};
+use crate::commands::resolve::{Shown, shown};
 use crate::commands::{Output, unalias};
 use crate::context::Context;
 use crate::error::CliError;
@@ -20,7 +20,7 @@ pub fn run(context: &Context<'_>, name: &str, target: &str) -> Result<Output, Cl
         return unalias::run(context, &[name.to_owned()]);
     }
     validate_name(name)?;
-    let version = version_text(context, target)?;
+    let version = shown(context, target)?;
     let alias_dir = context.alias_dir()?;
     context
         .fs
@@ -32,7 +32,7 @@ pub fn run(context: &Context<'_>, name: &str, target: &str) -> Result<Output, Cl
         .write_file(&alias_file, &format!("{target}\n"))
         .map_err(|source| CliError::io(&alias_file, source))?;
     let output = Output::stdout(format_line(name, target, &version));
-    if version == "N/A" {
+    if version == Shown::NotAvailable {
         return Ok(output.with_stderr(format!("! WARNING: Version '{target}' does not exist.")));
     }
     Ok(output)
@@ -51,24 +51,9 @@ fn validate_name(name: &str) -> Result<(), CliError> {
     Err(CliError::InvalidArgument(message))
 }
 
-/// What `target` resolves to now: a version, `system`, `N/A` when nothing
-/// installed matches, or `∞` when its alias chain loops.
-fn version_text(context: &Context<'_>, target: &str) -> Result<String, CliError> {
-    match resolve_installed(context, target) {
-        Ok(Resolved::Installed(version)) => Ok(version.to_string()),
-        Ok(Resolved::System) => Ok("system".to_owned()),
-        Ok(Resolved::Missing { .. }) => Ok("N/A".to_owned()),
-        Err(CliError::Alias(_)) => Ok("∞".to_owned()),
-        Err(error) => Err(error),
-    }
-}
-
-fn format_line(alias: &str, target: &str, version: &str) -> String {
-    let marker = if matches!(version, "N/A" | "∞") {
-        ""
-    } else {
-        " *"
-    };
+fn format_line(alias: &str, target: &str, shown: &Shown) -> String {
+    let version = shown.to_string();
+    let marker = if shown.is_available() { " *" } else { "" };
     if target == version {
         format!("{alias} -> {version}{marker}")
     } else {

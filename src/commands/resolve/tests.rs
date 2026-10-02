@@ -1,0 +1,194 @@
+use super::*;
+use crate::error::AliasError;
+use crate::fakes::{FakeEnv, FakeFileSystem};
+
+fn resolve_with(fs: &FakeFileSystem, name: &str) -> Result<Resolved, CliError> {
+    resolve_on_path(fs, "/nonexistent", name)
+}
+
+fn resolve_on_path(fs: &FakeFileSystem, path: &str, name: &str) -> Result<Resolved, CliError> {
+    let env = FakeEnv::default()
+        .with_var("NVM_DIR", "/n")
+        .with_var("PATH", path);
+    resolve_installed(&Context { fs, env: &env }, name)
+}
+
+fn installed() -> FakeFileSystem {
+    FakeFileSystem::default()
+        .with_file("/n/versions/node/v20.1.0/bin/node", "")
+        .with_file("/n/versions/node/v20.10.0/bin/node", "")
+        .with_file("/n/versions/node/v18.9.0/bin/node", "")
+}
+
+fn version(text: &str) -> Version {
+    text.parse().expect("valid version")
+}
+
+#[test]
+fn a_pattern_resolves_to_the_highest_installed_match() {
+    let resolved = resolve_with(&installed(), "20").unwrap();
+    assert_eq!(resolved, Resolved::Installed(version("v20.10.0")));
+}
+
+#[test]
+fn node_is_the_latest_installed_node_ignoring_iojs() {
+    let fs = installed().with_file("/n/versions/io.js/v3.0.0/bin/node", "");
+    let resolved = resolve_with(&fs, "node").unwrap();
+    assert_eq!(resolved, Resolved::Installed(version("v20.10.0")));
+}
+
+#[test]
+fn iojs_is_the_latest_installed_iojs() {
+    let fs = installed()
+        .with_file("/n/versions/io.js/v3.0.0/bin/node", "")
+        .with_file("/n/versions/io.js/v2.5.0/bin/node", "");
+    let resolved = resolve_with(&fs, "iojs").unwrap();
+    assert_eq!(resolved, Resolved::Installed(version("iojs-v3.0.0")));
+}
+
+#[test]
+fn stable_is_the_highest_patch_of_the_highest_release_line() {
+    let resolved = resolve_with(&installed(), "stable").unwrap();
+    assert_eq!(resolved, Resolved::Installed(version("v20.10.0")));
+}
+
+#[test]
+fn unstable_needs_an_old_odd_release_line() {
+    let modern = resolve_with(&installed(), "unstable").unwrap();
+    assert_eq!(
+        modern,
+        Resolved::Missing {
+            resolved: "unstable".into()
+        }
+    );
+    let old = FakeFileSystem::default()
+        .with_file("/n/versions/node/v0.10.48/bin/node", "")
+        .with_file("/n/versions/node/v0.11.16/bin/node", "")
+        .with_file("/n/versions/node/v4.2.0/bin/node", "");
+    assert_eq!(
+        resolve_with(&old, "unstable").unwrap(),
+        Resolved::Installed(version("v0.11.16"))
+    );
+    assert_eq!(
+        resolve_with(&old, "node").unwrap(),
+        Resolved::Installed(version("v4.2.0"))
+    );
+}
+
+#[test]
+fn shown_tells_versions_system_missing_and_loops_apart() {
+    let fs = installed()
+        .with_file("/n/alias/loop", "loop")
+        .with_file("/usr/bin/node", "");
+    let env = FakeEnv::default()
+        .with_var("NVM_DIR", "/n")
+        .with_var("PATH", "/usr/bin");
+    let context = Context { fs: &fs, env: &env };
+    let texts: Vec<String> = ["20", "system", "16", "loop"]
+        .iter()
+        .map(|name| shown(&context, name).unwrap().to_string())
+        .collect();
+    assert_eq!(texts, ["v20.10.0", "system", "N/A", "∞"]);
+    assert!(shown(&context, "20").unwrap().is_available());
+    assert!(!shown(&context, "loop").unwrap().is_available());
+    assert!(!shown(&context, "16").unwrap().is_available());
+}
+
+#[test]
+fn a_built_in_alias_can_be_the_target_of_another_alias() {
+    let fs = installed().with_file("/n/alias/default", "node");
+    let resolved = resolve_with(&fs, "default").unwrap();
+    assert_eq!(resolved, Resolved::Installed(version("v20.10.0")));
+}
+
+#[test]
+fn a_built_in_alias_without_a_matching_install_is_missing() {
+    let fs = FakeFileSystem::default().with_dir("/n/versions/node");
+    let resolved = resolve_with(&fs, "node").unwrap();
+    assert_eq!(
+        resolved,
+        Resolved::Missing {
+            resolved: "node".into()
+        }
+    );
+}
+
+#[test]
+fn an_alias_resolves_through_its_chain() {
+    let fs = installed().with_file("/n/alias/default", "v18");
+    let resolved = resolve_with(&fs, "default").unwrap();
+    assert_eq!(resolved, Resolved::Installed(version("v18.9.0")));
+}
+
+#[test]
+fn a_missing_version_reports_where_the_chain_ended() {
+    let fs = installed().with_file("/n/alias/old", "v16");
+    let resolved = resolve_with(&fs, "old").unwrap();
+    assert_eq!(
+        resolved,
+        Resolved::Missing {
+            resolved: "v16".into()
+        }
+    );
+}
+
+#[test]
+fn a_name_that_is_not_a_version_is_missing_not_an_error() {
+    let resolved = resolve_with(&installed(), "foo").unwrap();
+    assert_eq!(
+        resolved,
+        Resolved::Missing {
+            resolved: "foo".into()
+        }
+    );
+}
+
+#[test]
+fn an_alias_loop_is_an_error() {
+    let fs = installed()
+        .with_file("/n/alias/a", "b")
+        .with_file("/n/alias/b", "a");
+    let error = resolve_with(&fs, "a").unwrap_err();
+    assert!(matches!(error, CliError::Alias(AliasError::Loop(_))));
+}
+
+#[test]
+fn system_is_resolved_when_a_node_exists_outside_nvm_dir() {
+    let fs = installed().with_file("/usr/bin/node", "");
+    let path = "/n/versions/node/v20.1.0/bin:/usr/bin";
+    assert_eq!(
+        resolve_on_path(&fs, path, "system").unwrap(),
+        Resolved::System
+    );
+}
+
+#[test]
+fn an_alias_chain_ending_at_system_is_system() {
+    let fs = installed()
+        .with_file("/usr/bin/node", "")
+        .with_file("/n/alias/default", "system");
+    let resolved = resolve_on_path(&fs, "/usr/bin", "default").unwrap();
+    assert_eq!(resolved, Resolved::System);
+}
+
+#[test]
+fn system_without_a_system_node_is_missing() {
+    let path = "/n/versions/node/v20.1.0/bin";
+    let resolved = resolve_on_path(&installed(), path, "system").unwrap();
+    assert_eq!(
+        resolved,
+        Resolved::Missing {
+            resolved: "system".into()
+        }
+    );
+}
+
+#[test]
+fn system_node_is_the_first_node_outside_nvm_dir() {
+    let fs = installed().with_file("/usr/bin/node", "");
+    let env = FakeEnv::default()
+        .with_var("NVM_DIR", "/n")
+        .with_var("PATH", "/n/versions/node/v20.1.0/bin:/usr/bin");
+    let found = system_node(&Context { fs: &fs, env: &env }).unwrap();
+    assert_eq!(found, Some(PathBuf::from("/usr/bin/node")));
+}
