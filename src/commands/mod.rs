@@ -1,5 +1,6 @@
 pub mod current;
 pub mod resolve;
+pub mod unalias;
 pub mod version;
 pub mod which;
 

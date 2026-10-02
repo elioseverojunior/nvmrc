@@ -26,4 +26,8 @@ impl FileSystem for StdFileSystem {
     fn is_file(&self, path: &Path) -> bool {
         path.is_file()
     }
+
+    fn remove_file(&self, path: &Path) -> io::Result<()> {
+        fs::remove_file(path)
+    }
 }

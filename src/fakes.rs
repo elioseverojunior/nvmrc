@@ -1,5 +1,6 @@
 //! In-memory implementations of the ports, for unit tests only.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::io;
@@ -9,14 +10,16 @@ use crate::ports::{DirEntry, Env, FileSystem};
 
 #[derive(Default)]
 pub struct FakeFileSystem {
-    files: BTreeMap<PathBuf, String>,
+    files: RefCell<BTreeMap<PathBuf, String>>,
     dirs: BTreeSet<PathBuf>,
 }
 
 impl FakeFileSystem {
     #[must_use]
     pub fn with_file(mut self, path: &str, contents: &str) -> Self {
-        self.files.insert(PathBuf::from(path), contents.to_owned());
+        self.files
+            .get_mut()
+            .insert(PathBuf::from(path), contents.to_owned());
         self
     }
 
@@ -31,6 +34,7 @@ impl FakeFileSystem {
 impl FileSystem for FakeFileSystem {
     fn read_to_string(&self, path: &Path) -> io::Result<String> {
         self.files
+            .borrow()
             .get(path)
             .cloned()
             .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
@@ -39,9 +43,10 @@ impl FileSystem for FakeFileSystem {
     fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>> {
         let mut children: BTreeMap<String, bool> = BTreeMap::new();
         let mut exists = self.dirs.contains(path);
-        let files = self.files.keys().map(|file| (file, false));
-        let dirs = self.dirs.iter().map(|dir| (dir, true));
-        for (candidate, is_dir_path) in files.chain(dirs) {
+        let files = self.files.borrow();
+        let file_paths = files.keys().map(|file| (file, false));
+        let dir_paths = self.dirs.iter().map(|dir| (dir, true));
+        for (candidate, is_dir_path) in file_paths.chain(dir_paths) {
             let Ok(rest) = candidate.strip_prefix(path) else {
                 continue;
             };
@@ -63,7 +68,15 @@ impl FileSystem for FakeFileSystem {
     }
 
     fn is_file(&self, path: &Path) -> bool {
-        self.files.contains_key(path)
+        self.files.borrow().contains_key(path)
+    }
+
+    fn remove_file(&self, path: &Path) -> io::Result<()> {
+        self.files
+            .borrow_mut()
+            .remove(path)
+            .map(|_| ())
+            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
     }
 }
 
@@ -144,6 +157,14 @@ mod tests {
         assert!(fs.read_to_string(Path::new("/g")).is_err());
         assert!(fs.is_file(Path::new("/f")));
         assert!(!fs.is_file(Path::new("/g")));
+    }
+
+    #[test]
+    fn fake_file_system_removes_files() {
+        let fs = FakeFileSystem::default().with_file("/f", "hi");
+        fs.remove_file(Path::new("/f")).unwrap();
+        assert!(!fs.is_file(Path::new("/f")));
+        assert!(fs.remove_file(Path::new("/f")).is_err());
     }
 
     #[test]

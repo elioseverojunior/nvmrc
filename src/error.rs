@@ -61,6 +61,11 @@ pub enum CliError {
     VersionNotInstalled(String),
     #[error("System version of node not found.")]
     SystemNodeNotFound,
+    /// A rejected argument, with the message to print.
+    #[error("{0}")]
+    InvalidArgument(String),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
 
 impl CliError {
@@ -68,7 +73,10 @@ impl CliError {
     pub fn exit_code(&self) -> NvmExitCode {
         match self {
             Self::Version(_) | Self::NotInstalled => NvmExitCode::InvalidVersion,
-            Self::NvmDirUnresolved | Self::VersionNotInstalled(_) => NvmExitCode::Failure,
+            Self::NvmDirUnresolved
+            | Self::VersionNotInstalled(_)
+            | Self::InvalidArgument(_)
+            | Self::Io(_) => NvmExitCode::Failure,
             Self::Usage(_) | Self::SystemNodeNotFound => NvmExitCode::NotFound,
             Self::Floor(_) => NvmExitCode::BelowVersionFloor,
             Self::Alias(_) => NvmExitCode::AliasLoop,
@@ -114,5 +122,9 @@ mod tests {
         assert_eq!(usage.exit_code(), NvmExitCode::NotFound);
         let no_system_node = CliError::SystemNodeNotFound;
         assert_eq!(no_system_node.exit_code(), NvmExitCode::NotFound);
+        let invalid = CliError::InvalidArgument("x".into());
+        assert_eq!(invalid.exit_code(), NvmExitCode::Failure);
+        let io_error = CliError::from(std::io::Error::from(std::io::ErrorKind::NotFound));
+        assert_eq!(io_error.exit_code(), NvmExitCode::Failure);
     }
 }

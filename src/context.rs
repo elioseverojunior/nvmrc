@@ -31,6 +31,14 @@ impl Context<'_> {
         Ok(dir.components().collect())
     }
 
+    /// `$NVM_DIR/alias`, where alias files live.
+    ///
+    /// # Errors
+    /// Returns [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
+    pub fn alias_dir(&self) -> Result<PathBuf, CliError> {
+        Ok(self.nvm_dir()?.join("alias"))
+    }
+
     /// The alias files under `$NVM_DIR/alias`.
     ///
     /// # Errors
@@ -135,6 +143,14 @@ mod tests {
             .with_var_os("NVM_DIR", raw.clone())
             .with_var("HOME", "/home/me");
         assert_eq!(nvm_dir_for(&env).unwrap(), PathBuf::from(raw));
+    }
+
+    #[test]
+    fn alias_dir_is_under_nvm_dir() {
+        let fs = FakeFileSystem::default();
+        let env = FakeEnv::default().with_var("NVM_DIR", "/n");
+        let context = Context { fs: &fs, env: &env };
+        assert_eq!(context.alias_dir().unwrap(), PathBuf::from("/n/alias"));
     }
 
     #[test]

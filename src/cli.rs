@@ -27,6 +27,8 @@ enum Command {
     Current,
     /// Print the path to the node binary of a version or alias.
     Which { version: Option<String> },
+    /// Delete an alias.
+    Unalias { names: Vec<String> },
 }
 
 fn dispatch(command: &Command, context: &Context<'_>) -> Result<Output, CliError> {
@@ -36,6 +38,7 @@ fn dispatch(command: &Command, context: &Context<'_>) -> Result<Output, CliError
         }
         Command::Current => commands::current::run(context),
         Command::Which { version } => commands::which::run(context, version.as_deref()),
+        Command::Unalias { names } => commands::unalias::run(context, names),
     }
 }
 
@@ -118,6 +121,7 @@ pub fn run_from_env() -> u8 {
 mod tests {
     use super::*;
     use crate::fakes::{FakeEnv, FakeFileSystem};
+    use crate::ports::FileSystem;
 
     fn run_cli(args: &[&str]) -> (u8, String, String) {
         let fs = FakeFileSystem::default().with_file("/n/versions/node/v20.1.0/bin/node", "");
@@ -164,6 +168,26 @@ mod tests {
         let (code, out, err) = run_cli(&["nvm", "which"]);
         assert_eq!(code, 127);
         assert!(out.is_empty() && err.starts_with("Usage: nvm which"));
+    }
+
+    #[test]
+    fn unalias_removes_the_alias_and_says_how_to_restore_it() {
+        let fs = FakeFileSystem::default().with_file("/n/alias/work", "v18");
+        let env = FakeEnv::default().with_var("NVM_DIR", "/n");
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let args = ["nvm", "unalias", "work"];
+        let code = run(args, &Context { fs: &fs, env: &env }, &mut out, &mut err);
+        assert_eq!(code, 0);
+        let printed = String::from_utf8(out).unwrap();
+        assert!(printed.starts_with("Deleted alias work - restore it"));
+        assert!(!fs.is_file(std::path::Path::new("/n/alias/work")));
+    }
+
+    #[test]
+    fn unalias_without_a_name_is_a_usage_error_with_exit_127() {
+        let (code, out, err) = run_cli(&["nvm", "unalias"]);
+        assert_eq!(code, 127);
+        assert!(out.is_empty() && err.starts_with("Usage: nvm unalias <name>"));
     }
 
     #[test]

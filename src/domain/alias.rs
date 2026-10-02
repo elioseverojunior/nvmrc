@@ -4,6 +4,9 @@ use std::collections::HashSet;
 
 use crate::error::AliasError;
 
+/// Names that always exist and have no alias file.
+pub const BUILTIN_ALIASES: [&str; 5] = ["stable", "unstable", "iojs", "node", "system"];
+
 pub trait AliasStore {
     /// The target an alias points to, or `None` when `name` is not an alias.
     fn target(&self, name: &str) -> Option<String>;

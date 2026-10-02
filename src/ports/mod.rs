@@ -24,6 +24,10 @@ pub trait FileSystem {
     fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>>;
 
     fn is_file(&self, path: &Path) -> bool;
+
+    /// # Errors
+    /// Propagates the underlying I/O error (for example when `path` is missing).
+    fn remove_file(&self, path: &Path) -> io::Result<()>;
 }
 
 pub trait Env {
