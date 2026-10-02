@@ -11,7 +11,7 @@ use crate::ports::{DirEntry, Env, FileSystem};
 #[derive(Default)]
 pub struct FakeFileSystem {
     files: RefCell<BTreeMap<PathBuf, String>>,
-    dirs: BTreeSet<PathBuf>,
+    dirs: RefCell<BTreeSet<PathBuf>>,
 }
 
 impl FakeFileSystem {
@@ -26,7 +26,7 @@ impl FakeFileSystem {
     /// An explicit, possibly empty, directory. Parents of files exist already.
     #[must_use]
     pub fn with_dir(mut self, path: &str) -> Self {
-        self.dirs.insert(PathBuf::from(path));
+        self.dirs.get_mut().insert(PathBuf::from(path));
         self
     }
 }
@@ -42,10 +42,11 @@ impl FileSystem for FakeFileSystem {
 
     fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>> {
         let mut children: BTreeMap<String, bool> = BTreeMap::new();
-        let mut exists = self.dirs.contains(path);
+        let dirs = self.dirs.borrow();
+        let mut exists = dirs.contains(path);
         let files = self.files.borrow();
         let file_paths = files.keys().map(|file| (file, false));
-        let dir_paths = self.dirs.iter().map(|dir| (dir, true));
+        let dir_paths = dirs.iter().map(|dir| (dir, true));
         for (candidate, is_dir_path) in file_paths.chain(dir_paths) {
             let Ok(rest) = candidate.strip_prefix(path) else {
                 continue;
@@ -77,6 +78,18 @@ impl FileSystem for FakeFileSystem {
             .remove(path)
             .map(|_| ())
             .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
+    }
+
+    fn write_file(&self, path: &Path, contents: &str) -> io::Result<()> {
+        self.files
+            .borrow_mut()
+            .insert(path.to_path_buf(), contents.to_owned());
+        Ok(())
+    }
+
+    fn create_dir_all(&self, path: &Path) -> io::Result<()> {
+        self.dirs.borrow_mut().insert(path.to_path_buf());
+        Ok(())
     }
 }
 
@@ -165,6 +178,22 @@ mod tests {
         fs.remove_file(Path::new("/f")).unwrap();
         assert!(!fs.is_file(Path::new("/f")));
         assert!(fs.remove_file(Path::new("/f")).is_err());
+    }
+
+    #[test]
+    fn fake_file_system_writes_and_overwrites_files() {
+        let fs = FakeFileSystem::default();
+        fs.write_file(Path::new("/f"), "one").unwrap();
+        fs.write_file(Path::new("/f"), "two").unwrap();
+        assert_eq!(fs.read_to_string(Path::new("/f")).unwrap(), "two");
+    }
+
+    #[test]
+    fn fake_file_system_creates_directories() {
+        let fs = FakeFileSystem::default();
+        fs.create_dir_all(Path::new("/d/e")).unwrap();
+        fs.create_dir_all(Path::new("/d/e")).unwrap();
+        assert_eq!(fs.read_dir(Path::new("/d/e")).unwrap(), []);
     }
 
     #[test]

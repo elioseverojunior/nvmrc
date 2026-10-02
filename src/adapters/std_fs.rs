@@ -30,4 +30,12 @@ impl FileSystem for StdFileSystem {
     fn remove_file(&self, path: &Path) -> io::Result<()> {
         fs::remove_file(path)
     }
+
+    fn write_file(&self, path: &Path, contents: &str) -> io::Result<()> {
+        fs::write(path, contents)
+    }
+
+    fn create_dir_all(&self, path: &Path) -> io::Result<()> {
+        fs::create_dir_all(path)
+    }
 }

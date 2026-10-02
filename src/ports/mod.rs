@@ -28,6 +28,18 @@ pub trait FileSystem {
     /// # Errors
     /// Propagates the underlying I/O error (for example when `path` is missing).
     fn remove_file(&self, path: &Path) -> io::Result<()>;
+
+    /// Creates or replaces the file at `path`.
+    ///
+    /// # Errors
+    /// Propagates the underlying I/O error.
+    fn write_file(&self, path: &Path, contents: &str) -> io::Result<()>;
+
+    /// Creates `path` and any missing parents; fine if it already exists.
+    ///
+    /// # Errors
+    /// Propagates the underlying I/O error.
+    fn create_dir_all(&self, path: &Path) -> io::Result<()>;
 }
 
 pub trait Env {
