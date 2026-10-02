@@ -6,13 +6,59 @@
 
 use std::path::Path;
 
-use crate::commands::Output;
 use crate::commands::resolve::shown;
+use crate::commands::{Output, alias, unalias};
 use crate::context::Context;
 use crate::domain::alias::AliasStore;
 use crate::domain::alias_format::format_line;
 use crate::domain::implicit::{IMPLICIT_ALIASES, destination};
 use crate::error::{CliError, NvmExitCode};
+
+#[derive(Default)]
+struct Words {
+    name: Option<String>,
+    target: Option<String>,
+}
+
+/// `nvm alias [--no-colors] [name [target]]`: the first two words are the
+/// name and the target, more are ignored.
+fn parse_words(args: &[String]) -> Result<Words, CliError> {
+    let mut words = Words::default();
+    for arg in args {
+        match arg.as_str() {
+            "--" | "--no-colors" => {}
+            option if option.starts_with("--") => {
+                let message = format!("Unsupported option \"{option}\".");
+                return Err(CliError::Unsupported(message));
+            }
+            word if words.name.is_none() => words.name = Some(word.to_owned()),
+            word if words.target.is_none() => words.target = Some(word.to_owned()),
+            _ => {}
+        }
+    }
+    Ok(words)
+}
+
+/// `nvm alias`: with no words it lists, with a name it lists the aliases
+/// starting with it, with a name and a target it creates the alias, and an
+/// explicitly empty target deletes it.
+///
+/// # Errors
+/// - [`CliError::Unsupported`] for an unknown `--option`.
+/// - Whatever the listing, creation or deletion fails with.
+pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
+    let Words { name, target } = parse_words(args)?;
+    match (name, target) {
+        (Some(name), Some(target)) if target.is_empty() => unalias::run(context, &[name]),
+        (Some(name), _) if name.contains('#') => {
+            let message = "Aliases with a comment delimiter (#) are not supported.";
+            Err(CliError::InvalidArgument(message.to_owned()))
+        }
+        (Some(name), Some(target)) => alias::run(context, &name, &target),
+        (Some(name), None) => list(context, Some(&name)),
+        (None, _) => list(context, None),
+    }
+}
 
 /// # Errors
 /// Returns [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.

@@ -101,10 +101,55 @@ fn current_prints_the_active_version() {
 }
 
 #[test]
-fn ls_prints_the_rows_and_list_is_the_same_command() {
-    let expected = (0, "        v20.1.0 *\n".to_owned(), String::new());
+fn ls_prints_the_rows_then_the_aliases_and_list_is_the_same_command() {
+    let rows = "        v20.1.0 *\n";
+    let aliases = "iojs -> N/A (default)\n\
+                   node -> stable (-> v20.1.0 *) (default)\n\
+                   stable -> 20.1 (-> v20.1.0 *) (default)\n\
+                   unstable -> N/A (default)\n";
+    let expected = (0, format!("{rows}{aliases}"), String::new());
     assert_eq!(run_cli(&["nvm", "ls"]), expected);
     assert_eq!(run_cli(&["nvm", "list"]), expected);
+    let without = (0, rows.to_owned(), String::new());
+    assert_eq!(run_cli(&["nvm", "ls", "--no-alias"]), without);
+    assert_eq!(
+        run_cli(&["nvm", "ls", "--no-colors", "--no-alias"]),
+        without
+    );
+}
+
+#[test]
+fn unsupported_options_exit_55_with_the_nvm_sh_message() {
+    assert_eq!(
+        run_cli(&["nvm", "ls", "--bogus"]),
+        (
+            55,
+            String::new(),
+            "Unsupported option \"--bogus\".\n".to_owned()
+        )
+    );
+    assert_eq!(
+        run_cli(&["nvm", "alias", "--bogus"]),
+        (
+            55,
+            String::new(),
+            "Unsupported option \"--bogus\".\n".to_owned()
+        )
+    );
+    let (code, out, err) = run_cli(&["nvm", "ls", "20", "--no-alias"]);
+    assert_eq!(code, 55);
+    assert!(out.is_empty());
+    assert_eq!(
+        err,
+        "`--no-alias` is not supported when a pattern is provided.\n"
+    );
+}
+
+#[test]
+fn alias_without_arguments_lists_the_aliases() {
+    let (code, out, _) = run_cli(&["nvm", "alias"]);
+    assert_eq!(code, 0);
+    assert!(out.starts_with("iojs -> N/A (default)\n"), "{out}");
 }
 
 #[test]
@@ -187,12 +232,7 @@ fn a_failed_stderr_write_keeps_the_exit_code() {
 
 #[test]
 fn a_usage_error_exits_127_without_stdout() {
-    for args in [
-        &["nvm", "bogus"][..],
-        &["nvm", "alias", "x"],
-        &["nvm", "alias", "x", "y", "z"],
-        &["nvm", "which", "--silent", "20"],
-    ] {
+    for args in [&["nvm", "bogus"][..], &["nvm", "which", "--silent", "20"]] {
         let (code, out, err) = run_cli(args);
         assert_eq!(code, 127, "{args:?}");
         assert!(out.is_empty() && !err.is_empty(), "{args:?}");

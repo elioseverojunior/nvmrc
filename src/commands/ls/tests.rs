@@ -131,6 +131,87 @@ fn system_lists_the_system_node_when_there_is_one() {
     assert_eq!(output, Output::stdout("->       system * (-> v22.1.0)"));
 }
 
+fn words(args: &[&str]) -> Vec<String> {
+    args.iter().map(ToString::to_string).collect()
+}
+
+#[test]
+fn options_are_read_like_nvm_sh() {
+    let parsed = parse_options(&words(&["--no-colors", "--", "20", "18"])).unwrap();
+    assert_eq!(
+        parsed,
+        Options {
+            pattern: Some("20".to_owned()),
+            no_alias: false
+        }
+    );
+    let no_alias = parse_options(&words(&["--no-alias"])).unwrap();
+    assert!(no_alias.no_alias && no_alias.pattern.is_none());
+    let empty_first = parse_options(&words(&["", "20"])).unwrap();
+    assert_eq!(empty_first.pattern, Some("20".to_owned()));
+}
+
+#[test]
+fn bad_options_are_exit_55() {
+    let unknown = parse_options(&words(&["--bogus"])).unwrap_err();
+    assert_eq!(unknown.to_string(), "Unsupported option \"--bogus\".");
+    assert_eq!(unknown.exit_code(), NvmExitCode::UnsupportedOption);
+    let both = parse_options(&words(&["20", "--no-alias"])).unwrap_err();
+    assert_eq!(
+        both.to_string(),
+        "`--no-alias` is not supported when a pattern is provided."
+    );
+    assert_eq!(both.exit_code(), NvmExitCode::UnsupportedOption);
+}
+
+fn command(fs: &FakeFileSystem, args: &[&str]) -> Output {
+    let env = FakeEnv::default()
+        .with_var("NVM_DIR", "/n")
+        .with_var("PATH", "/nonexistent");
+    run_command(&Context::new(fs, &env), &words(args)).unwrap()
+}
+
+#[test]
+fn the_aliases_follow_the_versions() {
+    let fs = FakeFileSystem::default()
+        .with_file("/n/versions/node/v20.10.0/bin/node", "")
+        .with_file("/n/alias/default", "node");
+    let expected = [
+        "       v20.10.0 *",
+        "default -> node (-> v20.10.0 *)",
+        "iojs -> N/A (default)",
+        "node -> stable (-> v20.10.0 *) (default)",
+        "stable -> 20.10 (-> v20.10.0 *) (default)",
+        "unstable -> N/A (default)",
+    ];
+    assert_eq!(command(&fs, &[]), Output::stdout(expected.join("\n")));
+    let versions_only = command(&fs, &["--no-alias"]);
+    assert_eq!(versions_only, Output::stdout(expected[0]));
+}
+
+#[test]
+fn a_pattern_lists_no_aliases_and_keeps_the_status() {
+    let fs = FakeFileSystem::default().with_file("/n/versions/node/v20.10.0/bin/node", "");
+    let output = command(&fs, &["99"]);
+    assert_eq!(
+        output,
+        Output::stdout("            N/A").with_status(NvmExitCode::InvalidVersion)
+    );
+}
+
+#[test]
+fn nothing_installed_still_lists_the_aliases_with_status_3() {
+    let output = command(&FakeFileSystem::default(), &[]);
+    assert_eq!(output.status, NvmExitCode::InvalidVersion);
+    assert_eq!(
+        output.stdout,
+        "            N/A *\n\
+         iojs -> N/A (default)\n\
+         node -> stable (-> N/A) (default)\n\
+         unstable -> N/A (default)"
+    );
+}
+
 #[test]
 fn nothing_installed_prints_na_as_if_installed_and_exits_3() {
     let fs = FakeFileSystem::default();

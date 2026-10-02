@@ -5,6 +5,7 @@
 //! exists, and it keeps both io.js and Node versions that share a number.
 
 use crate::commands::Output;
+use crate::commands::aliases;
 use crate::commands::current;
 use crate::commands::resolve::{Resolved, resolve_installed, system_node, system_version};
 use crate::context::Context;
@@ -24,6 +25,58 @@ struct Selection {
     entries: Vec<Entry>,
     /// Nothing matched: the status is 3, like `nvm.sh`.
     missing: bool,
+}
+
+/// The command line of `nvm ls`, as `nvm.sh` reads it: the first non-empty
+/// word is the pattern, `--no-colors` is accepted (output is always plain).
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Options {
+    pub pattern: Option<String>,
+    pub no_alias: bool,
+}
+
+/// # Errors
+/// - [`CliError::Unsupported`] for an unknown `--option`, and for
+///   `--no-alias` together with a pattern.
+pub fn parse_options(args: &[String]) -> Result<Options, CliError> {
+    let mut options = Options::default();
+    for arg in args {
+        match arg.as_str() {
+            "--" | "--no-colors" => {}
+            "--no-alias" => options.no_alias = true,
+            option if option.starts_with("--") => {
+                let message = format!("Unsupported option \"{option}\".");
+                return Err(CliError::Unsupported(message));
+            }
+            word if options.pattern.is_none() && !word.is_empty() => {
+                options.pattern = Some(word.to_owned());
+            }
+            _ => {}
+        }
+    }
+    if options.pattern.is_some() && options.no_alias {
+        let message = "`--no-alias` is not supported when a pattern is provided.";
+        return Err(CliError::Unsupported(message.to_owned()));
+    }
+    Ok(options)
+}
+
+/// `nvm ls`: the versions, then (without a pattern or `--no-alias`) the
+/// aliases, with the exit status of the versions part.
+///
+/// # Errors
+/// As [`parse_options`], and [`CliError::NvmDirUnresolved`] when `$NVM_DIR`
+/// cannot be found.
+pub fn run_command(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
+    let options = parse_options(args)?;
+    let mut output = run(context, options.pattern.as_deref())?;
+    if options.pattern.is_none() && !options.no_alias {
+        let listed = aliases::list(context, None)?;
+        if !listed.stdout.is_empty() {
+            output.stdout = format!("{}\n{}", output.stdout, listed.stdout);
+        }
+    }
+    Ok(output)
 }
 
 /// # Errors

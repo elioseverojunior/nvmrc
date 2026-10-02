@@ -15,6 +15,9 @@ pub enum NvmExitCode {
     AliasLoop = 8,
     /// `nvm alias lts/<name>` for an alias that does not exist.
     NoSuchAlias = 2,
+    /// An option `nvm.sh` does not support, or one used in a combination it
+    /// does not support.
+    UnsupportedOption = 55,
     /// A usage error, or a requested system version that does not exist.
     NotFound = 127,
 }
@@ -69,6 +72,9 @@ pub enum CliError {
     /// A rejected argument, with the message to print.
     #[error("{0}")]
     InvalidArgument(String),
+    /// An unsupported option, with the message to print.
+    #[error("{0}")]
+    Unsupported(String),
     /// A failed file-system change, naming the path it was made on.
     #[error("{}: {source}", path.display())]
     Io {
@@ -95,6 +101,7 @@ impl CliError {
             | Self::InvalidArgument(_)
             | Self::Io { .. } => NvmExitCode::Failure,
             Self::Usage(_) | Self::SystemNodeNotFound => NvmExitCode::NotFound,
+            Self::Unsupported(_) => NvmExitCode::UnsupportedOption,
             Self::Floor(_) => NvmExitCode::BelowVersionFloor,
             Self::Alias(_) => NvmExitCode::AliasLoop,
         }
@@ -112,6 +119,7 @@ mod tests {
         assert_eq!(NvmExitCode::BelowVersionFloor.code(), 7);
         assert_eq!(NvmExitCode::AliasLoop.code(), 8);
         assert_eq!(NvmExitCode::NoSuchAlias.code(), 2);
+        assert_eq!(NvmExitCode::UnsupportedOption.code(), 55);
         assert_eq!(NvmExitCode::NotFound.code(), 127);
     }
 
@@ -140,6 +148,8 @@ mod tests {
         assert_eq!(usage.exit_code(), NvmExitCode::NotFound);
         let no_system_node = CliError::SystemNodeNotFound;
         assert_eq!(no_system_node.exit_code(), NvmExitCode::NotFound);
+        let unsupported = CliError::Unsupported("x".into());
+        assert_eq!(unsupported.exit_code(), NvmExitCode::UnsupportedOption);
         let invalid = CliError::InvalidArgument("x".into());
         assert_eq!(invalid.exit_code(), NvmExitCode::Failure);
         let source = std::io::Error::from(std::io::ErrorKind::NotFound);

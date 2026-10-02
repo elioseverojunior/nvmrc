@@ -26,13 +26,21 @@ enum Command {
     Version { pattern: Option<String> },
     /// Print the version of the node that is active in this shell.
     Current,
-    /// List the installed versions, optionally only those matching a pattern.
+    /// List the installed versions and the aliases (`--no-alias` omits them;
+    /// a pattern lists only the versions matching it).
     #[command(visible_alias = "list")]
-    Ls { pattern: Option<String> },
+    Ls {
+        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
     /// Print the path to the node binary of a version or alias.
     Which { version: Option<String> },
-    /// Create an alias for a version (an empty target deletes the alias).
-    Alias { name: String, target: String },
+    /// List aliases, show those starting with a name, or create an alias for
+    /// a version (an empty target deletes the alias).
+    Alias {
+        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
     /// Delete an alias.
     Unalias { names: Vec<String> },
 }
@@ -43,9 +51,9 @@ fn dispatch(command: &Command, context: &Context<'_>) -> Result<Output, CliError
             commands::version::run(context, pattern.as_deref().unwrap_or("current"))
         }
         Command::Current => commands::current::run(context),
-        Command::Ls { pattern } => commands::ls::run(context, pattern.as_deref()),
+        Command::Ls { args } => commands::ls::run_command(context, args),
         Command::Which { version } => commands::which::run(context, version.as_deref()),
-        Command::Alias { name, target } => commands::alias::run(context, name, target),
+        Command::Alias { args } => commands::aliases::run(context, args),
         Command::Unalias { names } => commands::unalias::run(context, names),
     }
 }

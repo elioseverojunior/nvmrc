@@ -178,6 +178,66 @@ fn a_system_node_makes_a_system_alias_resolve() {
     assert_eq!(lines(&output), ["sys -> system *"]);
 }
 
+fn words(args: &[&str]) -> Vec<String> {
+    args.iter().map(ToString::to_string).collect()
+}
+
+fn run_words(fs: &FakeFileSystem, args: &[&str]) -> Result<Output, CliError> {
+    let env = FakeEnv::default()
+        .with_var("NVM_DIR", "/n")
+        .with_var("PATH", "/nonexistent");
+    run(&Context::new(fs, &env), &words(args))
+}
+
+#[test]
+fn no_words_list_and_one_word_is_a_prefix() {
+    let fs = fixture();
+    assert_eq!(run_words(&fs, &[]).unwrap(), list_with(&fs, None));
+    assert_eq!(
+        run_words(&fs, &["--no-colors"]).unwrap(),
+        list_with(&fs, None)
+    );
+    assert_eq!(
+        run_words(&fs, &["--", "default"]).unwrap(),
+        list_with(&fs, Some("default"))
+    );
+}
+
+#[test]
+fn two_words_create_the_alias_and_extra_words_are_ignored() {
+    let fs = fixture();
+    let output = run_words(&fs, &["fresh", "stable", "ignored"]).unwrap();
+    assert_eq!(output, Output::stdout("fresh -> stable (-> v20.10.0 *)"));
+    assert_eq!(
+        list_with(&fs, Some("fresh")),
+        Output::stdout("fresh -> stable (-> v20.10.0 *)")
+    );
+}
+
+#[test]
+fn an_explicitly_empty_target_deletes_the_alias() {
+    let fs = fixture();
+    let output = run_words(&fs, &["work", ""]).unwrap();
+    assert!(output.stdout.starts_with("Deleted alias work"));
+}
+
+#[test]
+fn unknown_options_are_exit_55() {
+    let error = run_words(&fixture(), &["--bogus"]).unwrap_err();
+    assert_eq!(error.to_string(), "Unsupported option \"--bogus\".");
+    assert_eq!(error.exit_code(), NvmExitCode::UnsupportedOption);
+}
+
+#[test]
+fn a_comment_delimiter_in_the_name_is_rejected_even_without_a_target() {
+    let error = run_words(&fixture(), &["a#b"]).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Aliases with a comment delimiter (#) are not supported."
+    );
+    assert_eq!(error.exit_code(), NvmExitCode::Failure);
+}
+
 #[test]
 fn hidden_files_and_directories_are_not_aliases() {
     let fs = fixture()
