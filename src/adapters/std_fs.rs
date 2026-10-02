@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use crate::ports::FileSystem;
+use crate::ports::{DirEntry, FileSystem};
 
 pub struct StdFileSystem;
 
@@ -11,9 +11,15 @@ impl FileSystem for StdFileSystem {
         fs::read_to_string(path)
     }
 
-    fn read_dir_names(&self, path: &Path) -> io::Result<Vec<String>> {
+    fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>> {
         fs::read_dir(path)?
-            .map(|entry| entry.map(|entry| entry.file_name().to_string_lossy().into_owned()))
+            .map(|entry| {
+                let entry = entry?;
+                Ok(DirEntry {
+                    name: entry.file_name().to_string_lossy().into_owned(),
+                    is_dir: entry.path().is_dir(),
+                })
+            })
             .collect()
     }
 

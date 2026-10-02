@@ -1,20 +1,29 @@
 //! In-memory implementations of the ports, for unit tests only.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::ports::{Env, FileSystem};
+use crate::ports::{DirEntry, Env, FileSystem};
 
 #[derive(Default)]
 pub struct FakeFileSystem {
     files: BTreeMap<PathBuf, String>,
+    dirs: BTreeSet<PathBuf>,
 }
 
 impl FakeFileSystem {
     #[must_use]
     pub fn with_file(mut self, path: &str, contents: &str) -> Self {
         self.files.insert(PathBuf::from(path), contents.to_owned());
+        self
+    }
+
+    /// An explicit, possibly empty, directory. Parents of files exist already.
+    #[must_use]
+    pub fn with_dir(mut self, path: &str) -> Self {
+        self.dirs.insert(PathBuf::from(path));
         self
     }
 }
@@ -27,18 +36,30 @@ impl FileSystem for FakeFileSystem {
             .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
     }
 
-    fn read_dir_names(&self, path: &Path) -> io::Result<Vec<String>> {
-        let names: BTreeSet<String> = self
-            .files
-            .keys()
-            .filter_map(|file| file.strip_prefix(path).ok())
-            .filter_map(|rest| rest.components().next())
-            .map(|part| part.as_os_str().to_string_lossy().into_owned())
-            .collect();
-        if names.is_empty() {
+    fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>> {
+        let mut children: BTreeMap<String, bool> = BTreeMap::new();
+        let mut exists = self.dirs.contains(path);
+        let files = self.files.keys().map(|file| (file, false));
+        let dirs = self.dirs.iter().map(|dir| (dir, true));
+        for (candidate, is_dir_path) in files.chain(dirs) {
+            let Ok(rest) = candidate.strip_prefix(path) else {
+                continue;
+            };
+            let mut parts = rest.components();
+            let Some(first) = parts.next() else {
+                continue;
+            };
+            exists = true;
+            let name = first.as_os_str().to_string_lossy().into_owned();
+            *children.entry(name).or_insert(false) |= is_dir_path || parts.next().is_some();
+        }
+        if !exists {
             return Err(io::Error::from(io::ErrorKind::NotFound));
         }
-        Ok(names.into_iter().collect())
+        Ok(children
+            .into_iter()
+            .map(|(name, is_dir)| DirEntry { name, is_dir })
+            .collect())
     }
 
     fn is_file(&self, path: &Path) -> bool {
@@ -48,19 +69,30 @@ impl FileSystem for FakeFileSystem {
 
 #[derive(Default)]
 pub struct FakeEnv {
-    vars: BTreeMap<String, String>,
+    vars: BTreeMap<String, OsString>,
 }
 
 impl FakeEnv {
     #[must_use]
-    pub fn with_var(mut self, key: &str, value: &str) -> Self {
-        self.vars.insert(key.to_owned(), value.to_owned());
+    pub fn with_var(self, key: &str, value: &str) -> Self {
+        self.with_var_os(key, OsString::from(value))
+    }
+
+    #[must_use]
+    pub fn with_var_os(mut self, key: &str, value: OsString) -> Self {
+        self.vars.insert(key.to_owned(), value);
         self
     }
 }
 
 impl Env for FakeEnv {
     fn var(&self, key: &str) -> Option<String> {
+        self.vars
+            .get(key)
+            .and_then(|value| value.to_str().map(str::to_owned))
+    }
+
+    fn var_os(&self, key: &str) -> Option<OsString> {
         self.vars.get(key).cloned()
     }
 }
@@ -69,29 +101,66 @@ impl Env for FakeEnv {
 mod tests {
     use super::*;
 
+    fn entry(name: &str, is_dir: bool) -> DirEntry {
+        DirEntry {
+            name: name.to_owned(),
+            is_dir,
+        }
+    }
+
     #[test]
-    fn fake_file_system_lists_direct_children_only() {
+    fn fake_file_system_lists_direct_children_with_their_kind() {
         let fs = FakeFileSystem::default()
             .with_file("/d/a/x", "1")
             .with_file("/d/a/y", "2")
             .with_file("/d/b", "3");
-        assert_eq!(fs.read_dir_names(Path::new("/d")).unwrap(), ["a", "b"]);
-        assert_eq!(fs.read_dir_names(Path::new("/d/a")).unwrap(), ["x", "y"]);
-        assert!(fs.read_dir_names(Path::new("/missing")).is_err());
+        let root = fs.read_dir(Path::new("/d")).unwrap();
+        assert_eq!(root, [entry("a", true), entry("b", false)]);
+        let nested = fs.read_dir(Path::new("/d/a")).unwrap();
+        assert_eq!(nested, [entry("x", false), entry("y", false)]);
     }
 
     #[test]
-    fn fake_env_returns_the_variables_it_was_given() {
-        let env = FakeEnv::default().with_var("HOME", "/home/me");
-        assert_eq!(env.var("HOME"), Some("/home/me".to_owned()));
-        assert_eq!(env.var("MISSING"), None);
+    fn fake_file_system_models_empty_directories() {
+        let fs = FakeFileSystem::default().with_dir("/d/empty");
+        assert_eq!(fs.read_dir(Path::new("/d/empty")).unwrap(), []);
+        assert_eq!(
+            fs.read_dir(Path::new("/d")).unwrap(),
+            [entry("empty", true)]
+        );
+    }
+
+    #[test]
+    fn fake_file_system_fails_on_missing_paths_and_on_files() {
+        let fs = FakeFileSystem::default().with_file("/d/f", "x");
+        assert!(fs.read_dir(Path::new("/missing")).is_err());
+        assert!(fs.read_dir(Path::new("/d/f")).is_err());
     }
 
     #[test]
     fn fake_file_system_reads_files() {
         let fs = FakeFileSystem::default().with_file("/f", "hi");
         assert_eq!(fs.read_to_string(Path::new("/f")).unwrap(), "hi");
+        assert!(fs.read_to_string(Path::new("/g")).is_err());
         assert!(fs.is_file(Path::new("/f")));
         assert!(!fs.is_file(Path::new("/g")));
+    }
+
+    #[test]
+    fn fake_env_returns_the_variables_it_was_given() {
+        let env = FakeEnv::default().with_var("HOME", "/home/me");
+        assert_eq!(env.var("HOME"), Some("/home/me".to_owned()));
+        assert_eq!(env.var_os("HOME"), Some(OsString::from("/home/me")));
+        assert_eq!(env.var("MISSING"), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fake_env_keeps_non_utf8_values_for_var_os_only() {
+        use std::os::unix::ffi::OsStringExt;
+        let raw = OsString::from_vec(b"/n\xff".to_vec());
+        let env = FakeEnv::default().with_var_os("NVM_DIR", raw.clone());
+        assert_eq!(env.var("NVM_DIR"), None);
+        assert_eq!(env.var_os("NVM_DIR"), Some(raw));
     }
 }

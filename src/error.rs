@@ -49,6 +49,8 @@ pub enum CliError {
     Alias(#[from] AliasError),
     #[error("N/A")]
     NotInstalled,
+    #[error("Neither NVM_DIR nor HOME is set; cannot locate the nvm directory.")]
+    NvmDirUnresolved,
 }
 
 impl CliError {
@@ -56,6 +58,7 @@ impl CliError {
     pub fn exit_code(&self) -> NvmExitCode {
         match self {
             Self::Version(_) | Self::NotInstalled => NvmExitCode::InvalidVersion,
+            Self::NvmDirUnresolved => NvmExitCode::Failure,
             Self::Floor(_) => NvmExitCode::BelowVersionFloor,
             Self::Alias(_) => NvmExitCode::AliasLoop,
         }
@@ -92,5 +95,6 @@ mod tests {
             CliError::NotInstalled.exit_code(),
             NvmExitCode::InvalidVersion
         );
+        assert_eq!(CliError::NvmDirUnresolved.exit_code(), NvmExitCode::Failure);
     }
 }

@@ -11,10 +11,10 @@ use crate::error::CliError;
 /// - [`CliError::NotInstalled`] when no installed version matches, or the
 ///   resolved name is not a version pattern (as in `nvm.sh`, which prints `N/A`).
 pub fn run(context: &Context<'_>, name: &str) -> Result<String, CliError> {
-    let store = FsAliasStore::new(context.fs, &context.nvm_dir());
+    let store = FsAliasStore::new(context.fs, &context.nvm_dir()?);
     let resolved = alias::resolve(&store, name)?;
     let pattern: VersionPattern = resolved.parse().map_err(|_| CliError::NotInstalled)?;
-    let installed = context.installed_versions();
+    let installed = context.installed_versions()?;
     pattern
         .highest_match(&installed)
         .map(ToString::to_string)
