@@ -17,7 +17,10 @@ impl Context<'_> {
         let configured = self.env.var("NVM_DIR").filter(|dir| !dir.is_empty());
         let dir = configured
             .unwrap_or_else(|| format!("{}/.nvm", self.env.var("HOME").unwrap_or_default()));
-        PathBuf::from(dir.trim_end_matches('/'))
+        match dir.trim_end_matches('/') {
+            "" => PathBuf::from("/"),
+            trimmed => PathBuf::from(trimmed),
+        }
     }
 
     /// Every version found under `versions/node` and `versions/io.js`.
@@ -56,6 +59,16 @@ mod tests {
         );
         let context = Context { fs: &fs, env: &env };
         assert_eq!(context.nvm_dir(), PathBuf::from("/n"));
+    }
+
+    #[test]
+    fn nvm_dir_keeps_the_root_directory() {
+        let (fs, env) = (
+            FakeFileSystem::default(),
+            FakeEnv::default().with_var("NVM_DIR", "/"),
+        );
+        let context = Context { fs: &fs, env: &env };
+        assert_eq!(context.nvm_dir(), PathBuf::from("/"));
     }
 
     #[test]

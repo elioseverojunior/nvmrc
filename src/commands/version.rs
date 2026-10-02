@@ -8,12 +8,12 @@ use crate::error::CliError;
 
 /// # Errors
 /// - [`CliError::Alias`] when the alias chain loops.
-/// - [`CliError::Version`] when the resolved name is not a version pattern.
-/// - [`CliError::NotInstalled`] when no installed version matches.
+/// - [`CliError::NotInstalled`] when no installed version matches, or the
+///   resolved name is not a version pattern (as in `nvm.sh`, which prints `N/A`).
 pub fn run(context: &Context<'_>, name: &str) -> Result<String, CliError> {
     let store = FsAliasStore::new(context.fs, &context.nvm_dir());
     let resolved = alias::resolve(&store, name)?;
-    let pattern: VersionPattern = resolved.parse()?;
+    let pattern: VersionPattern = resolved.parse().map_err(|_| CliError::NotInstalled)?;
     let installed = context.installed_versions();
     pattern
         .highest_match(&installed)
@@ -54,6 +54,13 @@ mod tests {
     fn a_missing_version_is_not_installed_with_exit_code_3() {
         let error = run_with(&installed(), "16").unwrap_err();
         assert_eq!(error.to_string(), "N/A");
+        assert_eq!(error.exit_code(), NvmExitCode::InvalidVersion);
+    }
+
+    #[test]
+    fn a_name_that_is_not_a_version_is_not_installed() {
+        let error = run_with(&installed(), "foo").unwrap_err();
+        assert!(matches!(error, CliError::NotInstalled));
         assert_eq!(error.exit_code(), NvmExitCode::InvalidVersion);
     }
 

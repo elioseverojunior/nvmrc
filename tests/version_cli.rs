@@ -24,5 +24,11 @@ fn version_resolves_installed_versions_and_aliases() {
 
     let missing = nvm(dir.path(), &["version", "16"]);
     assert_eq!(missing.status.code(), Some(3));
-    assert_eq!(String::from_utf8_lossy(&missing.stderr), "N/A\n");
+    assert_eq!(String::from_utf8_lossy(&missing.stdout), "N/A\n");
+    assert!(missing.stderr.is_empty());
+
+    let not_a_version = nvm(dir.path(), &["version", "foo"]);
+    assert_eq!(not_a_version.status.code(), Some(3));
+    assert_eq!(String::from_utf8_lossy(&not_a_version.stdout), "N/A\n");
+    assert!(not_a_version.stderr.is_empty());
 }

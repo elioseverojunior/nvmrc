@@ -30,6 +30,19 @@ fn dispatch(command: &Command, context: &Context<'_>) -> Result<String, CliError
     }
 }
 
+/// Writes `text` and flushes, so a closed or full stream is noticed.
+fn emit(stream: &mut dyn Write, text: &str) -> std::io::Result<()> {
+    stream.write_all(text.as_bytes())?;
+    stream.flush()
+}
+
+fn exit_code_for_write(result: std::io::Result<()>, success: NvmExitCode) -> u8 {
+    match result {
+        Ok(()) => success.code(),
+        Err(_) => NvmExitCode::Failure.code(),
+    }
+}
+
 /// Runs the CLI and returns the process exit code. Output goes to the given
 /// writers so tests can capture it.
 pub fn run<I, T>(args: I, context: &Context<'_>, out: &mut dyn Write, err: &mut dyn Write) -> u8
@@ -39,22 +52,23 @@ where
 {
     let cli = match Cli::try_parse_from(args) {
         Ok(cli) => cli,
+        Err(error) if error.use_stderr() => {
+            // Nowhere left to report a failed stderr write.
+            let _ = emit(err, &error.to_string());
+            return NvmExitCode::Failure.code();
+        }
         Err(error) => {
-            if error.use_stderr() {
-                let _ = write!(err, "{error}");
-                return NvmExitCode::Failure.code();
-            }
-            let _ = write!(out, "{error}");
-            return NvmExitCode::Success.code();
+            return exit_code_for_write(emit(out, &error.to_string()), NvmExitCode::Success);
         }
     };
     match dispatch(&cli.command, context) {
-        Ok(text) => {
-            let _ = writeln!(out, "{text}");
-            NvmExitCode::Success.code()
+        Ok(text) => exit_code_for_write(emit(out, &format!("{text}\n")), NvmExitCode::Success),
+        // nvm.sh prints N/A on stdout, not stderr.
+        Err(error @ CliError::NotInstalled) => {
+            exit_code_for_write(emit(out, &format!("{error}\n")), error.exit_code())
         }
         Err(error) => {
-            let _ = writeln!(err, "{error}");
+            let _ = emit(err, &format!("{error}\n"));
             error.exit_code().code()
         }
     }
@@ -101,11 +115,73 @@ mod tests {
     }
 
     #[test]
-    fn version_reports_not_installed_on_stderr_with_exit_3() {
+    fn version_reports_not_installed_on_stdout_with_exit_3() {
         assert_eq!(
             run_cli(&["nvm", "version", "16"]),
-            (3, String::new(), "N/A\n".into())
+            (3, "N/A\n".into(), String::new())
         );
+    }
+
+    #[test]
+    fn version_of_a_non_version_name_is_na_on_stdout_with_exit_3() {
+        assert_eq!(
+            run_cli(&["nvm", "version", "foo"]),
+            (3, "N/A\n".into(), String::new())
+        );
+    }
+
+    #[test]
+    fn an_alias_loop_is_reported_on_stderr_with_exit_8() {
+        let fs = FakeFileSystem::default()
+            .with_file("/n/alias/a", "b")
+            .with_file("/n/alias/b", "a");
+        let env = FakeEnv::default().with_var("NVM_DIR", "/n");
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let args = ["nvm", "version", "a"];
+        let code = run(args, &Context { fs: &fs, env: &env }, &mut out, &mut err);
+        assert_eq!(code, 8);
+        assert!(out.is_empty() && !err.is_empty());
+    }
+
+    struct BrokenPipe;
+
+    impl Write for BrokenPipe {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+        }
+    }
+
+    #[test]
+    fn a_failed_stdout_write_exits_1() {
+        let fs = FakeFileSystem::default().with_file("/n/versions/node/v20.1.0/bin/node", "");
+        let env = FakeEnv::default().with_var("NVM_DIR", "/n");
+        let mut err = Vec::new();
+        let args = ["nvm", "version", "20"];
+        let code = run(
+            args,
+            &Context { fs: &fs, env: &env },
+            &mut BrokenPipe,
+            &mut err,
+        );
+        assert_eq!(code, 1);
+    }
+
+    #[test]
+    fn a_failed_stderr_write_does_not_panic() {
+        let fs = FakeFileSystem::default();
+        let env = FakeEnv::default().with_var("NVM_DIR", "/n");
+        let mut out = Vec::new();
+        let args = ["nvm", "version", "a=b"];
+        let code = run(
+            args,
+            &Context { fs: &fs, env: &env },
+            &mut out,
+            &mut BrokenPipe,
+        );
+        assert_ne!(code, 0);
     }
 
     #[test]
