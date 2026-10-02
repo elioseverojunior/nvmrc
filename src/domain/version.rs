@@ -1,5 +1,6 @@
 //! Node and io.js versions, and partial patterns such as `20` or `v20.1`.
 
+use std::cmp::Ordering;
 use std::fmt;
 use std::str::FromStr;
 
@@ -11,8 +12,9 @@ pub enum Flavor {
     IoJs,
 }
 
-/// A fully specified version. Ordering is by flavor, then numerically.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+/// A fully specified version. Ordering is numeric, with the flavor only
+/// breaking ties, so `iojs-v3.0.0` sorts between `v2.9.0` and `v4.0.0`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Version {
     pub flavor: Flavor,
     pub major: u64,
@@ -21,19 +23,21 @@ pub struct Version {
 }
 
 /// A version with optional minor and patch, used to select installed versions.
+/// Without an `iojs-` prefix the flavor is `None` and the pattern matches both
+/// flavors, as in `nvm.sh` (`nvm ls 3` lists `iojs-v3.0.0`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VersionPattern {
-    pub flavor: Flavor,
+    pub flavor: Option<Flavor>,
     pub major: u64,
     pub minor: Option<u64>,
     pub patch: Option<u64>,
 }
 
-fn parse_parts(input: &str) -> Result<(Flavor, Vec<u64>), VersionError> {
+fn parse_parts(input: &str) -> Result<(Option<Flavor>, Vec<u64>), VersionError> {
     let invalid = || VersionError::Invalid(input.to_owned());
     let (flavor, rest) = match input.strip_prefix("iojs-") {
-        Some(rest) => (Flavor::IoJs, rest),
-        None => (Flavor::Node, input),
+        Some(rest) => (Some(Flavor::IoJs), rest),
+        None => (None, input),
     };
     let rest = rest.strip_prefix('v').unwrap_or(rest);
     let parts = rest
@@ -57,7 +61,7 @@ impl FromStr for Version {
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         match parse_parts(input)? {
             (flavor, parts) if parts.len() == 3 => Ok(Self {
-                flavor,
+                flavor: flavor.unwrap_or(Flavor::Node),
                 major: parts[0],
                 minor: parts[1],
                 patch: parts[2],
@@ -116,10 +120,24 @@ impl Version {
     }
 }
 
+impl Ord for Version {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.triple()
+            .cmp(&other.triple())
+            .then(self.flavor.cmp(&other.flavor))
+    }
+}
+
+impl PartialOrd for Version {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl VersionPattern {
     #[must_use]
     pub fn matches(&self, version: &Version) -> bool {
-        version.flavor == self.flavor
+        self.flavor.is_none_or(|flavor| flavor == version.flavor)
             && version.major == self.major
             && self.minor.is_none_or(|minor| minor == version.minor)
             && self.patch.is_none_or(|patch| patch == version.patch)
@@ -129,7 +147,7 @@ impl VersionPattern {
     #[must_use]
     pub fn lowest(&self) -> Version {
         Version {
-            flavor: self.flavor,
+            flavor: self.flavor.unwrap_or(Flavor::Node),
             major: self.major,
             minor: self.minor.unwrap_or(0),
             patch: self.patch.unwrap_or(0),
@@ -221,8 +239,30 @@ mod tests {
     }
 
     #[test]
-    fn pattern_does_not_match_across_flavors() {
+    fn a_plain_pattern_matches_both_flavors() {
         let pattern: VersionPattern = "3".parse().unwrap();
-        assert!(!pattern.matches(&version("iojs-v3.0.0")));
+        assert!(pattern.matches(&version("iojs-v3.0.0")));
+        assert!(pattern.matches(&version("v3.1.0")));
+    }
+
+    #[test]
+    fn an_iojs_pattern_only_matches_iojs() {
+        let pattern: VersionPattern = "iojs-3".parse().unwrap();
+        assert!(pattern.matches(&version("iojs-v3.0.0")));
+        assert!(!pattern.matches(&version("v3.1.0")));
+        assert_eq!(pattern.flavor, Some(Flavor::IoJs));
+    }
+
+    #[test]
+    fn iojs_sorts_among_node_versions_by_number() {
+        let mut versions = [version("v4.0.0"), version("iojs-v3.0.0"), version("v2.9.0")];
+        versions.sort();
+        let sorted: Vec<String> = versions.iter().map(ToString::to_string).collect();
+        assert_eq!(sorted, ["v2.9.0", "iojs-v3.0.0", "v4.0.0"]);
+    }
+
+    #[test]
+    fn equal_numbers_are_ordered_node_before_iojs() {
+        assert!(version("v3.0.0") < version("iojs-v3.0.0"));
     }
 }
