@@ -1,7 +1,7 @@
 //! `nvm version <pattern>`: the highest installed version matching a pattern.
 
-use crate::commands::Output;
 use crate::commands::resolve::{Resolved, resolve_installed};
+use crate::commands::{Output, current};
 use crate::context::Context;
 use crate::error::CliError;
 
@@ -10,6 +10,9 @@ use crate::error::CliError;
 /// - [`CliError::NotInstalled`] when no installed version matches, or the
 ///   resolved name is not a version pattern (as in `nvm.sh`, which prints `N/A`).
 pub fn run(context: &Context<'_>, name: &str) -> Result<Output, CliError> {
+    if name == "current" {
+        return current::run(context);
+    }
     match resolve_installed(context, name)? {
         Resolved::Installed(version) => Ok(Output::stdout(version.to_string())),
         Resolved::Missing { .. } => Err(CliError::NotInstalled),
@@ -37,6 +40,16 @@ mod tests {
     fn prints_the_highest_installed_version() {
         let output = run_with(&installed(), "20").unwrap();
         assert_eq!(output, Output::stdout("v20.10.0"));
+    }
+
+    #[test]
+    fn current_is_the_version_of_the_active_node() {
+        let fs = installed().with_file("/usr/bin/node", "");
+        let env = FakeEnv::default()
+            .with_var("NVM_DIR", "/n")
+            .with_var("PATH", "/n/versions/node/v20.1.0/bin:/usr/bin");
+        let output = run(&Context { fs: &fs, env: &env }, "current").unwrap();
+        assert_eq!(output, Output::stdout("v20.1.0"));
     }
 
     #[test]

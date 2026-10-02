@@ -20,13 +20,19 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Print the highest installed version matching a version or alias.
-    Version { pattern: String },
+    /// Print the highest installed version matching a version or alias
+    /// (the current version when no argument is given).
+    Version { pattern: Option<String> },
+    /// Print the version of the node that is active in this shell.
+    Current,
 }
 
 fn dispatch(command: &Command, context: &Context<'_>) -> Result<Output, CliError> {
     match command {
-        Command::Version { pattern } => commands::version::run(context, pattern),
+        Command::Version { pattern } => {
+            commands::version::run(context, pattern.as_deref().unwrap_or("current"))
+        }
+        Command::Current => commands::current::run(context),
     }
 }
 
@@ -127,6 +133,30 @@ mod tests {
         assert_eq!(
             run_cli(&["nvm", "version", "20"]),
             (0, "v20.1.0\n".into(), String::new())
+        );
+    }
+
+    #[test]
+    fn current_prints_the_active_version() {
+        let fs = FakeFileSystem::default().with_file("/n/versions/node/v20.1.0/bin/node", "");
+        let env = FakeEnv::default()
+            .with_var("NVM_DIR", "/n")
+            .with_var("PATH", "/n/versions/node/v20.1.0/bin");
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let code = run(
+            ["nvm", "current"],
+            &Context { fs: &fs, env: &env },
+            &mut out,
+            &mut err,
+        );
+        assert_eq!((code, out, err), (0, b"v20.1.0\n".to_vec(), Vec::new()));
+    }
+
+    #[test]
+    fn version_without_an_argument_means_current() {
+        assert_eq!(
+            run_cli(&["nvm", "version"]),
+            (0, "none\n".into(), String::new())
         );
     }
 
