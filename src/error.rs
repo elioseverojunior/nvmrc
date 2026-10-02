@@ -13,6 +13,8 @@ pub enum NvmExitCode {
     InvalidVersion = 3,
     BelowVersionFloor = 7,
     AliasLoop = 8,
+    /// `nvm alias lts/<name>` for an alias that does not exist.
+    NoSuchAlias = 2,
     /// A usage error, or a requested system version that does not exist.
     NotFound = 127,
 }
@@ -109,6 +111,7 @@ mod tests {
         assert_eq!(NvmExitCode::InvalidVersion.code(), 3);
         assert_eq!(NvmExitCode::BelowVersionFloor.code(), 7);
         assert_eq!(NvmExitCode::AliasLoop.code(), 8);
+        assert_eq!(NvmExitCode::NoSuchAlias.code(), 2);
         assert_eq!(NvmExitCode::NotFound.code(), 127);
     }
 

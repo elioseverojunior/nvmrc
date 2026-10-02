@@ -7,6 +7,7 @@
 use crate::commands::resolve::{Shown, shown};
 use crate::commands::{Output, unalias};
 use crate::context::Context;
+use crate::domain::alias_format::format_line;
 use crate::error::CliError;
 
 /// # Errors
@@ -31,7 +32,14 @@ pub fn run(context: &Context<'_>, name: &str, target: &str) -> Result<Output, Cl
         .fs
         .write_file(&alias_file, &format!("{target}\n"))
         .map_err(|source| CliError::io(&alias_file, source))?;
-    let output = Output::stdout(format_line(name, target, &version));
+    let line = format_line(
+        name,
+        target,
+        &version.to_string(),
+        version.is_available(),
+        false,
+    );
+    let output = Output::stdout(line);
     if version == Shown::NotAvailable {
         return Ok(output.with_stderr(format!("! WARNING: Version '{target}' does not exist.")));
     }
@@ -49,16 +57,6 @@ fn validate_name(name: &str) -> Result<(), CliError> {
         return Ok(());
     };
     Err(CliError::InvalidArgument(message))
-}
-
-fn format_line(alias: &str, target: &str, shown: &Shown) -> String {
-    let version = shown.to_string();
-    let marker = if shown.is_available() { " *" } else { "" };
-    if target == version {
-        format!("{alias} -> {version}{marker}")
-    } else {
-        format!("{alias} -> {target} (-> {version}{marker})")
-    }
 }
 
 #[cfg(test)]

@@ -1,4 +1,5 @@
 pub mod alias;
+pub mod aliases;
 pub mod current;
 pub mod ls;
 pub mod resolve;
