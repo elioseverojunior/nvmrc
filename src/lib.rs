@@ -7,6 +7,7 @@ pub mod context;
 pub mod domain;
 pub mod error;
 pub mod ports;
+pub mod shell;
 
 #[cfg(test)]
 pub(crate) mod fakes;
