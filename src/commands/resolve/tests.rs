@@ -62,6 +62,28 @@ fn the_system_version_is_what_node_prints() {
 }
 
 #[test]
+fn the_system_version_is_none_unless_node_prints_a_version() {
+    let not_versions = [
+        "",
+        "\n",
+        "v",
+        "v22",
+        "22.1.0",
+        "v22..0",
+        "v22.1.0\nv20.0.0\n",
+        "hello\n",
+        "\u{1b}[31mv22.1.0\u{1b}[0m\n",
+        "v22.1.0-rc.1",
+    ];
+    for printed in not_versions {
+        let process = FakeProcess::default().with_output("/usr/bin/node", printed);
+        assert_eq!(version_of_system_node(&process), None, "{printed:?}");
+    }
+    let padded = FakeProcess::default().with_output("/usr/bin/node", "  v22.1.0 \n");
+    assert_eq!(version_of_system_node(&padded), Some("v22.1.0".to_owned()));
+}
+
+#[test]
 fn the_system_version_is_none_when_node_fails_or_cannot_run() {
     let failing = FakeProcess::default().with_failure("/usr/bin/node");
     assert_eq!(version_of_system_node(&failing), None);

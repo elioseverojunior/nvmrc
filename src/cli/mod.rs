@@ -122,7 +122,8 @@ fn finish(output: &Output, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
 /// Entry point shared by the `nvmrc` and `nvm` binaries.
 #[must_use]
 pub fn run_from_env() -> u8 {
-    let context = Context::new(&StdFileSystem, &StdEnv).with_process(&StdProcess);
+    let process = StdProcess::default();
+    let context = Context::new(&StdFileSystem, &StdEnv).with_process(&process);
     run(
         std::env::args_os(),
         &context,

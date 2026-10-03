@@ -60,7 +60,8 @@ pub fn system_node(context: &Context<'_>) -> Result<Option<PathBuf>, CliError> {
 }
 
 /// The version the system `node` reports, or `None` when there is no system
-/// `node` or it does not answer `--version`.
+/// `node`, it does not answer `--version`, or what it prints is not a version
+/// such as `v22.1.0` (the text goes into `nvm ls` rows unescaped).
 ///
 /// # Errors
 /// Returns [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
@@ -74,8 +75,13 @@ pub fn system_version(context: &Context<'_>) -> Result<Option<String>, CliError>
         .ok()
         .filter(|output| output.success)
         .map(|output| output.stdout.trim().to_owned())
-        .filter(|version| !version.is_empty());
+        .filter(|printed| is_node_version(printed));
     Ok(version)
+}
+
+/// `v` and three dot-separated numbers, as `node --version` prints.
+fn is_node_version(text: &str) -> bool {
+    text.starts_with('v') && text.parse::<Version>().is_ok()
 }
 
 /// `node`, `stable`, `unstable` and `iojs` are implicit aliases for the latest
