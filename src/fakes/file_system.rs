@@ -1,12 +1,9 @@
-//! In-memory implementations of the ports, for unit tests only.
-
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::ports::{DirEntry, Env, FileSystem, Process, ProcessOutput};
+use crate::ports::{DirEntry, FileSystem};
 
 #[derive(Default)]
 pub struct FakeFileSystem {
@@ -93,73 +90,6 @@ impl FileSystem for FakeFileSystem {
     }
 }
 
-/// Programs by path: each prints a fixed output, or fails when it has none.
-#[derive(Default)]
-pub struct FakeProcess {
-    outputs: BTreeMap<PathBuf, ProcessOutput>,
-}
-
-impl FakeProcess {
-    #[must_use]
-    pub fn with_output(mut self, program: &str, stdout: &str) -> Self {
-        let output = ProcessOutput {
-            success: true,
-            stdout: stdout.to_owned(),
-        };
-        self.outputs.insert(PathBuf::from(program), output);
-        self
-    }
-
-    #[must_use]
-    pub fn with_failure(mut self, program: &str) -> Self {
-        let output = ProcessOutput {
-            success: false,
-            stdout: String::new(),
-        };
-        self.outputs.insert(PathBuf::from(program), output);
-        self
-    }
-}
-
-impl Process for FakeProcess {
-    fn run(&self, program: &Path, _args: &[&str]) -> io::Result<ProcessOutput> {
-        self.outputs
-            .get(program)
-            .cloned()
-            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
-    }
-}
-
-#[derive(Default)]
-pub struct FakeEnv {
-    vars: BTreeMap<String, OsString>,
-}
-
-impl FakeEnv {
-    #[must_use]
-    pub fn with_var(self, key: &str, value: &str) -> Self {
-        self.with_var_os(key, OsString::from(value))
-    }
-
-    #[must_use]
-    pub fn with_var_os(mut self, key: &str, value: OsString) -> Self {
-        self.vars.insert(key.to_owned(), value);
-        self
-    }
-}
-
-impl Env for FakeEnv {
-    fn var(&self, key: &str) -> Option<String> {
-        self.vars
-            .get(key)
-            .and_then(|value| value.to_str().map(str::to_owned))
-    }
-
-    fn var_os(&self, key: &str) -> Option<OsString> {
-        self.vars.get(key).cloned()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,37 +161,5 @@ mod tests {
         fs.create_dir_all(Path::new("/d/e")).unwrap();
         fs.create_dir_all(Path::new("/d/e")).unwrap();
         assert_eq!(fs.read_dir(Path::new("/d/e")).unwrap(), []);
-    }
-
-    #[test]
-    fn fake_process_answers_by_program_path() {
-        let process = FakeProcess::default()
-            .with_output("/usr/bin/node", "v22.1.0\n")
-            .with_failure("/usr/bin/broken");
-        let ok = process
-            .run(Path::new("/usr/bin/node"), &["--version"])
-            .unwrap();
-        assert_eq!((ok.success, ok.stdout.as_str()), (true, "v22.1.0\n"));
-        let failed = process.run(Path::new("/usr/bin/broken"), &[]).unwrap();
-        assert!(!failed.success);
-        assert!(process.run(Path::new("/missing"), &[]).is_err());
-    }
-
-    #[test]
-    fn fake_env_returns_the_variables_it_was_given() {
-        let env = FakeEnv::default().with_var("HOME", "/home/me");
-        assert_eq!(env.var("HOME"), Some("/home/me".to_owned()));
-        assert_eq!(env.var_os("HOME"), Some(OsString::from("/home/me")));
-        assert_eq!(env.var("MISSING"), None);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn fake_env_keeps_non_utf8_values_for_var_os_only() {
-        use std::os::unix::ffi::OsStringExt;
-        let raw = OsString::from_vec(b"/n\xff".to_vec());
-        let env = FakeEnv::default().with_var_os("NVM_DIR", raw.clone());
-        assert_eq!(env.var("NVM_DIR"), None);
-        assert_eq!(env.var_os("NVM_DIR"), Some(raw));
     }
 }

@@ -4,6 +4,8 @@ use std::ffi::OsString;
 use std::io;
 use std::path::Path;
 
+use thiserror::Error;
+
 /// A direct child of a directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirEntry {
@@ -55,6 +57,24 @@ pub trait Process {
     /// # Errors
     /// Fails when the program cannot be started.
     fn run(&self, program: &Path, args: &[&str]) -> io::Result<ProcessOutput>;
+}
+
+/// Why a download failed.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum HttpError {
+    #[error("{url}: HTTP {code}")]
+    Status { url: String, code: u16 },
+    #[error("{url}: {message}")]
+    Transport { url: String, message: String },
+}
+
+pub trait Http {
+    /// Fetches `url` and returns the body as text.
+    ///
+    /// # Errors
+    /// Fails on a non-success status, on a network error, or when the body is
+    /// not text.
+    fn get_text(&self, url: &str) -> Result<String, HttpError>;
 }
 
 pub trait Env {

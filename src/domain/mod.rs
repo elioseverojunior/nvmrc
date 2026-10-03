@@ -2,6 +2,7 @@ pub mod alias;
 pub mod alias_format;
 pub mod current;
 pub mod floor;
+pub mod http_header;
 pub mod implicit;
 pub mod listing;
 pub mod nvmrc;

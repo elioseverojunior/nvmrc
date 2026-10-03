@@ -3,26 +3,30 @@
 use std::path::{Path, PathBuf};
 
 use crate::adapters::fs_alias_store::FsAliasStore;
+use crate::adapters::no_http::NoHttp;
 use crate::adapters::no_process::NoProcess;
 use crate::domain::alias::AliasStore;
 use crate::domain::version::Version;
 use crate::error::CliError;
-use crate::ports::{Env, FileSystem, Process};
+use crate::ports::{Env, FileSystem, Http, Process};
 
 pub struct Context<'a> {
     pub fs: &'a dyn FileSystem,
     pub env: &'a dyn Env,
     process: &'a dyn Process,
+    http: &'a dyn Http,
 }
 
 impl<'a> Context<'a> {
-    /// A context that cannot run programs; add that with [`Self::with_process`].
+    /// A context that cannot run programs or reach the network; add those with
+    /// [`Self::with_process`] and [`Self::with_http`].
     #[must_use]
     pub fn new(fs: &'a dyn FileSystem, env: &'a dyn Env) -> Self {
         Self {
             fs,
             env,
             process: &NoProcess,
+            http: &NoHttp,
         }
     }
 
@@ -35,6 +39,17 @@ impl<'a> Context<'a> {
     #[must_use]
     pub fn process(&self) -> &dyn Process {
         self.process
+    }
+
+    #[must_use]
+    pub fn with_http(mut self, http: &'a dyn Http) -> Self {
+        self.http = http;
+        self
+    }
+
+    #[must_use]
+    pub fn http(&self) -> &dyn Http {
+        self.http
     }
 }
 
@@ -106,7 +121,7 @@ impl Context<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fakes::{FakeEnv, FakeFileSystem};
+    use crate::fakes::{FakeEnv, FakeFileSystem, FakeHttp};
 
     fn nvm_dir_for(env: &FakeEnv) -> Result<PathBuf, CliError> {
         let fs = FakeFileSystem::default();
@@ -168,6 +183,21 @@ mod tests {
             .with_var_os("NVM_DIR", raw.clone())
             .with_var("HOME", "/home/me");
         assert_eq!(nvm_dir_for(&env).unwrap(), PathBuf::from(raw));
+    }
+
+    #[test]
+    fn a_context_cannot_reach_the_network_until_given_an_http() {
+        let fs = FakeFileSystem::default();
+        let env = FakeEnv::default();
+        assert!(
+            Context::new(&fs, &env)
+                .http()
+                .get_text("http://x/")
+                .is_err()
+        );
+        let http = FakeHttp::default().with_body("http://x/", "ok");
+        let context = Context::new(&fs, &env).with_http(&http);
+        assert_eq!(context.http().get_text("http://x/").unwrap(), "ok");
     }
 
     #[test]
