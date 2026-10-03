@@ -7970,10 +7970,10 @@ git commit -S -m "feat(npm): add install-latest-npm"
   packages from <file>...` and the command line are printed), unless
   `--skip-default-packages`. A fresh install makes the `default` alias before
   these steps, an installed one after them. The first step that does not
-  succeed gives the install its status (`Failed installing default
-  packages...` is status 1). A version with no `npm` skips the steps with
-  `npm was not found in <v>; skipping <the npm upgrade|the default
-  packages>.` and succeeds.
+  succeed gives the install its status (Task 24 changes this for a failed
+  default-packages install, which `nvm.sh` ignores). A version with no `npm`
+  skips the steps with `npm was not found in <v>; skipping <the npm
+  upgrade|the default packages>.` and succeeds.
 - [ ] **Step 1: Write the failing tests**
 
 Create `src/commands/install/npm_steps/mod.rs` containing only the test module:
@@ -17616,6 +17616,700 @@ git commit -S -m "feat(install): install the .tar.xz where nvm.sh does"
 
 ---
 
+### Task 24: Fixes from the final review
+
+**Files:**
+
+- Create: `src/adapters/ureq_http/mod.rs`, `src/adapters/ureq_http/tests.rs`
+- Modify: `src/adapters/tar_archive/mod.rs`,
+  `src/adapters/tar_archive/tests.rs`, `src/commands/install/npm_steps/mod.rs`,
+  `src/commands/install/npm_steps/tests.rs`, `src/commands/install/tests/npm.rs`
+- Delete: `src/adapters/ureq_http.rs` (the adapter moves into a directory so
+  that its tests leave the file under 300 lines)
+
+**Interfaces:**
+
+- Produces: `UreqHttp` takes the timeout of a whole text call as a parameter
+  (30 s as before) and has none for the body of an archive: `get_text` is
+  bounded as a whole, `get_bytes` is bounded only while connecting and while
+  it waits for the response headers (30 s each), so a slow link can finish a
+  25 to 45 MB archive; the 1 GiB cap stays.
+- Behaviour: a failed `npm install -g` of the default packages prints
+  `Failed installing default packages. Please check if your
+  default-packages file or a package in it has problems!` and the
+  install goes on and succeeds, because `nvm.sh` ignores the status of
+  `nvm_install_default_packages` (`nvm.sh` 4281 and 4397); the later steps (the
+  `default` alias, `--reinstall-packages-from`, `--alias`, `--save`) still run.
+  A line of `default-packages` with two words still fails the install, as in
+  `nvm.sh`, whose function leaves the status in a variable its caller reads.
+  The xz decoder is limited to 256 MiB of memory
+  (`XzReader::new_mem_limit(file, true, 256 * 1024)`): an archive whose header
+  asks for a 1 GiB dictionary fails with `OutOfMemory` and unpacks nothing; a
+  64 MiB one still unpacks.
+- This task supersedes the sentence of Task 16 about a failed default-packages
+  install being the status of the install.
+- [ ] **Step 1: Write the failing tests**
+
+Apply to `src/adapters/tar_archive/tests.rs`:
+
+```diff
+--- a/src/adapters/tar_archive/tests.rs
++++ b/src/adapters/tar_archive/tests.rs
+@@ -217,3 +217,55 @@
+     fs::create_dir(&destination).unwrap();
+     assert!(TarArchive.extract(&archive, &destination).is_err());
+ }
++
++/// The CRC-32 (IEEE) that guards an xz block header.
++fn crc32(bytes: &[u8]) -> u32 {
++    let mut crc = !0_u32;
++    for byte in bytes {
++        crc ^= u32::from(*byte);
++        for _ in 0..8 {
++            crc = (crc >> 1) ^ (0xedb8_8320 & (crc & 1).wrapping_neg());
++        }
++    }
++    !crc
++}
++
++/// Rewrites the LZMA2 dictionary size the first block header declares (the
++/// property byte after filter id 0x21 and its size 1) and fixes its CRC.
++fn declare_dictionary(archive: &Path, property: u8) {
++    const BLOCK: usize = 12; // the xz stream header comes first
++    let mut bytes = fs::read(archive).unwrap();
++    let length = (usize::from(bytes[BLOCK]) + 1) * 4;
++    let header = BLOCK..BLOCK + length - 4;
++    let filter = bytes[header.clone()]
++        .windows(2)
++        .position(|pair| pair == [0x21, 0x01])
++        .unwrap();
++    bytes[BLOCK + filter + 2] = property;
++    let crc = crc32(&bytes[header.clone()]).to_le_bytes();
++    bytes[header.end..header.end + 4].copy_from_slice(&crc);
++    fs::write(archive, bytes).unwrap();
++}
++
++#[test]
++fn an_xz_archive_that_needs_too_much_memory_is_refused() {
++    let root = tempfile::tempdir().unwrap();
++    let archive = build_xz(root.path(), &[("top/file", "x")]);
++    declare_dictionary(&archive, 36); // a 1 GiB dictionary
++    let destination = root.path().join("out");
++    fs::create_dir(&destination).unwrap();
++    let error = TarArchive.extract(&archive, &destination).unwrap_err();
++    assert_eq!(error.kind(), io::ErrorKind::OutOfMemory);
++    assert!(!destination.join("top/file").exists());
++}
++
++#[test]
++fn an_xz_archive_with_a_node_sized_dictionary_still_unpacks() {
++    let root = tempfile::tempdir().unwrap();
++    let archive = build_xz(root.path(), &[("top/file", "x")]);
++    declare_dictionary(&archive, 28); // 64 MiB, as `xz -9` (and Node) uses
++    let destination = root.path().join("out");
++    fs::create_dir(&destination).unwrap();
++    TarArchive.extract(&archive, &destination).unwrap();
++    assert!(destination.join("top/file").exists());
++}
+```
+
+Delete `src/adapters/ureq_http.rs` (`git rm src/adapters/ureq_http.rs`).
+
+Create `src/adapters/ureq_http/mod.rs` containing only the test module:
+
+```rust
+#[cfg(test)]
+mod tests;
+```
+
+Create `src/adapters/ureq_http/tests.rs`:
+
+```rust
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::thread::{self, JoinHandle};
+use std::time::Duration;
+
+use super::*;
+
+/// Serves each canned response to one connection, in order, and returns
+/// the raw requests it saw.
+fn serve(responses: Vec<String>) -> (String, JoinHandle<Vec<String>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let handle = thread::spawn(move || {
+        let mut seen = Vec::new();
+        for response in responses {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = [0_u8; 4096];
+            let read = stream.read(&mut buffer).unwrap();
+            seen.push(String::from_utf8_lossy(&buffer[..read]).into_owned());
+            stream.write_all(response.as_bytes()).unwrap();
+        }
+        seen
+    });
+    (base, handle)
+}
+
+fn ok(body: &str) -> String {
+    format!(
+        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
+}
+
+#[test]
+fn fetches_the_body_as_text() {
+    let (base, server) = serve(vec![ok("hello\nworld\n")]);
+    let text = UreqHttp::unproxied(None).get_text(&format!("{base}/index.tab"));
+    assert_eq!(text.unwrap(), "hello\nworld\n");
+    let requests = server.join().unwrap();
+    assert!(
+        requests[0].starts_with("GET /index.tab HTTP/1.1"),
+        "{}",
+        requests[0]
+    );
+}
+
+#[test]
+fn an_error_status_is_a_status_error() {
+    let response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    let (base, server) = serve(vec![response.to_owned()]);
+    let url = format!("{base}/missing");
+    let error = UreqHttp::unproxied(None).get_text(&url).unwrap_err();
+    assert_eq!(error, HttpError::Status { url, code: 404 });
+    server.join().unwrap();
+}
+
+#[test]
+fn redirects_are_followed() {
+    let location =
+        "HTTP/1.1 302 Found\r\nLocation: /final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    let (base, server) = serve(vec![location.to_owned(), ok("moved")]);
+    let text = UreqHttp::unproxied(None).get_text(&format!("{base}/start"));
+    assert_eq!(text.unwrap(), "moved");
+    let requests = server.join().unwrap();
+    assert!(requests[1].starts_with("GET /final "), "{}", requests[1]);
+}
+
+#[test]
+fn the_auth_header_is_sent_when_given() {
+    let (base, server) = serve(vec![ok("secret")]);
+    let http = UreqHttp::unproxied(Some("Bearer token123".to_owned()));
+    assert_eq!(http.get_text(&format!("{base}/x")).unwrap(), "secret");
+    let requests = server.join().unwrap();
+    assert!(
+        requests[0]
+            .to_lowercase()
+            .contains("authorization: bearer token123"),
+        "{}",
+        requests[0]
+    );
+}
+
+#[test]
+fn the_auth_header_follows_a_redirect_to_the_same_host() {
+    let location =
+        "HTTP/1.1 302 Found\r\nLocation: /final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    let (base, server) = serve(vec![location.to_owned(), ok("kept")]);
+    let http = UreqHttp::unproxied(Some("Bearer token123".to_owned()));
+    assert_eq!(http.get_text(&format!("{base}/start")).unwrap(), "kept");
+    let requests = server.join().unwrap();
+    assert!(
+        requests[1]
+            .to_lowercase()
+            .contains("authorization: bearer token123"),
+        "{}",
+        requests[1]
+    );
+}
+
+/// Answers one connection with `response`, sent as raw bytes.
+fn serve_bytes(response: Vec<u8>) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buffer = [0_u8; 4096];
+        let _ = stream.read(&mut buffer);
+        let _ = stream.write_all(&response);
+    });
+    base
+}
+
+fn reply_with(body: &[u8], declared: usize) -> Vec<u8> {
+    let head =
+        format!("HTTP/1.1 200 OK\r\nContent-Length: {declared}\r\nConnection: close\r\n\r\n");
+    [head.as_bytes(), body].concat()
+}
+
+#[test]
+fn a_body_that_is_not_text_is_a_body_error() {
+    let base = serve_bytes(reply_with(&[0xff, 0xfe, 0xfd], 3));
+    let error = UreqHttp::unproxied(None).get_text(&format!("{base}/x"));
+    assert!(matches!(error, Err(HttpError::Body { .. })), "{error:?}");
+}
+
+#[test]
+fn bytes_that_are_not_text_are_fetched_whole() {
+    let base = serve_bytes(reply_with(&[0xff, 0x00, 0xfd], 3));
+    let body = UreqHttp::unproxied(None).get_bytes(&format!("{base}/a.tgz"));
+    assert_eq!(body.unwrap(), [0xff, 0x00, 0xfd]);
+}
+
+#[test]
+fn a_body_over_the_limit_is_a_body_error() {
+    let size = usize::try_from(MAX_BODY_BYTES).unwrap() + 1024;
+    let base = serve_bytes(reply_with(&vec![b'a'; size], size));
+    let error = UreqHttp::unproxied(None).get_text(&format!("{base}/x"));
+    assert!(matches!(error, Err(HttpError::Body { .. })), "{error:?}");
+}
+
+#[test]
+fn a_refused_connection_is_a_transport_error() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/x", listener.local_addr().unwrap());
+    drop(listener);
+    let error = UreqHttp::unproxied(None).get_text(&url).unwrap_err();
+    assert!(matches!(error, HttpError::Transport { .. }), "{error:?}");
+}
+
+/// Answers one connection with a body of `chunks` bytes, one byte every
+/// `pause`, so the whole reply takes `chunks * pause`.
+fn serve_slowly(chunks: usize, pause: Duration) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buffer = [0_u8; 4096];
+        let _ = stream.read(&mut buffer);
+        let _ = stream.write_all(&reply_with(&[], chunks));
+        for _ in 0..chunks {
+            thread::sleep(pause);
+            let _ = stream.write_all(b"z").and_then(|()| stream.flush());
+        }
+    });
+    base
+}
+
+/// A text call bounded at 100 ms, against a reply that takes 300 ms.
+const SHORT: Timeouts = Timeouts {
+    text_call: Duration::from_millis(100),
+    until_response: Duration::from_secs(5),
+};
+const CHUNKS: usize = 6;
+const PAUSE: Duration = Duration::from_millis(50);
+
+#[test]
+fn a_download_may_take_longer_than_a_text_call() {
+    let base = serve_slowly(CHUNKS, PAUSE);
+    let http = UreqHttp::unproxied_within(SHORT, None);
+    let body = http.get_bytes(&format!("{base}/node.tar.xz"));
+    assert_eq!(body.unwrap(), vec![b'z'; CHUNKS]);
+}
+
+#[test]
+fn a_text_call_that_takes_too_long_is_a_transport_error() {
+    let base = serve_slowly(CHUNKS, PAUSE);
+    let http = UreqHttp::unproxied_within(SHORT, None);
+    let error = http.get_text(&format!("{base}/index.tab")).unwrap_err();
+    assert!(matches!(error, HttpError::Transport { .. }), "{error:?}");
+}
+```
+
+Apply to `src/commands/install/npm_steps/tests.rs`:
+
+```diff
+--- a/src/commands/install/npm_steps/tests.rs
++++ b/src/commands/install/npm_steps/tests.rs
+@@ -29,6 +29,15 @@
+ }
+ 
+ fn run_steps(
++    fs: &FakeFileSystem,
++    process: &FakeProcess,
++    options: &Options,
++) -> (NvmExitCode, String, String) {
++    run_for(&target(None), fs, process, options)
++}
++
++fn run_for(
++    target: &Target,
+     fs: &FakeFileSystem,
+     process: &FakeProcess,
+     options: &Options,
+@@ -36,8 +45,7 @@
+     let env = FakeEnv::default().with_var("NVM_DIR", "/n");
+     let context = Context::new(fs, &env).with_process(process);
+     let mut transcript = Transcript::default();
+-    let target = target(None);
+-    let status = run(&context, options, &target, &mut transcript).unwrap();
++    let status = run(&context, options, target, &mut transcript).unwrap();
+     let output = transcript.finish(status);
+     (status, output.stdout, output.stderr)
+ }
+@@ -105,17 +113,23 @@
+     );
+ }
+ 
+-#[test]
+-fn a_failed_package_install_is_status_1_with_the_hint() {
+-    let failed = Completed {
++fn failed_npm() -> Completed {
++    Completed {
+         success: false,
+         stdout: String::new(),
+         stderr: "E404\n".to_owned(),
+         ..Completed::default()
+-    };
+-    let process = FakeProcess::default().with_execution(NPM, "install -g --quiet yarn", failed);
++    }
++}
++
++/// `nvm.sh` ignores what `nvm_install_default_packages` returns, so a failed
++/// `npm install` prints the hint and the install still succeeds.
++#[test]
++fn a_failed_package_install_prints_the_hint_and_still_succeeds() {
++    let process =
++        FakeProcess::default().with_execution(NPM, "install -g --quiet yarn", failed_npm());
+     let (status, _, stderr) = run_steps(&world(Some("yarn\n")), &process, &options(false, false));
+-    assert_eq!(status, NvmExitCode::Failure);
++    assert_eq!(status, NvmExitCode::Success);
+     assert_eq!(
+         stderr,
+         "E404\nFailed installing default packages. Please check if your default-packages file or a package in it has problems!"
+@@ -173,13 +187,8 @@
+     fs: &FakeFileSystem,
+     process: &FakeProcess,
+ ) -> (NvmExitCode, String, String) {
+-    let env = FakeEnv::default().with_var("NVM_DIR", "/n");
+-    let context = Context::new(fs, &env).with_process(process);
+-    let mut transcript = Transcript::default();
+     let target = target(Some(source.clone()));
+-    let status = run(&context, &options(false, true), &target, &mut transcript).unwrap();
+-    let output = transcript.finish(status);
+-    (status, output.stdout, output.stderr)
++    run_for(&target, fs, process, &options(false, true))
+ }
+ 
+ #[test]
+@@ -217,3 +226,18 @@
+         "npm was not found in v20.10.0; skipping the reinstall of global packages."
+     );
+ }
++
++#[test]
++fn the_packages_of_the_source_are_still_installed_after_a_failed_default_package() {
++    let old = "/n/versions/node/v18.19.0/bin/npm";
++    let fs = world(Some("yarn\n")).with_executable(old, "");
++    let process = FakeProcess::default()
++        .with_execution(NPM, "install -g --quiet yarn", failed_npm())
++        .with_success(old, "list -g --depth=0", "/x\n├── pnpm@8.15.0\n")
++        .with_success(NPM, "install -g --quiet pnpm@8.15.0", "added\n");
++    let target = target(Some(Source::Version("v18.19.0".parse().unwrap())));
++    let (status, stdout, _) = run_for(&target, &fs, &process, &options(false, false));
++    assert_eq!(status, NvmExitCode::Success);
++    assert!(stdout.contains("Reinstalling global packages from v18.19.0..."));
++    assert!(calls(&process).contains(&"install -g --quiet pnpm@8.15.0".to_owned()));
++}
+```
+
+Apply to `src/commands/install/tests/npm.rs`:
+
+```diff
+--- a/src/commands/install/tests/npm.rs
++++ b/src/commands/install/tests/npm.rs
+@@ -76,6 +76,24 @@
+ }
+ 
+ #[test]
++fn a_failed_default_package_still_makes_the_alias_and_succeeds() {
++    let world = World::new();
++    world.run("20").unwrap();
++    world
++        .fs
++        .write_file(Path::new("/n/default-packages"), "yarn\n")
++        .unwrap();
++    let output = world.run("--alias=work 20").unwrap();
++    assert_eq!(output.status, NvmExitCode::Success);
++    assert!(
++        output
++            .stderr
++            .contains("Failed installing default packages.")
++    );
++    assert!(world.text("/n/alias/work").is_some());
++}
++
++#[test]
+ fn skip_default_packages_does_not_read_the_file() {
+     let world = World::new();
+     world
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `cargo test`
+Expected: FAIL: the new tests fail by assertion, not by compiling: the slow
+archive body is cut off by the 30 s style timeout, a failing default-package
+install still makes the install fail, and the xz with a 1 GiB dictionary is
+unpacked without error.
+
+- [ ] **Step 3: Write the implementation**
+
+Apply to `src/adapters/tar_archive/mod.rs` (above the test module):
+
+```diff
+--- a/src/adapters/tar_archive/mod.rs
++++ b/src/adapters/tar_archive/mod.rs
+@@ -9,6 +9,10 @@
+ 
+ const GZIP_MAGIC: &[u8] = &[0x1f, 0x8b];
+ const XZ_MAGIC: &[u8] = &[0xfd, b'7', b'z', b'X', b'Z', 0x00];
++/// The most memory, in KiB, the xz decoder may ask for: 256 MiB. Node's
++/// archives use a dictionary of 64 MiB or less, so only a crafted archive
++/// that would make the decoder allocate gigabytes is refused.
++const XZ_MEMORY_LIMIT_KIB: u32 = 256 * 1024;
+ 
+ /// The real [`Archive`]: a gzip- or xz-compressed tar, told apart by its first
+ /// bytes (as `tar` does) and unpacked by the `tar` crate. An entry that would
+@@ -25,7 +29,10 @@
+         if magic[..read].starts_with(GZIP_MAGIC) {
+             unpack(GzDecoder::new(file), destination)
+         } else if magic[..read].starts_with(XZ_MAGIC) {
+-            unpack(XzReader::new(file, true), destination)
++            unpack(
++                XzReader::new_mem_limit(file, true, XZ_MEMORY_LIMIT_KIB),
++                destination,
++            )
+         } else {
+             Err(io::Error::new(
+                 io::ErrorKind::InvalidData,
+```
+
+Insert above the `#[cfg(test)]` line of `src/adapters/ureq_http/mod.rs`:
+
+```rust
+//! The real `Http`: a blocking client that follows redirects and speaks TLS.
+
+use std::time::Duration;
+
+use ureq::config::RedirectAuthHeaders;
+use ureq::tls::{RootCerts, TlsConfig};
+
+use crate::ports::{Http, HttpError};
+
+/// How long a request may take. An index or `SHASUMS256.txt` is small, so
+/// its whole call is bounded. An archive (25-45 MB) can take minutes on a
+/// slow link, so, like curl in `nvm.sh`, its body has no time limit: only
+/// connecting and waiting for the response headers are bounded.
+#[derive(Clone, Copy)]
+struct Timeouts {
+    /// The whole of a `get_text` call, from the DNS lookup to the last byte.
+    text_call: Duration,
+    /// Connecting, and then waiting for the response headers, of any call.
+    until_response: Duration,
+}
+
+const TIMEOUTS: Timeouts = Timeouts {
+    text_call: Duration::from_secs(30),
+    until_response: Duration::from_secs(30),
+};
+const MAX_BODY_BYTES: u64 = 16 * 1024 * 1024;
+/// An archive is far bigger than an index, but never this big.
+const MAX_DOWNLOAD_BYTES: u64 = 1024 * 1024 * 1024;
+
+pub struct UreqHttp {
+    agent: ureq::Agent,
+    auth_header: Option<String>,
+    text_call: Duration,
+}
+
+impl UreqHttp {
+    /// `auth_header` is sent as `Authorization` when given; sanitize it first
+    /// (see `domain::http_header`).
+    #[must_use]
+    pub fn new(auth_header: Option<String>) -> Self {
+        Self::from_builder(ureq::Agent::config_builder(), TIMEOUTS, auth_header)
+    }
+
+    /// Like [`Self::new`], but ignoring `HTTP_PROXY` and friends, so a test
+    /// reaches its local server whatever the environment says.
+    #[cfg(test)]
+    fn unproxied(auth_header: Option<String>) -> Self {
+        Self::unproxied_within(TIMEOUTS, auth_header)
+    }
+
+    /// Like [`Self::unproxied`], with `timeouts` instead of the real ones.
+    #[cfg(test)]
+    fn unproxied_within(timeouts: Timeouts, auth_header: Option<String>) -> Self {
+        let builder = ureq::Agent::config_builder().proxy(None);
+        Self::from_builder(builder, timeouts, auth_header)
+    }
+
+    fn from_builder(
+        builder: ureq::config::ConfigBuilder<ureq::typestate::AgentScope>,
+        timeouts: Timeouts,
+        auth_header: Option<String>,
+    ) -> Self {
+        // Like curl: the credentials follow a redirect to the same host only.
+        // Like curl: trust the system certificate store, so a corporate CA
+        // (a TLS-inspecting proxy) is honoured.
+        let tls = TlsConfig::builder()
+            .root_certs(RootCerts::PlatformVerifier)
+            .build();
+        let config = builder
+            .tls_config(tls)
+            .timeout_connect(Some(timeouts.until_response))
+            .timeout_recv_response(Some(timeouts.until_response))
+            .redirect_auth_headers(RedirectAuthHeaders::SameHost)
+            .build();
+        Self {
+            agent: config.into(),
+            auth_header,
+            text_call: timeouts.text_call,
+        }
+    }
+}
+
+fn transport(url: &str, message: impl ToString) -> HttpError {
+    HttpError::Transport {
+        url: url.to_owned(),
+        message: message.to_string(),
+    }
+}
+
+/// A body that is over the limit or not text is final; anything else that
+/// goes wrong while reading it (a reset, say) is a transport error.
+fn read_failure(url: &str, error: ureq::Error) -> HttpError {
+    let unusable = match &error {
+        ureq::Error::BodyExceedsLimit(_) => true,
+        ureq::Error::Io(source) => source.kind() == std::io::ErrorKind::InvalidData,
+        _ => false,
+    };
+    if unusable {
+        HttpError::Body {
+            url: url.to_owned(),
+            message: error.to_string(),
+        }
+    } else {
+        transport(url, error)
+    }
+}
+
+impl UreqHttp {
+    /// Sends the request and reads the body with `read`, capped at `limit`
+    /// bytes and, when `whole_call` is given, at that much time in all.
+    fn fetch<T>(
+        &self,
+        url: &str,
+        limit: u64,
+        whole_call: Option<Duration>,
+        read: impl FnOnce(ureq::BodyWithConfig<'_>) -> Result<T, ureq::Error>,
+    ) -> Result<T, HttpError> {
+        let mut request = self
+            .agent
+            .get(url)
+            .config()
+            .timeout_global(whole_call)
+            .build();
+        if let Some(value) = &self.auth_header {
+            request = request.header("Authorization", value);
+        }
+        match request.call() {
+            Ok(mut response) => read(response.body_mut().with_config().limit(limit))
+                .map_err(|error| read_failure(url, error)),
+            Err(ureq::Error::StatusCode(code)) => Err(HttpError::Status {
+                url: url.to_owned(),
+                code,
+            }),
+            Err(error) => Err(transport(url, error)),
+        }
+    }
+}
+
+impl Http for UreqHttp {
+    fn get_text(&self, url: &str) -> Result<String, HttpError> {
+        self.fetch(url, MAX_BODY_BYTES, Some(self.text_call), |body| {
+            body.read_to_string()
+        })
+    }
+
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
+        self.fetch(url, MAX_DOWNLOAD_BYTES, None, |body| body.read_to_vec())
+    }
+}
+
+```
+
+Apply to `src/commands/install/npm_steps/mod.rs` (above the test module):
+
+```diff
+--- a/src/commands/install/npm_steps/mod.rs
++++ b/src/commands/install/npm_steps/mod.rs
+@@ -18,7 +18,9 @@
+ 
+ /// The steps (`--latest-npm`, the default packages, the packages of
+ /// `--reinstall-packages-from`), stopping at the first one that does not
+-/// succeed; its status is the install's.
++/// succeed; its status is the install's. As in `nvm.sh`, a failed
++/// `npm install` of the default packages only warns; a malformed
++/// `default-packages` file does stop the steps.
+ ///
+ /// # Errors
+ /// [`crate::commands::install::flow::Halt::Error`] when `$NVM_DIR` is unknown.
+@@ -107,6 +109,8 @@
+ }
+ 
+ /// `nvm_install_default_packages`: one `npm install -g --quiet` for the lot.
++/// A failed `npm install` prints the hint and is still a success, because
++/// both callers in `nvm.sh` ignore what this function returns.
+ fn default_packages(
+     context: &Context<'_>,
+     npm: Option<&Npm>,
+@@ -129,10 +133,9 @@
+     transcript.out(format!("npm install -g --quiet {joined}"));
+     let mut args = vec!["install", "-g", "--quiet"];
+     args.extend(joined.split_whitespace());
+-    if npm.run(context, &args, transcript) {
+-        return Ok(NvmExitCode::Success);
++    if !npm.run(context, &args, transcript) {
++        transcript.err("Failed installing default packages. Please check if your default-packages file or a package in it has problems!");
+     }
+-    transcript.err("Failed installing default packages. Please check if your default-packages file or a package in it has problems!");
+-    Ok(NvmExitCode::Failure)
++    Ok(NvmExitCode::Success)
+ }
+ 
+```
+
+Then run `cargo fmt`.
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `cargo test`
+Expected: PASS: 603 unit tests plus the end-to-end tests.
+
+- [ ] **Step 5: Run the quality gate and commit**
+
+Run:
+
+```bash
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+cargo audit
+rustup run 1.85 cargo check --all-targets
+```
+
+Expected: formatting clean, zero clippy warnings.
+
+```bash
+git add src tests
+git commit -S -m "fix: untime archive bodies, survive failed default packages, cap xz memory"
+```
+
+---
+
 ## Environment variables
 
 Every variable below was read in `nvm.sh` and, where it changes what is
@@ -17725,6 +18419,14 @@ on whether this port should honour it as `nvm.sh` does.
     from `nproc`, `sysctl` or `getconf`; an invalid `NVM_MAKE_JOBS` is ignored.
   - The output of `npm`, `./configure` and `make` is shown when the command
     ends, not as it is produced.
+  - Only a binary install is put in place with one rename of a fully unpacked
+    tree. A source build installs through `make install` and a hook installs
+    however it likes, as in `nvm.sh`.
+  - `--save` writes `.nvmrc` in the directory named by `PWD` (the process's
+    own directory when `PWD` is not set), which is outside `$NVM_DIR`.
+  - A download has no limit on its body other than the 1 GiB cap, as with
+    `curl` in `nvm.sh`; only connecting and waiting for the response headers
+    are limited (30 s each). The xz decoder is limited to 256 MiB of memory.
 - **Type consistency:** names match across tasks (`Platform`, `FileInfo`,
   `Digest`, `Archive`, `Cpu`, `Http::get_bytes`, `Invocation`, `Completed`,
   `LockRequest`, `Lookup`, `Transcript`, `Options`, `Artifact`, `Failed`,
