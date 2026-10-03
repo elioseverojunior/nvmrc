@@ -84,6 +84,21 @@ pub trait FileSystem {
     /// # Errors
     /// Propagates the underlying I/O error.
     fn create_dir_all(&self, path: &Path) -> io::Result<()>;
+
+    /// Creates a symbolic link at `link` pointing to `target`, failing with
+    /// `AlreadyExists` when `link` is there. `ErrorKind::Unsupported` where
+    /// the platform has no symlinks.
+    ///
+    /// # Errors
+    /// Propagates the underlying I/O error.
+    fn symlink(&self, target: &Path, link: &Path) -> io::Result<()>;
+
+    /// Where the symbolic link `link` points.
+    ///
+    /// # Errors
+    /// Propagates the underlying I/O error (for example when `link` is
+    /// missing or is not a symbolic link).
+    fn read_link(&self, link: &Path) -> io::Result<PathBuf>;
 }
 
 /// What a finished child process left behind.
@@ -164,6 +179,19 @@ pub trait Process {
     /// # Errors
     /// Fails when the program cannot be started.
     fn run(&self, program: &Path, args: &[&str]) -> io::Result<ProcessOutput>;
+
+    /// Runs `invocation` with stdin, stdout and stderr inherited from this
+    /// process, waits for it, and returns its exit status; a child killed by
+    /// a signal gives `128 + signal` (Unix).
+    ///
+    /// `invocation.env` is added to the environment, and an entry named
+    /// `PATH` replaces the `PATH` the child would inherit. `path_prefix` is
+    /// then put in front of whichever `PATH` the child ends up with.
+    ///
+    /// # Errors
+    /// Fails when the program cannot be started (`NotFound` when it does not
+    /// exist).
+    fn spawn(&self, invocation: &Invocation) -> io::Result<i32>;
 }
 
 /// Why a download failed.
@@ -229,4 +257,8 @@ pub trait Env {
 
     /// The variable as an OS string, so non-UTF-8 paths survive.
     fn var_os(&self, key: &str) -> Option<OsString>;
+
+    /// Every variable, as text. A variable whose name or value is not valid
+    /// UTF-8 is skipped.
+    fn vars(&self) -> Vec<(String, String)>;
 }

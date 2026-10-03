@@ -12,6 +12,8 @@ pub struct FakeProcess {
     executions: BTreeMap<(PathBuf, String), Completed>,
     effects: BTreeMap<(PathBuf, String), Box<dyn Fn()>>,
     executed: RefCell<Vec<Invocation>>,
+    spawns: BTreeMap<(PathBuf, String), i32>,
+    spawned: RefCell<Vec<Invocation>>,
 }
 
 impl FakeProcess {
@@ -67,6 +69,21 @@ impl FakeProcess {
         self
     }
 
+    /// The exit code `spawn` answers to `program` run with exactly `args`
+    /// (joined with spaces); any other spawn is not found.
+    #[must_use]
+    pub fn with_spawn(mut self, program: &str, args: &str, exit_code: i32) -> Self {
+        self.spawns
+            .insert((PathBuf::from(program), args.to_owned()), exit_code);
+        self
+    }
+
+    /// Every invocation `spawn` was given, in order.
+    #[must_use]
+    pub fn spawned(&self) -> Vec<Invocation> {
+        self.spawned.borrow().clone()
+    }
+
     /// Every invocation `execute` was given, in order.
     #[must_use]
     pub fn executed(&self) -> Vec<Invocation> {
@@ -93,6 +110,15 @@ impl Process for FakeProcess {
             .cloned()
             .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
     }
+
+    fn spawn(&self, invocation: &Invocation) -> io::Result<i32> {
+        self.spawned.borrow_mut().push(invocation.clone());
+        let key = (invocation.program.clone(), invocation.args.join(" "));
+        self.spawns
+            .get(&key)
+            .copied()
+            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
+    }
 }
 
 #[cfg(test)]
@@ -109,6 +135,18 @@ mod tests {
         let other = Invocation::new("/n/bin/npm").args(&["list"]);
         assert!(process.execute(&other).is_err());
         assert_eq!(process.executed(), [invocation, other]);
+    }
+
+    #[test]
+    fn fake_process_spawns_by_program_and_arguments_and_records_what_it_spawned() {
+        let process = FakeProcess::default().with_spawn("/n/bin/node", "-e 1", 7);
+        let known = Invocation::new("/n/bin/node").args(&["-e", "1"]);
+        assert_eq!(process.spawn(&known).unwrap(), 7);
+        let other = Invocation::new("/n/bin/node");
+        let error = process.spawn(&other).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert_eq!(process.spawned(), [known, other]);
+        assert!(process.executed().is_empty());
     }
 
     #[test]

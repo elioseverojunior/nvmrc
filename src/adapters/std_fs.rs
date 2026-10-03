@@ -1,6 +1,6 @@
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::ports::{DirEntry, FileInfo, FileSystem};
 
@@ -68,6 +68,26 @@ impl FileSystem for StdFileSystem {
 
     fn create_dir_all(&self, path: &Path) -> io::Result<()> {
         fs::create_dir_all(path)
+    }
+
+    #[cfg(unix)]
+    fn symlink(&self, target: &Path, link: &Path) -> io::Result<()> {
+        std::os::unix::fs::symlink(target, link)
+    }
+
+    #[cfg(not(unix))]
+    fn symlink(&self, _target: &Path, _link: &Path) -> io::Result<()> {
+        Err(io::Error::from(io::ErrorKind::Unsupported))
+    }
+
+    #[cfg(unix)]
+    fn read_link(&self, link: &Path) -> io::Result<PathBuf> {
+        fs::read_link(link)
+    }
+
+    #[cfg(not(unix))]
+    fn read_link(&self, _link: &Path) -> io::Result<PathBuf> {
+        Err(io::Error::from(io::ErrorKind::Unsupported))
     }
 }
 
@@ -159,5 +179,19 @@ mod tests {
         let file = root.path().join("blob");
         StdFileSystem.write_bytes(&file, &[0, 255, 1]).unwrap();
         assert_eq!(fs::read(&file).unwrap(), [0, 255, 1]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_is_created_read_back_and_refuses_an_existing_path() {
+        let root = tempfile::tempdir().unwrap();
+        let link = root.path().join("current");
+        StdFileSystem.symlink(Path::new("/v/1"), &link).unwrap();
+        assert_eq!(StdFileSystem.read_link(&link).unwrap(), Path::new("/v/1"));
+        let again = StdFileSystem.symlink(Path::new("/v/2"), &link).unwrap_err();
+        assert_eq!(again.kind(), io::ErrorKind::AlreadyExists);
+        StdFileSystem.remove_file(&link).unwrap();
+        let gone = StdFileSystem.read_link(&link).unwrap_err();
+        assert_eq!(gone.kind(), io::ErrorKind::NotFound);
     }
 }

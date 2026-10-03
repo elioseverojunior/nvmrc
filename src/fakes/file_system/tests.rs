@@ -131,3 +131,24 @@ fn fake_file_system_creates_directories() {
     fs.create_dir_all(Path::new("/d/e")).unwrap();
     assert_eq!(fs.read_dir(Path::new("/d/e")).unwrap(), []);
 }
+
+#[test]
+fn fake_file_system_remembers_symlinks_and_refuses_to_overwrite() {
+    let fs = FakeFileSystem::default().with_file("/d/file", "x");
+    fs.symlink(Path::new("/v/1"), Path::new("/d/current"))
+        .unwrap();
+    let link = fs.read_link(Path::new("/d/current")).unwrap();
+    assert_eq!(link, Path::new("/v/1"));
+    for existing in ["/d/current", "/d/file"] {
+        let error = fs
+            .symlink(Path::new("/v/2"), Path::new(existing))
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+    }
+    let missing = fs.read_link(Path::new("/d/file")).unwrap_err();
+    assert_eq!(missing.kind(), io::ErrorKind::NotFound);
+    fs.remove_file(Path::new("/d/current")).unwrap();
+    assert!(fs.read_link(Path::new("/d/current")).is_err());
+    fs.symlink(Path::new("/v/2"), Path::new("/d/current"))
+        .unwrap();
+}

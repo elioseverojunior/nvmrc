@@ -14,6 +14,10 @@ impl Process for NoProcess {
     fn run(&self, _program: &Path, _args: &[&str]) -> io::Result<ProcessOutput> {
         Err(io::Error::from(io::ErrorKind::Unsupported))
     }
+
+    fn spawn(&self, _invocation: &Invocation) -> io::Result<i32> {
+        Err(io::Error::from(io::ErrorKind::Unsupported))
+    }
 }
 
 #[cfg(test)]
@@ -27,6 +31,8 @@ mod tests {
         let error = NoProcess
             .execute(&Invocation::new("/bin/true"))
             .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+        let error = NoProcess.spawn(&Invocation::new("/bin/true")).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::Unsupported);
     }
 }

@@ -12,6 +12,7 @@ pub struct FakeFileSystem {
     dirs: RefCell<BTreeSet<PathBuf>>,
     executables: RefCell<BTreeSet<PathBuf>>,
     modified: RefCell<BTreeMap<PathBuf, SystemTime>>,
+    links: RefCell<BTreeMap<PathBuf, PathBuf>>,
 }
 
 impl FakeFileSystem {
@@ -103,6 +104,9 @@ impl FileSystem for FakeFileSystem {
     }
 
     fn remove_file(&self, path: &Path) -> io::Result<()> {
+        if self.links.borrow_mut().remove(path).is_some() {
+            return Ok(());
+        }
         self.files
             .borrow_mut()
             .remove(path)
@@ -177,6 +181,21 @@ impl FileSystem for FakeFileSystem {
     fn create_dir_all(&self, path: &Path) -> io::Result<()> {
         self.dirs.borrow_mut().insert(path.to_path_buf());
         Ok(())
+    }
+
+    fn symlink(&self, target: &Path, link: &Path) -> io::Result<()> {
+        if self.file_info(link).is_ok() || self.links.borrow().contains_key(link) {
+            return Err(io::Error::from(io::ErrorKind::AlreadyExists));
+        }
+        self.links
+            .borrow_mut()
+            .insert(link.to_path_buf(), target.to_path_buf());
+        Ok(())
+    }
+
+    fn read_link(&self, link: &Path) -> io::Result<PathBuf> {
+        let found = self.links.borrow().get(link).cloned();
+        found.ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
     }
 }
 

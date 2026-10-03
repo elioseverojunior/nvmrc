@@ -58,6 +58,10 @@ impl Process for StdProcess {
         })
     }
 
+    fn spawn(&self, invocation: &Invocation) -> io::Result<i32> {
+        super::std_spawn::spawn_inherited(invocation)
+    }
+
     fn run(&self, program: &Path, args: &[&str]) -> io::Result<ProcessOutput> {
         let deadline = Instant::now() + self.timeout;
         let mut child = Command::new(program)

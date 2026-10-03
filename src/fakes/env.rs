@@ -31,6 +31,13 @@ impl Env for FakeEnv {
     fn var_os(&self, key: &str) -> Option<OsString> {
         self.vars.get(key).cloned()
     }
+
+    fn vars(&self) -> Vec<(String, String)> {
+        self.vars
+            .iter()
+            .filter_map(|(name, value)| Some((name.clone(), value.to_str()?.to_owned())))
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -45,6 +52,13 @@ mod tests {
         assert_eq!(env.var("MISSING"), None);
     }
 
+    #[test]
+    fn fake_env_lists_its_variables_sorted_by_name() {
+        let env = FakeEnv::default().with_var("B", "2").with_var("A", "1");
+        let expected = [("A", "1"), ("B", "2")].map(|(n, v)| (n.to_owned(), v.to_owned()));
+        assert_eq!(env.vars(), expected);
+    }
+
     #[cfg(unix)]
     #[test]
     fn fake_env_keeps_non_utf8_values_for_var_os_only() {
@@ -53,5 +67,6 @@ mod tests {
         let env = FakeEnv::default().with_var_os("NVM_DIR", raw.clone());
         assert_eq!(env.var("NVM_DIR"), None);
         assert_eq!(env.var_os("NVM_DIR"), Some(raw));
+        assert!(env.vars().is_empty());
     }
 }
