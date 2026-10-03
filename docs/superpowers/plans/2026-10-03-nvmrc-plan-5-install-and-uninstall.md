@@ -30,10 +30,11 @@ rules (jobs, compiler, `make`) as pure functions;
 `commands/uninstall`, `install_latest_npm` and `reinstall_packages` reuse the
 resolution of Plan 3. `Context` carries the new ports and the host `Platform`.
 
-**Tech Stack:** Rust 2024 edition (MSRV 1.88), `clap`, `thiserror`, `ureq` 3,
-and three new crates chosen here as the spec asks (section 10): `sha2` (SHA-256),
-`flate2` (gzip, pure Rust backend) and `tar` (without its default features, so
-no extended-attribute code). `tempfile` (dev only).
+**Tech Stack:** Rust 2024 edition (MSRV 1.85, lowered from 1.88 by Task 22),
+`clap`, `thiserror`, `ureq` 3, and four new crates chosen here as the spec asks
+(section 10): `sha2` (SHA-256), `flate2` (gzip, pure Rust backend), `tar`
+(without its default features, so no extended-attribute code) and `lzma-rust2`
+(xz, pure Rust, so no C library is built). `tempfile` (dev only).
 
 **Spec:** `docs/superpowers/specs/2026-10-02-nvmrc-design.md` (sections 3, 4.1,
 4.4, 6, 10 and 11). This plan starts from the final state of
@@ -54,12 +55,10 @@ those tests pass `-b`.
 `init`, `nvm-exec`, `.nvmrc` semantics, the "Now using" line, `NVM_BIN`,
 `NVM_INC`, `NVM_SYMLINK_CURRENT`); Plan 7 colors and terminal detection
 (`NVM_COLORS`, `NVM_NO_COLORS`); Plan 8 `doctor` and `migrate`; Plan 9
-compatibility contract and CI. Later still: `.tar.xz` archives.
+compatibility contract and CI.
 
 **Not in this plan, on purpose:**
 
-- `.tar.xz` archives (`nvm.sh` prefers them where it can; this port uses the
-  `.tar.gz` that every release also has).
 - Activating the version (`nvm use`, the `Now using node ...` line): the shell
   does that (Plan 6). Where `nvm.sh` runs `npm` after activating, this port runs
   the `npm` of the version itself, with its `bin` directory first on `PATH`.
@@ -70,16 +69,18 @@ compatibility contract and CI. Later still: `.tar.xz` archives.
 
 ## Global Constraints
 
-- Rust edition 2024, `rust-version = "1.88.0"`; no APIs newer than 1.88. The
-  development toolchain is pinned separately by `rust-toolchain.toml`.
+- Rust edition 2024, `rust-version = "1.88.0"` until Task 22 lowers it to
+  `"1.85.0"`, after which no API newer than 1.85 may be used. The development
+  toolchain is pinned separately by `rust-toolchain.toml`.
 - Run cargo through the rustup proxies (Homebrew's `rust` formula ships a
   `cargo` that ignores `rust-toolchain.toml`).
 - `.cargo/config.toml` sets `-D warnings` for every workspace build, test and
   check, so a dead-code or unused-import warning in any intermediate task is a
   build error. `Cargo.toml` must not declare any `[profile.*]` table; the only
-  changes to it in this plan are the dependencies of Tasks 3 and 4.
+  changes to it in this plan are the dependencies of Tasks 3, 4 and 23 and the
+  `rust-version` of Task 22.
 - No async I/O, no workspace, no plugin system, and no dependency besides
-  `ureq`, `sha2`, `flate2` and `tar`.
+  `ureq`, `sha2`, `flate2`, `tar` and `lzma-rust2`.
 - Files under 300 lines (tests included), functions under 30 lines, cyclomatic
   complexity under 10, meaningful names without abbreviations.
 - Errors use `thiserror` in the library; only the binaries touch
@@ -1402,7 +1403,9 @@ git commit -S -m "feat(domain): check a download against SHASUMS256.txt with a D
 **Interfaces:**
 
 - Produces: `ports::Archive::extract(&Path, &Path) -> io::Result<()>` (a
-  `.tar.gz` into an existing directory); `adapters::targz_archive::TarGzArchive`
+  `.tar.gz` into an existing directory; Task 23 makes it `.tar.xz` too and
+  renames the adapter to `adapters::tar_archive::TarArchive`);
+  `adapters::targz_archive::TarGzArchive`
   (the `tar` and `flate2` crates; an unsafe entry fails the whole unpack with
   `InvalidData`; owners are not restored; execute bits and relative symlinks
   are kept); `adapters::no_archive::NoArchive`; test-only
@@ -16505,6 +16508,1113 @@ git commit -S -m "refactor: keep functions under 30 lines and share the end-to-e
 
 ---
 
+### Task 22: MSRV 1.85
+
+**Files:**
+
+- Modify: `Cargo.toml`, `Cargo.lock`, `docs/superpowers/specs/2026-10-02-nvmrc-design.md`
+
+**Interfaces:**
+
+- Produces: `rust-version = "1.85.0"`, the first Rust 2024 release, as the
+  oldest `rustc` a consumer needs. Nothing in the code changes: it already
+  builds and passes every test on 1.85, which is what this task proves. Every
+  gate from here on checks `rustup run 1.85 cargo check --all-targets`.
+- The lock file is regenerated so that cargo picks, for a manifest that says
+  1.85, versions of the dependencies that build on 1.85 (three lines of
+  `Cargo.lock` change, `cc` and `libc`).
+- [ ] **Step 1: Lower the MSRV**
+
+In `Cargo.toml`, under `[package]`:
+
+```diff
+-rust-version = "1.88.0"
++rust-version = "1.85.0"
+```
+
+- [ ] **Step 2: Resolve the dependencies for it**
+
+Run:
+
+```bash
+rm Cargo.lock && cargo generate-lockfile
+```
+
+Expected: `Locking 107 packages to highest Rust 1.85.0 compatible versions`.
+`git diff Cargo.lock` shows `cc` going to 1.6.0 and `libc` to 0.2.190 and
+nothing else.
+
+- [ ] **Step 3: Prove the code builds and passes on 1.85**
+
+Run:
+
+```bash
+rustup toolchain install 1.85 --profile minimal
+rustup run 1.85 cargo check --all-targets
+rustup run 1.85 cargo test
+```
+
+Expected: `Finished` for the check, and every test passing (586 unit tests
+plus the end-to-end tests). If a 1.88 API was used, the check says which;
+there is none at this point.
+
+- [ ] **Step 4: Say so in the spec**
+
+In `docs/superpowers/specs/2026-10-02-nvmrc-design.md`, change the sentence
+"MSRV stays at 1.88 as declared in `Cargo.toml`." to "MSRV is 1.85 as declared
+in `Cargo.toml`."
+
+- [ ] **Step 5: Run the quality gate and commit**
+
+Run:
+
+```bash
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+cargo audit
+rustup run 1.85 cargo check --all-targets
+```
+
+Expected: formatting clean, zero clippy warnings, every test passing, no advisories.
+
+```bash
+git add Cargo.toml Cargo.lock docs/superpowers/specs/2026-10-02-nvmrc-design.md
+git commit -S -m "build: lower the MSRV to 1.85"
+```
+
+---
+
+### Task 23: The `.tar.xz` archive
+
+**Files:**
+
+- Create: `src/domain/compression/mod.rs`, `src/domain/compression/tests.rs`,
+  `src/adapters/tar_archive/mod.rs`, `src/adapters/tar_archive/tests.rs`,
+  `src/commands/install/fetch/name_tests.rs`
+- Modify: `src/domain/mod.rs`, `src/adapters/mod.rs`, `src/cli/mod.rs`,
+  `src/ports/mod.rs`, `src/commands/install/mod.rs`,
+  `src/commands/install/fetch/mod.rs`, `src/commands/install/fetch/tests.rs`,
+  `src/commands/install/source/tests.rs`,
+  `src/commands/install/offline/tests.rs`,
+  `src/commands/install/tests/mod.rs`, `src/commands/install/tests/built.rs`,
+  `src/commands/install/tests/failures.rs`,
+  `src/commands/install/tests/hook.rs`, `src/commands/install/tests/npm.rs`,
+  `src/commands/install/tests/offline_and_save.rs`,
+  `src/commands/install/tests/source.rs`, `tests/common/mod.rs`,
+  `tests/install_cli.rs`
+- Delete: `src/adapters/targz_archive/mod.rs`,
+  `src/adapters/targz_archive/tests.rs` (the adapter is renamed, with `git mv`
+  if you prefer to keep the history)
+
+**Interfaces:**
+
+- Produces: `domain::compression::Compression::{Gzip, Xz}` with
+  `Compression::preferred(&Version, Os) -> Compression` and `extension(self) ->
+  &'static str`; `adapters::tar_archive::TarArchive` replaces `TarGzArchive`
+  and unpacks both formats, telling them apart by their first bytes (`1f 8b`
+  for gzip, `fd 37 7a 58 5a 00` for xz) as `tar` does, and failing with
+  `InvalidData` on anything else; `Artifact::of` and `Artifact::source_of` name
+  the archive `<slug>.tar.xz` or `<slug>.tar.gz` by `Compression::preferred`.
+- Behaviour (from `nvm_get_artifact_compression` and `nvm_supports_xz`, and
+  verified against the real script, with archives made by the real `xz`, in
+  all the install scenarios of this plan, whose outputs are now equal without
+  the old `.tar.xz` to `.tar.gz` rewrite): a version from 4.0.0 uses `.tar.xz`;
+  so do 0.12.10 to 0.12.x and 0.10.42 to 0.10.x; for the rest, a version from
+  1.0.0 (2.3.2 on macOS) does and an older one uses `.tar.gz`. The checksum is
+  the line of `SHASUMS256.txt` that names the archive, so a mirror that lists
+  only the `.tar.gz` fails the install, as it does with `nvm.sh`. The cache,
+  the offline mode and the source build use the same name. The tests of Tasks 8
+  to 21 that named a `.tar.gz` of Node 20 now name the `.tar.xz`, and the end to
+  end mirror serves an xz-compressed archive (made with the `encoder` feature
+  of `lzma-rust2`, a dev dependency only).
+- Dependency: `lzma-rust2` without its default features (`std`, `xz` and
+  `optimization` only: no encoder and no lzip), pure Rust, MSRV 1.85.
+- [ ] **Step 1: Add the dependency (lzma-rust2)**
+
+Run: `cargo add lzma-rust2 --no-default-features --features std,xz,optimization`
+and `cargo add --dev lzma-rust2 --features encoder`
+
+Expected: `Cargo.toml` gains the lines below (the second one is under
+`[dev-dependencies]`, where the encoder only builds test archives) and
+`Cargo.lock` is updated. Commit both with this task.
+
+```toml
+lzma-rust2 = { version = "0.21.0", default-features = false, features = ["std", "xz", "optimization"] }
+```
+
+```toml
+lzma-rust2 = { version = "0.21.0", features = ["encoder"] }
+```
+
+- [ ] **Step 2: Declare the new modules**
+
+Apply to `src/adapters/mod.rs`:
+
+```diff
+--- a/src/adapters/mod.rs
++++ b/src/adapters/mod.rs
+@@ -12,5 +12,5 @@
+ pub mod std_fs;
+ pub mod std_process;
+ pub mod std_sleeper;
+-pub mod targz_archive;
++pub mod tar_archive;
+ pub mod ureq_http;
+```
+
+Apply to `src/domain/mod.rs`:
+
+```diff
+--- a/src/domain/mod.rs
++++ b/src/domain/mod.rs
+@@ -1,6 +1,7 @@
+ pub mod alias;
+ pub mod alias_format;
+ pub mod checksum;
++pub mod compression;
+ pub mod current;
+ #[cfg(test)]
+ pub(crate) mod fixtures;
+```
+
+- [ ] **Step 3: Write the failing tests**
+
+Create `src/adapters/tar_archive/mod.rs` containing only the test module:
+
+```rust
+#[cfg(test)]
+mod tests;
+```
+
+Create `src/adapters/tar_archive/tests.rs`:
+
+```rust
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+
+use flate2::Compression;
+use flate2::write::GzEncoder;
+use lzma_rust2::{XzOptions, XzWriter};
+
+use super::*;
+
+/// A `.tar.gz` of `(path, contents, mode)` files and `(path, target)`
+/// symlinks (which come first), written to `directory/archive.tar.gz`.
+fn build(directory: &Path, files: &[(&str, &str, u32)], links: &[(&str, &str)]) -> PathBuf {
+    let path = directory.join("archive.tar.gz");
+    let mut builder = tar::Builder::new(GzEncoder::new(
+        File::create(&path).unwrap(),
+        Compression::default(),
+    ));
+    for (name, target) in links {
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Symlink);
+        header.set_size(0);
+        builder.append_link(&mut header, name, target).unwrap();
+    }
+    for (name, contents, mode) in files {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(contents.len() as u64);
+        header.set_mode(*mode);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, name, contents.as_bytes())
+            .unwrap();
+    }
+    builder
+        .into_inner()
+        .unwrap()
+        .finish()
+        .unwrap()
+        .flush()
+        .unwrap();
+    path
+}
+
+#[test]
+fn it_unpacks_files_into_the_destination() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = build(
+        root.path(),
+        &[
+            ("node-v1/bin/node", "binary", 0o755),
+            ("node-v1/README", "hi", 0o644),
+        ],
+        &[],
+    );
+    let destination = root.path().join("out");
+    fs::create_dir(&destination).unwrap();
+    TarArchive.extract(&archive, &destination).unwrap();
+    let node = destination.join("node-v1/bin/node");
+    assert_eq!(fs::read_to_string(&node).unwrap(), "binary");
+    assert_eq!(
+        fs::read_to_string(destination.join("node-v1/README")).unwrap(),
+        "hi"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn it_keeps_the_execute_bit_and_relative_symlinks() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let archive = build(
+        root.path(),
+        &[
+            ("node-v1/bin/node", "x", 0o755),
+            ("node-v1/lib/npm-cli.js", "y", 0o644),
+        ],
+        &[("node-v1/bin/npm", "../lib/npm-cli.js")],
+    );
+    let destination = root.path().join("out");
+    fs::create_dir(&destination).unwrap();
+    TarArchive.extract(&archive, &destination).unwrap();
+    let mode = fs::metadata(destination.join("node-v1/bin/node"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_ne!(mode & 0o111, 0);
+    let npm = destination.join("node-v1/bin/npm");
+    assert_eq!(fs::read_to_string(npm).unwrap(), "y");
+}
+
+#[test]
+fn a_missing_archive_is_an_error() {
+    let root = tempfile::tempdir().unwrap();
+    let error = TarArchive
+        .extract(&root.path().join("nope.tar.gz"), root.path())
+        .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::NotFound);
+}
+
+#[test]
+fn something_that_is_not_gzip_is_an_error() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("bad.tar.gz");
+    fs::write(&archive, "not an archive").unwrap();
+    assert!(TarArchive.extract(&archive, root.path()).is_err());
+}
+
+#[test]
+fn an_entry_that_climbs_out_of_the_destination_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("evil.tar.gz");
+    // `tar::Builder` refuses `..`, so the entry is written by hand.
+    let mut header = tar::Header::new_gnu();
+    header.set_size(1);
+    header.set_mode(0o644);
+    let name = b"../escaped";
+    header.as_old_mut().name[..name.len()].copy_from_slice(name);
+    header.set_cksum();
+    let mut encoder = GzEncoder::new(File::create(&archive).unwrap(), Compression::default());
+    encoder.write_all(header.as_bytes()).unwrap();
+    let mut block = [0_u8; 512];
+    block[0] = b'x';
+    encoder.write_all(&block).unwrap();
+    encoder.write_all(&[0_u8; 1024]).unwrap();
+    encoder.finish().unwrap();
+    let destination = root.path().join("out");
+    fs::create_dir(&destination).unwrap();
+    let error = TarArchive.extract(&archive, &destination).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+    assert!(error.to_string().contains("unsafe path in archive"));
+    assert!(!root.path().join("escaped").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_file_written_through_a_symlink_that_leaves_the_destination_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let outside = root.path().join("outside");
+    fs::create_dir(&outside).unwrap();
+    let archive = build(
+        root.path(),
+        &[("top/link/stolen", "x", 0o644)],
+        &[("top/link", outside.to_str().unwrap())],
+    );
+    let destination = root.path().join("out");
+    fs::create_dir(&destination).unwrap();
+    let result = TarArchive.extract(&archive, &destination);
+    assert!(result.is_err());
+    assert!(!outside.join("stolen").exists());
+}
+
+/// A `.tar.xz` of `(path, contents)` files, written to
+/// `directory/archive.tar.xz`.
+fn build_xz(directory: &Path, files: &[(&str, &str)]) -> PathBuf {
+    let path = directory.join("archive.tar.xz");
+    let writer = XzWriter::new(File::create(&path).unwrap(), XzOptions::with_preset(1)).unwrap();
+    let mut builder = tar::Builder::new(writer);
+    for (name, contents) in files {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(contents.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, name, contents.as_bytes())
+            .unwrap();
+    }
+    builder.into_inner().unwrap().finish().unwrap();
+    path
+}
+
+#[test]
+fn it_unpacks_an_xz_compressed_tar() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = build_xz(
+        root.path(),
+        &[("node-v1/bin/node", "binary"), ("node-v1/README", "hi")],
+    );
+    let destination = root.path().join("out");
+    fs::create_dir(&destination).unwrap();
+    TarArchive.extract(&archive, &destination).unwrap();
+    let node = destination.join("node-v1/bin/node");
+    assert_eq!(fs::read_to_string(node).unwrap(), "binary");
+    assert_eq!(
+        fs::read_to_string(destination.join("node-v1/README")).unwrap(),
+        "hi"
+    );
+}
+
+#[test]
+fn the_compression_is_told_by_the_bytes_not_by_the_name() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = build(root.path(), &[("top/file", "x", 0o644)], &[]);
+    let renamed = root.path().join("misnamed.tar.xz");
+    fs::rename(&archive, &renamed).unwrap();
+    let destination = root.path().join("out");
+    fs::create_dir(&destination).unwrap();
+    TarArchive.extract(&renamed, &destination).unwrap();
+    assert!(destination.join("top/file").exists());
+}
+
+#[test]
+fn something_that_is_not_xz_is_an_error() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("bad.tar.xz");
+    fs::write(&archive, "not an archive").unwrap();
+    let error = TarArchive.extract(&archive, root.path()).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn a_truncated_xz_archive_is_an_error() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = build_xz(root.path(), &[("top/file", &"x".repeat(5000))]);
+    let bytes = fs::read(&archive).unwrap();
+    fs::write(&archive, &bytes[..bytes.len() / 2]).unwrap();
+    let destination = root.path().join("out");
+    fs::create_dir(&destination).unwrap();
+    assert!(TarArchive.extract(&archive, &destination).is_err());
+}
+```
+
+Delete `src/adapters/targz_archive/mod.rs` (`git rm src/adapters/targz_archive/mod.rs`).
+
+Delete `src/adapters/targz_archive/tests.rs` (`git rm src/adapters/targz_archive/tests.rs`).
+
+Apply to `src/commands/install/fetch/tests.rs`:
+
+```diff
+--- a/src/commands/install/fetch/tests.rs
++++ b/src/commands/install/fetch/tests.rs
+@@ -3,9 +3,9 @@
+ use crate::ports::FileSystem;
+ 
+ const SUMS: &str = "http://127.0.0.1:1/v20.10.0/SHASUMS256.txt";
+-const TARBALL_URL: &str = "http://127.0.0.1:1/v20.10.0/node-v20.10.0-linux-x64.tar.gz";
++const TARBALL_URL: &str = "http://127.0.0.1:1/v20.10.0/node-v20.10.0-linux-x64.tar.xz";
+ const TARBALL: &str =
+-    "/home/me/.nvm/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.gz";
++    "/home/me/.nvm/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.xz";
+ const GOOD: &str = "aa11";
+ 
+ fn artifact_of(context: &Context<'_>) -> Artifact {
+@@ -24,7 +24,7 @@
+ }
+ 
+ fn sums(digest: &str) -> String {
+-    format!("{digest}  node-v20.10.0-linux-x64.tar.gz\nff00  node-v20.10.0-linux-x64.tar.xz\n")
++    format!("{digest}  node-v20.10.0-linux-x64.tar.xz\nff00  node-v20.10.0-linux-x64.tar.gz\n")
+ }
+ 
+ fn run(
+@@ -84,8 +84,8 @@
+     assert_eq!(
+         stderr(transcript),
+         [
+-            "Local cache found: ${NVM_DIR}/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.gz",
+-            "Checksums match! Using existing downloaded archive ${NVM_DIR}/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.gz",
++            "Local cache found: ${NVM_DIR}/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.xz",
++            "Checksums match! Using existing downloaded archive ${NVM_DIR}/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.xz",
+         ]
+     );
+ }
+@@ -197,7 +197,7 @@
+     let mac = crate::domain::platform::Platform::from_host("macos", "aarch64", false);
+     let context = Context::new(&fs, &env).with_platform(mac);
+     let artifact = Artifact::of(&context, &"v20.10.0".parse().unwrap()).unwrap();
+-    assert_eq!(artifact.file_name, "node-v20.10.0-darwin-arm64.tar.gz");
++    assert_eq!(artifact.file_name, "node-v20.10.0-darwin-arm64.tar.xz");
+     assert_eq!(
+         artifact.files(),
+         PathBuf::from("/home/me/.nvm/.cache/bin/node-v20.10.0-darwin-arm64/files")
+@@ -231,7 +231,7 @@
+     assert_eq!(
+         stderr(transcript),
+         [
+-            "Offline: using cached archive ${NVM_DIR}/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.gz"
++            "Offline: using cached archive ${NVM_DIR}/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.xz"
+         ]
+     );
+ }
+@@ -253,10 +253,10 @@
+     let context = Context::new(&fs, &env);
+     let artifact = Artifact::source_of(&context, &version()).unwrap();
+     assert_eq!(artifact.slug, "node-v20.10.0");
+-    assert_eq!(artifact.file_name, "node-v20.10.0.tar.gz");
++    assert_eq!(artifact.file_name, "node-v20.10.0.tar.xz");
+     assert_eq!(
+         artifact.tarball,
+-        PathBuf::from("/home/me/.nvm/.cache/src/node-v20.10.0/node-v20.10.0.tar.gz")
++        PathBuf::from("/home/me/.nvm/.cache/src/node-v20.10.0/node-v20.10.0.tar.xz")
+     );
+     let iojs = Artifact::source_of(&context, &"iojs-v3.3.1".parse().unwrap()).unwrap();
+     assert_eq!(iojs.slug, "iojs-v3.3.1");
+@@ -265,12 +265,12 @@
+ #[test]
+ fn a_source_archive_is_downloaded_and_checked_like_a_binary_one() {
+     let fs = FakeFileSystem::default();
+-    let url = "http://127.0.0.1:1/v20.10.0/node-v20.10.0.tar.gz";
+-    let sums_text = format!("{GOOD}  node-v20.10.0.tar.gz\n");
++    let url = "http://127.0.0.1:1/v20.10.0/node-v20.10.0.tar.xz";
++    let sums_text = format!("{GOOD}  node-v20.10.0.tar.xz\n");
+     let http = FakeHttp::default()
+         .with_body(SUMS, &sums_text)
+         .with_bytes(url, b"source");
+-    let tarball = "/home/me/.nvm/.cache/src/node-v20.10.0/node-v20.10.0.tar.gz";
++    let tarball = "/home/me/.nvm/.cache/src/node-v20.10.0/node-v20.10.0.tar.xz";
+     let digest = FakeDigest::default().with_digest(tarball, GOOD);
+     let env = env();
+     let context = Context::new(&fs, &env)
+```
+
+Apply to `src/commands/install/offline/tests.rs`:
+
+```diff
+--- a/src/commands/install/offline/tests.rs
++++ b/src/commands/install/offline/tests.rs
+@@ -10,26 +10,26 @@
+ fn cache() -> FakeFileSystem {
+     FakeFileSystem::default()
+         .with_file(
+-            "/n/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.gz",
++            "/n/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.xz",
+             "t",
+         )
+         .with_file(
+-            "/n/.cache/bin/node-v18.19.0-linux-x64/node-v18.19.0-linux-x64.tar.gz",
++            "/n/.cache/bin/node-v18.19.0-linux-x64/node-v18.19.0-linux-x64.tar.xz",
+             "t",
+         )
+         .with_file(
+-            "/n/.cache/bin/node-v18.18.0-linux-x64/node-v18.18.0-linux-x64.tar.gz",
++            "/n/.cache/bin/node-v18.18.0-linux-x64/node-v18.18.0-linux-x64.tar.xz",
+             "t",
+         )
+         .with_file(
+-            "/n/.cache/bin/node-v22.0.0-darwin-arm64/node-v22.0.0-darwin-arm64.tar.gz",
++            "/n/.cache/bin/node-v22.0.0-darwin-arm64/node-v22.0.0-darwin-arm64.tar.xz",
+             "t",
+         )
+         .with_file(
+-            "/n/.cache/bin/iojs-v3.3.1-linux-x64/iojs-v3.3.1-linux-x64.tar.gz",
++            "/n/.cache/bin/iojs-v3.3.1-linux-x64/iojs-v3.3.1-linux-x64.tar.xz",
+             "t",
+         )
+-        .with_file("/n/.cache/src/node-v16.20.2/node-v16.20.2.tar.gz", "t")
++        .with_file("/n/.cache/src/node-v16.20.2/node-v16.20.2.tar.xz", "t")
+ }
+ 
+ /// The expectations are what `nvm_ls_cached` of the real `nvm.sh` lists.
+```
+
+Apply to `src/commands/install/source/tests.rs`:
+
+```diff
+--- a/src/commands/install/source/tests.rs
++++ b/src/commands/install/source/tests.rs
+@@ -6,8 +6,8 @@
+ use crate::ports::{Completed, FileSystem};
+ 
+ const SUMS: &str = "https://nodejs.org/dist/v20.10.0/SHASUMS256.txt";
+-const TARBALL_URL: &str = "https://nodejs.org/dist/v20.10.0/node-v20.10.0.tar.gz";
+-const TARBALL: &str = "/n/.cache/src/node-v20.10.0/node-v20.10.0.tar.gz";
++const TARBALL_URL: &str = "https://nodejs.org/dist/v20.10.0/node-v20.10.0.tar.xz";
++const TARBALL: &str = "/n/.cache/src/node-v20.10.0/node-v20.10.0.tar.xz";
+ const TOP: &str = "/n/.cache/src/node-v20.10.0/files";
+ const PREFIX: &str = "--prefix=/n/versions/node/v20.10.0";
+ 
+@@ -24,7 +24,7 @@
+         Self {
+             fs: FakeFileSystem::default(),
+             http: FakeHttp::default()
+-                .with_body(SUMS, "aa11  node-v20.10.0.tar.gz\n")
++                .with_body(SUMS, "aa11  node-v20.10.0.tar.xz\n")
+                 .with_bytes(TARBALL_URL, b"source"),
+             digest: FakeDigest::default().with_digest(TARBALL, "aa11"),
+             env: FakeEnv::default().with_var("NVM_DIR", "/n"),
+```
+
+Apply to `src/commands/install/tests/built.rs`:
+
+```diff
+--- a/src/commands/install/tests/built.rs
++++ b/src/commands/install/tests/built.rs
+@@ -3,8 +3,8 @@
+ use super::*;
+ use crate::fakes::FakeCpu;
+ 
+-pub(super) const SRC_URL: &str = "https://nodejs.org/dist/v20.10.0/node-v20.10.0.tar.gz";
+-pub(super) const SRC_TARBALL: &str = "/n/.cache/src/node-v20.10.0/node-v20.10.0.tar.gz";
++pub(super) const SRC_URL: &str = "https://nodejs.org/dist/v20.10.0/node-v20.10.0.tar.xz";
++pub(super) const SRC_TARBALL: &str = "/n/.cache/src/node-v20.10.0/node-v20.10.0.tar.xz";
+ pub(super) const TOP: &str = "/n/.cache/src/node-v20.10.0/files";
+ pub(super) const PREFIX: &str = "--prefix=/n/versions/node/v20.10.0";
+ 
+@@ -21,7 +21,7 @@
+     pub(super) fn new() -> Self {
+         let node = index_text(&[("v20.10.0", "Iron")]);
+         let sums =
+-            format!("{GOOD}  node-v20.10.0-linux-x64.tar.gz\n{GOOD}  node-v20.10.0.tar.gz\n");
++            format!("{GOOD}  node-v20.10.0-linux-x64.tar.xz\n{GOOD}  node-v20.10.0.tar.xz\n");
+         Self {
+             fs: Rc::new(FakeFileSystem::default()),
+             http: FakeHttp::default()
+```
+
+Apply to `src/commands/install/tests/hook.rs`:
+
+```diff
+--- a/src/commands/install/tests/hook.rs
++++ b/src/commands/install/tests/hook.rs
+@@ -35,7 +35,7 @@
+             .http
+             .requests()
+             .iter()
+-            .any(|url| url.contains(".tar.gz"))
++            .any(|url| url.contains(".tar.xz"))
+     );
+ }
+ 
+```
+
+Apply to `src/commands/install/tests/mod.rs`:
+
+```diff
+--- a/src/commands/install/tests/mod.rs
++++ b/src/commands/install/tests/mod.rs
+@@ -10,8 +10,8 @@
+ const NODE_INDEX: &str = "https://nodejs.org/dist/index.tab";
+ const IOJS_INDEX: &str = "https://iojs.org/dist/index.tab";
+ const SUMS: &str = "https://nodejs.org/dist/v20.10.0/SHASUMS256.txt";
+-const TARBALL_URL: &str = "https://nodejs.org/dist/v20.10.0/node-v20.10.0-linux-x64.tar.gz";
+-const TARBALL: &str = "/n/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.gz";
++const TARBALL_URL: &str = "https://nodejs.org/dist/v20.10.0/node-v20.10.0-linux-x64.tar.xz";
++const TARBALL: &str = "/n/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.xz";
+ const NODE: &str = "/n/versions/node/v20.10.0/bin/node";
+ const GOOD: &str = "aa11";
+ 
+@@ -34,7 +34,7 @@
+             http: FakeHttp::default()
+                 .with_body(NODE_INDEX, &node)
+                 .with_body(IOJS_INDEX, &iojs)
+-                .with_body(SUMS, &format!("{GOOD}  node-v20.10.0-linux-x64.tar.gz\n"))
++                .with_body(SUMS, &format!("{GOOD}  node-v20.10.0-linux-x64.tar.xz\n"))
+                 .with_bytes(TARBALL_URL, b"tarball"),
+             digest: FakeDigest::default().with_digest(TARBALL, GOOD),
+             sleeper: FakeSleeper::default(),
+```
+
+Apply to `src/commands/install/tests/source.rs`:
+
+```diff
+--- a/src/commands/install/tests/source.rs
++++ b/src/commands/install/tests/source.rs
+@@ -84,7 +84,7 @@
+     world.http = FakeHttp::default()
+         .with_body(NODE_INDEX, &index_text(&[("v20.10.0", "Iron")]))
+         .with_body(IOJS_INDEX, &index_text(&[]))
+-        .with_body(SUMS, &format!("{GOOD}  node-v20.10.0.tar.gz\n"))
++        .with_body(SUMS, &format!("{GOOD}  node-v20.10.0.tar.xz\n"))
+         .with_bytes(SRC_URL, b"source");
+     let no_binary = Rc::clone(&world.fs);
+     let context = Context::new(&*no_binary, &world.env)
+```
+
+Create `src/domain/compression/mod.rs` containing only the test module:
+
+```rust
+#[cfg(test)]
+mod tests;
+```
+
+Create `src/domain/compression/tests.rs`:
+
+```rust
+use super::*;
+use crate::domain::version::Version;
+
+fn xz(version: &str, os: Os) -> bool {
+    let version = version.parse::<Version>().unwrap();
+    Compression::preferred(&version, os) == Compression::Xz
+}
+
+#[test]
+fn it_prefers_xz_from_node_4() {
+    assert!(xz("v4.0.0", Os::Linux));
+    assert!(xz("v20.10.0", Os::Darwin));
+    assert!(xz("v22.0.0", Os::Aix));
+}
+
+#[test]
+fn it_prefers_xz_from_the_last_patches_of_0_10_and_0_12() {
+    assert!(!xz("v0.10.41", Os::Linux));
+    assert!(xz("v0.10.42", Os::Linux));
+    assert!(xz("v0.10.48", Os::Linux));
+    assert!(!xz("v0.12.9", Os::Linux));
+    assert!(xz("v0.12.10", Os::Linux));
+    assert!(xz("v0.12.18", Os::Linux));
+}
+
+#[test]
+fn it_uses_gzip_for_the_versions_between() {
+    assert!(!xz("v0.8.6", Os::Linux));
+    assert!(!xz("v0.11.16", Os::Linux));
+    assert!(!xz("v0.13.0", Os::Linux));
+}
+
+#[test]
+fn it_waits_for_io_js_2_3_2_on_macos_and_1_0_0_elsewhere() {
+    assert!(xz("v1.0.0", Os::Linux));
+    assert!(xz("v3.3.1", Os::Linux));
+    assert!(!xz("v1.8.4", Os::Darwin));
+    assert!(!xz("v2.3.1", Os::Darwin));
+    assert!(xz("v2.3.2", Os::Darwin));
+    assert!(xz("v3.3.1", Os::Darwin));
+}
+
+#[test]
+fn it_names_the_extension() {
+    assert_eq!(Compression::Xz.extension(), "tar.xz");
+    assert_eq!(Compression::Gzip.extension(), "tar.gz");
+}
+```
+
+Apply to `tests/common/mod.rs`:
+
+```diff
+--- a/tests/common/mod.rs
++++ b/tests/common/mod.rs
+@@ -12,8 +12,7 @@
+ use std::process::{Command, Output};
+ use std::thread;
+ 
+-use flate2::Compression;
+-use flate2::write::GzEncoder;
++use lzma_rust2::{XzOptions, XzWriter};
+ use nvmrc::domain::platform::Platform;
+ use sha2::{Digest, Sha256};
+ 
+@@ -42,9 +41,11 @@
+     Some(platform.download_slug(&version.parse().unwrap()))
+ }
+ 
+-/// A gzip-compressed tar of `entries`.
+-pub fn tar_gz(entries: &[Entry<'_>]) -> Vec<u8> {
+-    let mut builder = tar::Builder::new(GzEncoder::new(Vec::new(), Compression::default()));
++/// An xz-compressed tar of `entries`: what nvmrc asks a mirror for, as
++/// `nvm.sh` does, for every version of Node 4 and later.
++pub fn tar_xz(entries: &[Entry<'_>]) -> Vec<u8> {
++    let writer = XzWriter::new(Vec::new(), XzOptions::with_preset(1)).unwrap();
++    let mut builder = tar::Builder::new(writer);
+     for (path, contents, mode) in entries {
+         let mut header = tar::Header::new_gnu();
+         header.set_size(contents.len() as u64);
+@@ -70,7 +71,7 @@
+             .iter()
+             .map(|(path, contents, mode)| (format!("{slug}/{path}"), *contents, *mode)),
+     );
+-    tar_gz(&entries)
++    tar_xz(&entries)
+ }
+ 
+ pub fn tarball(slug: &str, version: &str) -> Vec<u8> {
+@@ -144,7 +145,7 @@
+     ) -> Option<Self> {
+         let slug = slug(version)?;
+         let archive = tarball_with(&slug, version, extra);
+-        self.add(version, &format!("{slug}.tar.gz"), archive, listed);
++        self.add(version, &format!("{slug}.tar.xz"), archive, listed);
+         Some(self)
+     }
+ 
+@@ -155,7 +156,7 @@
+             .iter()
+             .map(|(path, contents, mode)| (format!("{top}/{path}"), *contents, *mode))
+             .collect();
+-        self.add(version, &format!("{top}.tar.gz"), tar_gz(&entries), None);
++        self.add(version, &format!("{top}.tar.xz"), tar_xz(&entries), None);
+         self
+     }
+ 
+```
+
+Apply to `tests/install_cli.rs`:
+
+```diff
+--- a/tests/install_cli.rs
++++ b/tests/install_cli.rs
+@@ -1,6 +1,6 @@
+ //! End-to-end: `install` and `uninstall` with the real binary, a real
+ //! temporary `$NVM_DIR` and a mirror served on a local port that holds a real
+-//! `.tar.gz`.
++//! `.tar.xz`.
+ 
+ mod common;
+ 
+```
+
+- [ ] **Step 4: Run the tests to verify they fail**
+
+Run: `cargo test`
+Expected: FAIL to compile with errors such as "cannot find module
+`compression`", "unresolved import `crate::adapters::tar_archive`" and "cannot
+find struct `TarArchive`".
+
+- [ ] **Step 5: Write the implementation**
+
+Insert above the `#[cfg(test)]` line of `src/adapters/tar_archive/mod.rs`:
+
+```rust
+use std::fs::File;
+use std::io::{self, Read};
+use std::path::Path;
+
+use flate2::read::GzDecoder;
+use lzma_rust2::XzReader;
+
+use crate::ports::Archive;
+
+const GZIP_MAGIC: &[u8] = &[0x1f, 0x8b];
+const XZ_MAGIC: &[u8] = &[0xfd, b'7', b'z', b'X', b'Z', 0x00];
+
+/// The real [`Archive`]: a gzip- or xz-compressed tar, told apart by its first
+/// bytes (as `tar` does) and unpacked by the `tar` crate. An entry that would
+/// land outside `destination` (`..`, an absolute path, or a path that goes
+/// through a symlink out of it) fails the whole extraction, and the owner of a
+/// file is not restored.
+pub struct TarArchive;
+
+impl Archive for TarArchive {
+    fn extract(&self, archive: &Path, destination: &Path) -> io::Result<()> {
+        let mut magic = [0u8; 6];
+        let read = File::open(archive)?.read(&mut magic)?;
+        let file = File::open(archive)?;
+        if magic[..read].starts_with(GZIP_MAGIC) {
+            unpack(GzDecoder::new(file), destination)
+        } else if magic[..read].starts_with(XZ_MAGIC) {
+            unpack(XzReader::new(file, true), destination)
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "not a gzip or xz archive",
+            ))
+        }
+    }
+}
+
+fn unpack(decoder: impl Read, destination: &Path) -> io::Result<()> {
+    let mut reader = tar::Archive::new(decoder);
+    reader.set_preserve_ownerships(false);
+    for entry in reader.entries()? {
+        let mut entry = entry?;
+        if !entry.unpack_in(destination)? {
+            let message = format!("unsafe path in archive: {}", entry.path()?.display());
+            return Err(io::Error::new(io::ErrorKind::InvalidData, message));
+        }
+    }
+    Ok(())
+}
+
+```
+
+Apply to `src/cli/mod.rs` (above the test module):
+
+```diff
+--- a/src/cli/mod.rs
++++ b/src/cli/mod.rs
+@@ -13,7 +13,7 @@
+ use crate::adapters::std_fs::StdFileSystem;
+ use crate::adapters::std_process::StdProcess;
+ use crate::adapters::std_sleeper::StdSleeper;
+-use crate::adapters::targz_archive::TarGzArchive;
++use crate::adapters::tar_archive::TarArchive;
+ use crate::adapters::ureq_http::UreqHttp;
+ use crate::commands::{self, Output};
+ use crate::context::Context;
+@@ -207,7 +207,7 @@
+         .with_process(&process)
+         .with_http(&http)
+         .with_digest(&Sha256Digest)
+-        .with_archive(&TarGzArchive)
++        .with_archive(&TarArchive)
+         .with_sleeper(&StdSleeper)
+         .with_cpu(&StdCpu)
+         .with_platform(platform);
+```
+
+Apply to `src/commands/install/fetch/mod.rs` (above the test module):
+
+```diff
+--- a/src/commands/install/fetch/mod.rs
++++ b/src/commands/install/fetch/mod.rs
+@@ -1,13 +1,15 @@
+ //! Getting the archive of a version into `$NVM_DIR/.cache/bin/<slug>/`, and
+ //! checking it against the mirror's `SHASUMS256.txt`, as `nvm_download_artifact`
+-//! does (but the `.tar.gz`, never the `.tar.xz`).
++//! does, the `.tar.xz` where it would and the `.tar.gz` elsewhere.
+ 
+ use std::path::{Path, PathBuf};
+ 
+ use crate::commands::transcript::Transcript;
+ use crate::context::Context;
+ use crate::domain::checksum::{compare, expected_digest};
++use crate::domain::compression::Compression;
+ use crate::domain::mirror::{self, MirrorUrl};
++use crate::domain::platform::Os;
+ use crate::domain::version::{Flavor, Version};
+ 
+ /// A failure whose messages are in the transcript already.
+@@ -18,7 +20,7 @@
+ pub struct Artifact {
+     /// `node-v20.10.0-linux-x64`.
+     pub slug: String,
+-    /// `node-v20.10.0-linux-x64.tar.gz`.
++    /// `node-v20.10.0-linux-x64.tar.xz`.
+     pub file_name: String,
+     /// `$NVM_DIR/.cache/bin/<slug>`.
+     pub directory: PathBuf,
+@@ -30,9 +32,10 @@
+     /// unknown.
+     #[must_use]
+     pub fn of(context: &Context<'_>, version: &Version) -> Option<Self> {
+-        let slug = context.platform()?.download_slug(version);
++        let platform = context.platform()?;
++        let slug = platform.download_slug(version);
+         let directory = context.cache_dir().ok()?.join("bin").join(&slug);
+-        let file_name = format!("{slug}.tar.gz");
++        let file_name = file_name(&slug, version, platform.os);
+         let tarball = directory.join(&file_name);
+         Some(Self {
+             slug,
+@@ -52,7 +55,7 @@
+         };
+         let slug = format!("{flavor}-{}", version.directory_name());
+         let directory = context.cache_dir().ok()?.join("src").join(&slug);
+-        let file_name = format!("{slug}.tar.gz");
++        let file_name = file_name(&slug, version, context.platform()?.os);
+         let tarball = directory.join(&file_name);
+         Some(Self {
+             slug,
+@@ -67,6 +70,11 @@
+     pub fn files(&self) -> PathBuf {
+         self.directory.join("files")
+     }
++}
++
++/// `<slug>.tar.xz` or `<slug>.tar.gz`, as `nvm_get_artifact_compression` says.
++fn file_name(slug: &str, version: &Version, os: Os) -> String {
++    format!("{slug}.{}", Compression::preferred(version, os).extension())
+ }
+ 
+ /// `$NVM_DIR` and `$HOME` in a path shown to the user become the variables.
+@@ -235,3 +243,5 @@
+     }
+ }
+ 
++#[cfg(test)]
++mod name_tests;
+```
+
+Create `src/commands/install/fetch/name_tests.rs`:
+
+```rust
+use super::*;
+use crate::fakes::{FakeEnv, FakeFileSystem};
+
+fn env() -> FakeEnv {
+    FakeEnv::default().with_var("NVM_DIR", "/home/me/.nvm")
+}
+
+#[test]
+fn a_node_without_an_xz_archive_gets_the_gzip_one() {
+    let fs = FakeFileSystem::default();
+    let env = env();
+    let context = Context::new(&fs, &env);
+    let old = Artifact::of(&context, &"v0.10.41".parse().unwrap()).unwrap();
+    assert_eq!(old.file_name, "node-v0.10.41-linux-x64.tar.gz");
+    let iojs = Artifact::of(&context, &"iojs-v3.3.1".parse().unwrap()).unwrap();
+    assert_eq!(iojs.file_name, "iojs-v3.3.1-linux-x64.tar.xz");
+    let mac = crate::domain::platform::Platform::from_host("macos", "x86_64", false);
+    let mac = context.with_platform(mac);
+    let iojs = Artifact::of(&mac, &"iojs-v2.3.1".parse().unwrap()).unwrap();
+    assert_eq!(iojs.file_name, "iojs-v2.3.1-darwin-x64.tar.gz");
+}
+
+#[test]
+fn the_source_archive_follows_the_same_rule() {
+    let fs = FakeFileSystem::default();
+    let env = env();
+    let context = Context::new(&fs, &env);
+    let new = Artifact::source_of(&context, &"v20.10.0".parse().unwrap()).unwrap();
+    assert_eq!(new.file_name, "node-v20.10.0.tar.xz");
+    let old = Artifact::source_of(&context, &"v0.10.41".parse().unwrap()).unwrap();
+    assert_eq!(old.file_name, "node-v0.10.41.tar.gz");
+}
+```
+
+Apply to `src/commands/install/mod.rs` (above the test module):
+
+```diff
+--- a/src/commands/install/mod.rs
++++ b/src/commands/install/mod.rs
+@@ -1,5 +1,5 @@
+ //! `nvm install`: the version a description stands for, from the mirror, into
+-//! `$NVM_DIR/versions`. Only prebuilt binaries (`.tar.gz`) are installed; the
++//! `$NVM_DIR/versions`. Prebuilt binaries (`.tar.xz` or `.tar.gz`) are installed; the
+ //! install is not activated, which is the shell's job (`nvm use`).
+ 
+ mod acquire;
+```
+
+Insert above the `#[cfg(test)]` line of `src/domain/compression/mod.rs`:
+
+```rust
+//! Which archive `nvm.sh` downloads: `nvm_get_artifact_compression` and
+//! `nvm_supports_xz`, as a pure function of the version and the system.
+//!
+//! `nvm.sh` also asks whether `xz`, a new enough macOS or `liblzma` is on the
+//! machine, because it hands the archive to `tar`. This port unpacks `.tar.xz`
+//! itself, so only the version and the operating system decide.
+
+use crate::domain::platform::Os;
+use crate::domain::version::Version;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Compression {
+    Gzip,
+    Xz,
+}
+
+impl Compression {
+    /// The compression `nvm.sh` picks for `version` on `os`.
+    #[must_use]
+    pub fn preferred(version: &Version, os: Os) -> Self {
+        if supports_xz(version.triple(), os) {
+            Self::Xz
+        } else {
+            Self::Gzip
+        }
+    }
+
+    /// The extension of an archive, without the dot.
+    #[must_use]
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::Gzip => "tar.gz",
+            Self::Xz => "tar.xz",
+        }
+    }
+}
+
+/// Whether nodejs.org publishes a `.tar.xz` for `triple`, in the order
+/// `nvm_supports_xz` asks.
+fn supports_xz(triple: (u64, u64, u64), os: Os) -> bool {
+    if triple >= (4, 0, 0) {
+        return true;
+    }
+    if ((0, 12, 10)..(0, 13, 0)).contains(&triple) {
+        return true;
+    }
+    if ((0, 10, 42)..(0, 11, 0)).contains(&triple) {
+        return true;
+    }
+    // io.js only has xz from 1.0.0, and on macOS from 2.3.2.
+    let first_iojs = if os == Os::Darwin {
+        (2, 3, 2)
+    } else {
+        (1, 0, 0)
+    };
+    triple >= first_iojs
+}
+
+```
+
+Apply to `src/ports/mod.rs` (above the test module):
+
+```diff
+--- a/src/ports/mod.rs
++++ b/src/ports/mod.rs
+@@ -204,12 +204,12 @@
+ }
+ 
+ pub trait Archive {
+-    /// Unpacks the `.tar.gz` at `archive` into the existing directory
+-    /// `destination`, keeping every path inside it.
++    /// Unpacks the `.tar.gz` or `.tar.xz` at `archive` into the existing
++    /// directory `destination`, keeping every path inside it.
+     ///
+     /// # Errors
+     /// Propagates the underlying I/O error, and fails on a file that is not a
+-    /// gzip-compressed tar.
++    /// gzip- or xz-compressed tar.
+     fn extract(&self, archive: &Path, destination: &Path) -> io::Result<()>;
+ }
+ 
+```
+
+Then run `cargo fmt`.
+
+- [ ] **Step 6: Run the tests to verify they pass**
+
+Run: `cargo test`
+Expected: PASS: 597 unit tests plus the end-to-end tests.
+
+- [ ] **Step 7: Run the quality gate and commit**
+
+Run:
+
+```bash
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+cargo audit
+rustup run 1.85 cargo check --all-targets
+```
+
+Expected: formatting clean, zero clippy warnings, no advisories and the crate
+still builds on MSRV 1.88.
+
+```bash
+git add src tests Cargo.toml Cargo.lock
+git commit -S -m "feat(install): install the .tar.xz where nvm.sh does"
+```
+
+---
+
 ## Environment variables
 
 Every variable below was read in `nvm.sh` and, where it changes what is
@@ -16575,13 +17685,19 @@ on whether this port should honour it as `nvm.sh` does.
   `NVM_INSTALL_LOCK_TIMEOUT` and `NVM_INSTALL_LOCK_STALE`; step 7 extracts into
   a temporary directory and moves it with one rename; step 8 is the `npm`
   upgrade, the default packages and the copy of global packages; section 6
-  gains exits 4, 5, 6 and 33; section 10 gains `sha2`, `flate2` and `tar`;
+  gains exits 4, 5, 6 and 33; section 10 gains `sha2`, `flate2`, `tar` and
+  `lzma-rust2`, and the MSRV is 1.85;
   section 11 step 5 is complete for `install`, `uninstall`,
   `install-latest-npm` and `reinstall-packages`.
 - **Deliberate deviations from `nvm.sh`, each to be pinned by the Plan 9
   compatibility contract:**
-  - Only `.tar.gz` archives are used; `nvm.sh` prefers `.tar.xz` wherever it
-    can, so the archive and its checksum differ.
+  - The archive is chosen by the version and the system alone (`.tar.xz`
+    from Node 4, from 0.10.42 and 0.12.10, and for io.js from 1.0.0, or
+    2.3.2 on macOS; `.tar.gz` otherwise), because this port unpacks `.tar.xz`
+    itself. `nvm.sh` also needs `xz` on `PATH`, a macOS that is 10.9 or newer
+    or `liblzma` on FreeBSD, and uses `.tar.gz` on a machine without them.
+    There is no fall back from a missing `.tar.xz` to the `.tar.gz`, as in
+    `nvm.sh`.
   - The install is not activated and there is no `Now using node ...` line;
     `nvm use` belongs to the shell (Plan 6). `nvm install` with no version
     does not read a `.nvmrc`, and a command with options only is a usage error.
