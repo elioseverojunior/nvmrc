@@ -6,6 +6,7 @@
 pub mod latest;
 pub mod packages;
 
+use std::ffi::OsStr;
 use std::path::PathBuf;
 
 use crate::commands::transcript::Transcript;
@@ -35,7 +36,14 @@ impl Npm {
     #[must_use]
     pub fn on_path(context: &Context<'_>) -> Option<Self> {
         let path_variable = context.env.var_os("PATH").unwrap_or_default();
-        let program = find_in_path(context.fs, &path_variable, "npm")?;
+        Self::on_path_value(context, &path_variable)
+    }
+
+    /// The first `npm` on `path_variable`: the `PATH` a command is about to
+    /// give the shell, rather than the one it runs with.
+    #[must_use]
+    pub fn on_path_value(context: &Context<'_>, path_variable: &OsStr) -> Option<Self> {
+        let program = find_in_path(context.fs, path_variable, "npm")?;
         let bin_dir = program.parent()?.to_path_buf();
         Some(Self { program, bin_dir })
     }
