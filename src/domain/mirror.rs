@@ -63,7 +63,6 @@ pub fn from_env(env: &dyn Env, flavor: Flavor) -> Result<MirrorUrl, MirrorError>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::version::Flavor;
     use crate::fakes::FakeEnv;
 
     #[test]
