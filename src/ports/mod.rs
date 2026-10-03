@@ -3,6 +3,7 @@
 use std::ffi::OsString;
 use std::io;
 use std::path::Path;
+use std::time::Duration;
 
 use thiserror::Error;
 
@@ -75,6 +76,11 @@ pub trait Http {
     /// Fails on a non-success status, on a network error, or when the body is
     /// not text.
     fn get_text(&self, url: &str) -> Result<String, HttpError>;
+}
+
+pub trait Sleeper {
+    /// Waits for `duration` (between retries).
+    fn sleep(&self, duration: Duration);
 }
 
 pub trait Env {

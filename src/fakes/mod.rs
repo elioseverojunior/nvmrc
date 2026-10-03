@@ -4,8 +4,10 @@ mod env;
 mod file_system;
 mod http;
 mod process;
+mod sleeper;
 
 pub use env::FakeEnv;
 pub use file_system::FakeFileSystem;
 pub use http::FakeHttp;
 pub use process::FakeProcess;
+pub use sleeper::FakeSleeper;
