@@ -61,6 +61,12 @@ enum Command {
         #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
     },
+    /// Upgrade the `npm` of the node in use to the newest one that works on it.
+    #[command(name = "install-latest-npm")]
+    InstallLatestNpm {
+        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
     /// Remove an installed version (`--lts` and `--lts=<name>` pick one by
     /// its LTS alias) and the aliases that name it.
     Uninstall {
@@ -97,6 +103,7 @@ fn dispatch(command: &Command, context: &Context<'_>) -> Result<Output, CliError
         Command::VersionRemote { args } => commands::version_remote::run(context, args),
         Command::Cache { args } => commands::cache::run(context, args),
         Command::Install { args } => commands::install::run(context, args),
+        Command::InstallLatestNpm { args } => commands::install_latest_npm::run(context, args),
         Command::Uninstall { args } => commands::uninstall::run(context, args),
         Command::Which { version } => commands::which::run(context, version.as_deref()),
         Command::Alias { args } => commands::aliases::run(context, args),

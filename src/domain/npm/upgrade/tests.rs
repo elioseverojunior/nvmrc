@@ -13,10 +13,10 @@ fn triple(text: &str) -> Triple {
 fn installs(node: &str, npm: &str) -> Vec<&'static str> {
     steps(triple(node), triple(npm))
         .iter()
-        .filter_map(|step| {
-            step.install.or(Some("npm")).filter(|_| {
-                step.install.is_some() || step.note.is_some_and(|n| n.contains("Installing latest"))
-            })
+        .filter_map(|step| match step.install {
+            Install::Nothing => None,
+            Install::Latest => Some("npm"),
+            Install::Spec(spec) => Some(spec),
         })
         .collect()
 }
@@ -191,7 +191,7 @@ fn every_step_says_what_the_real_script_says() {
     for (node, npm, indexes) in SAID {
         let said: Vec<&str> = steps(triple(node), triple(npm))
             .iter()
-            .filter_map(|step| step.note)
+            .map(|step| step.note)
             .collect();
         let expected: Vec<&str> = indexes.iter().map(|index| NOTES[*index]).collect();
         assert_eq!(said, expected, "node {node}, npm {npm}");
@@ -203,13 +203,13 @@ fn the_newest_node_installs_plain_npm() {
     assert_eq!(installs("24.0.0", "10.2.3"), ["npm"]);
     let plan = steps(triple("24.0.0"), triple("10.2.3"));
     assert_eq!(plan.len(), 1);
-    assert_eq!(plan[0].install, None);
+    assert_eq!(plan[0].install, Install::Latest);
 }
 
 #[test]
 fn node_0_6_and_0_9_are_told_they_cannot_go_further_without_an_install() {
     let plan = steps(triple("0.9.12"), triple("1.4.0"));
     assert_eq!(plan.len(), 1);
-    assert_eq!(plan[0].install, None);
-    assert!(plan[0].note.unwrap().contains("unable to upgrade further"));
+    assert_eq!(plan[0].install, Install::Nothing);
+    assert!(plan[0].note.contains("unable to upgrade further"));
 }

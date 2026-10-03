@@ -1,19 +1,29 @@
 //! The newest `npm` that works on a `node`: `nvm_install_latest_npm`, as data.
 
-/// One step of an upgrade: what `nvm.sh` says about it, and the argument of
-/// `npm install -g` (`None` installs plain `npm`, the latest).
+/// What a step installs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Install {
+    /// Nothing: the step only says why there is no more to do.
+    Nothing,
+    /// `npm install -g npm`: the latest.
+    Latest,
+    /// `npm install -g <argument>`, such as `npm@6`.
+    Spec(&'static str),
+}
+
+/// One step of an upgrade: what `nvm.sh` says about it, and what it installs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Step {
-    pub note: Option<&'static str>,
-    pub install: Option<&'static str>,
+    pub note: &'static str,
+    pub install: Install,
 }
 
 type Triple = (u64, u64, u64);
 
 const fn step(note: &'static str, install: &'static str) -> Step {
     Step {
-        note: Some(note),
-        install: Some(install),
+        note,
+        install: Install::Spec(install),
     }
 }
 
@@ -34,8 +44,8 @@ pub fn steps(node: Triple, npm: Triple) -> Vec<Step> {
     }
     if is_0_6 || is_0_9 {
         plan.push(Step {
-            note: Some("* node v0.6 and v0.9 are unable to upgrade further"),
-            install: None,
+            note: "* node v0.6 and v0.9 are unable to upgrade further",
+            install: Install::Nothing,
         });
     } else if node < (1, 1, 0) {
         plan.push(step(
@@ -145,10 +155,8 @@ const RULES: [Rule; 9] = [
 ];
 
 const LATEST: Step = Step {
-    note: Some(
-        "* Installing latest `npm`; if this does not work on your node version, please report a bug!",
-    ),
-    install: None,
+    note: "* Installing latest `npm`; if this does not work on your node version, please report a bug!",
+    install: Install::Latest,
 };
 
 /// `node` 4 and later: the newest `npm` is bounded by the `node` release.
