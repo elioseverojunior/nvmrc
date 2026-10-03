@@ -225,8 +225,7 @@ which move to their own files):
              is_dir,
          }
      }
--
-+    #[cfg(unix)]
+     
      #[test]
      fn fake_file_system_lists_direct_children_with_their_kind() {
          let fs = FakeFileSystem::default()
@@ -333,6 +332,7 @@ mod tests {
         assert_eq!(env.var("MISSING"), None);
     }
 
+    #[cfg(unix)]
     #[test]
     fn fake_env_keeps_non_utf8_values_for_var_os_only() {
         use std::os::unix::ffi::OsStringExt;
@@ -1863,9 +1863,10 @@ git commit -S -m "feat(domain): parse the release index and derive the lts alias
   `stable` and `unstable` are the error `Implicit aliases are not supported in
   nvm_remote_versions.`; the io.js index is skipped under an LTS filter or the
   `node` flavor; Node rows come first up to `v4.0.0`, then io.js, then the rest
-  of Node; a pattern is `grep -w`: the version starts with it and no word
-  character follows; an LTS filter keeps rows whose codename contains the name
-  (case-insensitive) and the `*` filter every LTS row; the newest release of a
+  of Node; a pattern is `grep -w` over the whole row text (`v20.10.0 Iron *`):
+  it matches at any word-bounded position, so `Iron` lists the Iron rows; an
+  LTS filter keeps rows whose codename contains the name (case-insensitive)
+  and the `*` filter every LTS row; the newest release of a
   codename is marked, in index order and before the pattern is applied;
   `missing` is true when any part that ran listed nothing, because `nvm.sh`
   then exits 3 even if other rows were found.
@@ -4475,7 +4476,8 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
 
 ```
 
-Apply to `src/domain/remote/mod.rs` (above the test module):
+Apply to `src/domain/remote/mod.rs` (the new line goes directly above the
+`#[cfg(test)]` line that declares `mod tests;`, not after it):
 
 ```diff
 --- a/src/domain/remote/mod.rs
@@ -5141,8 +5143,8 @@ git commit -S -m "test(cli): run ls-remote, version-remote and cache end to end"
   - `version-remote --lts=<bad>` prints its message once and `N/A` with status
     3 for every pattern (see Task 8).
   - The `version-remote` pattern check is a plain-text match, not a regular
-    expression, and `grep -w` is a literal word match (a `.` in a pattern does
-    not match any character).
+    expression, and the `ls-remote` `grep -w` is a literal word match over the
+    whole row (a `.` or `*` in a pattern keeps its literal meaning).
   - Rows are sorted by version number; `nvm.sh` sorts io.js rows as text,
     which is the same for every release that exists.
   - The mirror error text goes to stderr once per index that is refused.
