@@ -10,7 +10,7 @@ use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::path_search::find_in_path;
 use crate::domain::platform::Os;
-use crate::domain::source_build::{clang_version, compiler, make};
+use crate::domain::source_build::{Compiler, clang_version, compiler, make};
 use crate::domain::version::Version;
 use crate::ports::Invocation;
 
@@ -80,6 +80,23 @@ pub fn build(
         transcript.out(format!("Additional options while compiling: {params}"));
     }
     let os = context.platform().map_or(Os::Linux, |platform| platform.os);
+    let toolchain = choose_compiler(context, os, transcript);
+    let artifact = Artifact::source_of(context, job.version).ok_or(BuildFailed)?;
+    let tarball =
+        fetch(context, &artifact, job.version, job.offline, transcript).map_err(|_| BuildFailed)?;
+    let files = artifact.files();
+    unpack_source(context, &tarball, &files)
+        .map_err(|message| failed(context, job, &files, message, transcript))?;
+    let tools = Toolchain {
+        os,
+        compiler_words: &toolchain.words,
+    };
+    compile(context, job, &files, &params, &tools, transcript)
+        .map_err(|()| failed(context, job, &files, String::new(), transcript))
+}
+
+/// The `CC=` and `CXX=` words, and the line about Clang when it was chosen.
+fn choose_compiler(context: &Context<'_>, os: Os, transcript: &mut Transcript) -> Compiler {
     let toolchain = compiler(
         os,
         clang(context),
@@ -91,22 +108,7 @@ pub fn build(
             "Clang v3.5+ detected! CC or CXX not specified, will use Clang as C/C++ compiler!",
         );
     }
-    let artifact = Artifact::source_of(context, job.version).ok_or(BuildFailed)?;
-    let tarball =
-        fetch(context, &artifact, job.version, job.offline, transcript).map_err(|_| BuildFailed)?;
-    let files = artifact.files();
-    unpack_source(context, &tarball, &files)
-        .map_err(|message| failed(context, job, &files, message, transcript))?;
-    compile(
-        context,
-        job,
-        &files,
-        &params,
-        &toolchain.words,
-        os,
-        transcript,
-    )
-    .map_err(|()| failed(context, job, &files, String::new(), transcript))
+    toolchain
 }
 
 /// The source tree is `files` itself, the archive's top-level directory
@@ -148,48 +150,64 @@ fn failed(
     BuildFailed
 }
 
-/// `./configure`, `make`, then `make install`.
-fn compile(
-    context: &Context<'_>,
-    job: &Build<'_>,
-    top: &Path,
-    params: &str,
-    compiler_words: &[String],
+/// What `make` needs to know about the machine.
+struct Toolchain<'a> {
     os: Os,
-    transcript: &mut Transcript,
-) -> Result<(), ()> {
-    let prefix = format!("--prefix={}", job.version_path.display());
-    let words: Vec<&str> = params.split_whitespace().collect();
-    // `nvm.sh` writes `$ADDITIONAL_PARAMETERS'<'`: the `<` sticks to the last
-    // option, and stands alone when there are none.
-    let mut shown = vec!["$>./configure".to_owned(), prefix.clone()];
+    compiler_words: &'a [String],
+}
+
+/// `$>./configure --prefix=<path> <options>`, as `nvm.sh` writes it: the `<`
+/// sticks to the last option, and stands alone when there are none.
+fn configure_line(prefix: &str, words: &[&str]) -> String {
+    let mut shown = vec!["$>./configure".to_owned(), prefix.to_owned()];
     shown.extend(words.iter().map(|word| (*word).to_owned()));
     if words.is_empty() {
         shown.push("<".to_owned());
     } else if let Some(last) = shown.last_mut() {
         last.push('<');
     }
-    transcript.out(shown.join(" "));
+    shown.join(" ")
+}
+
+/// `make -j <jobs> <compiler words> [goal]`, in the source tree.
+fn make_invocation(
+    job: &Build<'_>,
+    tools: &Toolchain<'_>,
+    top: &Path,
+    goal: Option<&str>,
+) -> Invocation {
+    let (program, shell) = make(tools.os, job.version);
+    let jobs = job.jobs.to_string();
+    let mut args: Vec<&str> = shell.iter().map(String::as_str).collect();
+    args.extend(["-j", &jobs]);
+    args.extend(tools.compiler_words.iter().map(String::as_str));
+    args.extend(goal);
+    Invocation::new(program).args(&args).dir(top)
+}
+
+/// `./configure`, `make`, then `make install`.
+fn compile(
+    context: &Context<'_>,
+    job: &Build<'_>,
+    top: &Path,
+    params: &str,
+    tools: &Toolchain<'_>,
+    transcript: &mut Transcript,
+) -> Result<(), ()> {
+    let prefix = format!("--prefix={}", job.version_path.display());
+    let words: Vec<&str> = params.split_whitespace().collect();
+    transcript.out(configure_line(&prefix, &words));
     let configure = Invocation::new(top.join("configure"))
         .args(&[&prefix])
         .args(&words)
         .dir(top);
-    let (program, shell) = make(os, job.version);
-    let jobs = job.jobs.to_string();
-    let make_args = |goal: Option<&str>| {
-        let mut args: Vec<&str> = shell.iter().map(String::as_str).collect();
-        args.extend(["-j", &jobs]);
-        args.extend(compiler_words.iter().map(String::as_str));
-        args.extend(goal);
-        Invocation::new(program).args(&args).dir(top)
-    };
-    if !run(context, &configure, transcript) || !run(context, &make_args(None), transcript) {
+    let make_all = make_invocation(job, tools, top, None);
+    if !run(context, &configure, transcript) || !run(context, &make_all, transcript) {
         return Err(());
     }
     let _ = context.fs.remove_file(job.version_path);
-    run(context, &make_args(Some("install")), transcript)
-        .then_some(())
-        .ok_or(())
+    let install = make_invocation(job, tools, top, Some("install"));
+    run(context, &install, transcript).then_some(()).ok_or(())
 }
 
 #[cfg(test)]

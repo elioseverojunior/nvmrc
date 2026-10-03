@@ -287,3 +287,5 @@ fn uninstall_needs_one_word_and_a_missing_version_is_only_a_message() {
     assert_eq!((code, out.as_str()), (0, ""));
     assert_eq!(err, "Version '99' is not installed.\n");
 }
+
+mod install;

@@ -41,17 +41,8 @@ pub fn acquire(
     transcript: &mut Transcript,
 ) -> Step<()> {
     let version = &target.version;
-    if version.flavor == Flavor::Node && version.triple() < (0, 12, 0) {
-        transcript.err(format!(
-            "Versions before v0.12.0 use the legacy layout, which is not supported: {version}"
-        ));
-        return Err(Halt::Exit(NvmExitCode::InvalidVersion));
-    }
-    if let Some(program) = context
-        .env
-        .var("NVM_INSTALL_THIRD_PARTY_HOOK")
-        .filter(|hook| !hook.is_empty())
-    {
+    check_layout(version, transcript)?;
+    if let Some(program) = third_party_hook(context) {
         return hook::run(context, &program, options, target, transcript);
     }
     let _lock = take_lock(context, version, transcript)?;
@@ -72,6 +63,34 @@ pub fn acquire(
     from_source(context, options, target, transcript)
 }
 
+/// `NVM_INSTALL_THIRD_PARTY_HOOK`, when it is set to something.
+fn third_party_hook(context: &Context<'_>) -> Option<String> {
+    context
+        .env
+        .var("NVM_INSTALL_THIRD_PARTY_HOOK")
+        .filter(|hook| !hook.is_empty())
+}
+
+/// Node before 0.12 lives in `$NVM_DIR/<version>`, a layout `nvm` lists
+/// nowhere else here.
+fn check_layout(version: &Version, transcript: &mut Transcript) -> Step<()> {
+    if version.flavor == Flavor::Node && version.triple() < (0, 12, 0) {
+        transcript.err(format!(
+            "Versions before v0.12.0 use the legacy layout, which is not supported: {version}"
+        ));
+        return Err(Halt::Exit(NvmExitCode::InvalidVersion));
+    }
+    Ok(())
+}
+
+/// The binary archive of `version`, when this machine and version have one.
+fn binary_artifact(context: &Context<'_>, version: &Version) -> Option<Artifact> {
+    let has_binaries = context
+        .platform()
+        .is_some_and(|platform| platform.os.has_binaries());
+    Artifact::of(context, version).filter(|_| has_binaries && binary_available(version))
+}
+
 /// `-b`: the end of the road, with what `nvm.sh` says about the binary.
 fn without_source(binary: Option<Binary>, version: &Version, transcript: &mut Transcript) -> Halt {
     if matches!(binary, Some(Binary::Failed)) {
@@ -89,12 +108,7 @@ fn install_binary(
     transcript: &mut Transcript,
 ) -> Binary {
     let version = &target.version;
-    let has_binaries = context
-        .platform()
-        .is_some_and(|platform| platform.os.has_binaries());
-    let Some(artifact) =
-        Artifact::of(context, version).filter(|_| has_binaries && binary_available(version))
-    else {
+    let Some(artifact) = binary_artifact(context, version) else {
         return Binary::Unavailable;
     };
     let name = match version.flavor {

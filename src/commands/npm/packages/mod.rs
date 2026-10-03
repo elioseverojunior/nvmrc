@@ -21,7 +21,7 @@ pub enum Source {
 }
 
 impl Source {
-    fn label(&self) -> String {
+    pub fn label(&self) -> String {
         match self {
             Self::Version(version) => version.to_string(),
             Self::System => "system".to_owned(),
@@ -80,6 +80,23 @@ pub fn reinstall(
     link(context, destination, &packages.links, transcript)
 }
 
+/// Where `npm link` runs for a linked package: an absolute target as it is, a
+/// relative one from the global `node_modules` (as `nvm.sh` joins them).
+fn link_directory(root: &str, target: &str) -> String {
+    if target.starts_with('/') {
+        target.to_owned()
+    } else {
+        format!("{root}/../{target}")
+    }
+}
+
+/// `npm root -g`: where the global packages are.
+fn global_root(context: &Context<'_>, npm: &Npm) -> String {
+    npm.output(context, &["root", "-g"])
+        .map(|text| text.trim().to_owned())
+        .unwrap_or_default()
+}
+
 fn link(
     context: &Context<'_>,
     destination: &Npm,
@@ -90,17 +107,10 @@ fn link(
         transcript.out("No linked global packages found...");
         return NvmExitCode::Success;
     }
-    let root = destination
-        .output(context, &["root", "-g"])
-        .map(|text| text.trim().to_owned())
-        .unwrap_or_default();
+    let root = global_root(context, destination);
     let mut status = NvmExitCode::Success;
     for target in links.iter().filter(|target| !target.is_empty()) {
-        let directory = if target.starts_with('/') {
-            target.clone()
-        } else {
-            format!("{root}/../{target}")
-        };
+        let directory = link_directory(&root, target);
         let linked = destination.run_in(
             context,
             std::path::Path::new(&directory),

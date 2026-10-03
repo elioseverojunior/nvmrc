@@ -94,46 +94,67 @@ pub fn parse(args: &[String]) -> Result<Options, CliError> {
     let mut options = Options::default();
     let mut rest = args.iter().peekable();
     while let Some(option) = rest.next_if(|arg| is_option(arg)) {
-        match option.as_str() {
-            "--no-progress" => {}
-            "-s" => set_build_mode(&mut options, true)?,
-            "-b" => set_build_mode(&mut options, false)?,
-            "-j" => options.make_jobs = Some(rest.next().cloned().unwrap_or_default()),
-            "--latest-npm" => options.latest_npm = true,
-            "--offline" => options.offline = true,
-            "--save" | "-w" => set_save(&mut options)?,
-            "--skip-default-packages" => options.skip_default_packages = true,
-            "--lts" => options.lts = Some("*".to_owned()),
-            "--default" => set_alias(&mut options, "default")?,
-            other if other.starts_with("--lts=") => {
-                options.lts = Some(other["--lts=".len()..].to_owned());
-            }
-            other if other.starts_with("--alias=") => {
-                set_alias(&mut options, &other["--alias=".len()..])?;
-            }
-            other if other.starts_with("---") => {
-                let message = "arguments with `---` are not supported - this is likely a typo";
-                return Err(CliError::Unsupported(message.to_owned()));
-            }
-            other => {
-                read_reinstall(&mut options, other)?;
-            }
-        }
+        read_leading(&mut options, option, &mut rest)?;
     }
     if let Some(version) = rest.next() {
         options.version.clone_from(version);
         options.version_given = true;
     }
     for option in rest {
-        if option == "--skip-default-packages" {
-            options.skip_default_packages = true;
-        } else if !read_reinstall(&mut options, option)? {
-            options.extra.push(option.clone());
-        }
+        read_trailing(&mut options, option)?;
     }
     options.announce_lts = options.lts.is_some() && options.version.is_empty();
     take_lts_version(&mut options);
     Ok(options)
+}
+
+/// One option before the version; `-j` takes the next word as its value.
+fn read_leading(
+    options: &mut Options,
+    option: &str,
+    rest: &mut std::iter::Peekable<std::slice::Iter<'_, String>>,
+) -> Result<(), CliError> {
+    match option {
+        "--no-progress" => {}
+        "-s" => set_build_mode(options, true)?,
+        "-b" => set_build_mode(options, false)?,
+        "-j" => options.make_jobs = Some(rest.next().cloned().unwrap_or_default()),
+        "--latest-npm" => options.latest_npm = true,
+        "--offline" => options.offline = true,
+        "--save" | "-w" => set_save(options)?,
+        "--skip-default-packages" => options.skip_default_packages = true,
+        "--lts" => options.lts = Some("*".to_owned()),
+        "--default" => set_alias(options, "default")?,
+        other => read_valued(options, other)?,
+    }
+    Ok(())
+}
+
+/// The options that carry a value (`--lts=`, `--alias=`, the reinstall pair),
+/// and `---x`, which is a typo.
+fn read_valued(options: &mut Options, option: &str) -> Result<(), CliError> {
+    if let Some(name) = option.strip_prefix("--lts=") {
+        options.lts = Some(name.to_owned());
+    } else if let Some(name) = option.strip_prefix("--alias=") {
+        set_alias(options, name)?;
+    } else if option.starts_with("---") {
+        let message = "arguments with `---` are not supported - this is likely a typo";
+        return Err(CliError::Unsupported(message.to_owned()));
+    } else {
+        read_reinstall(options, option)?;
+    }
+    Ok(())
+}
+
+/// One word after the version: an option that is read there, or an argument
+/// for `./configure`.
+fn read_trailing(options: &mut Options, option: &str) -> Result<(), CliError> {
+    if option == "--skip-default-packages" {
+        options.skip_default_packages = true;
+    } else if !read_reinstall(options, option)? {
+        options.extra.push(option.to_owned());
+    }
+    Ok(())
 }
 
 /// A word that `nvm.sh` reads as an option rather than as the version.

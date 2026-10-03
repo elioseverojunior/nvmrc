@@ -3,6 +3,8 @@
 //! an `npm` skips these steps with a warning (`nvm.sh` would download an `npm`
 //! installer from the internet and run it; this port never does).
 
+use std::path::Path;
+
 use crate::commands::install::flow::{Step, Target};
 use crate::commands::install::options::Options;
 use crate::commands::npm::Npm;
@@ -84,6 +86,26 @@ fn upgrade(
     install_latest(context, npm, &Node::Version(&text), transcript)
 }
 
+/// The packages the file lists, joined as `nvm.sh` does; `None` when there is
+/// no file or nothing in it, and the failing status when a line is wrong.
+fn listed_packages(
+    context: &Context<'_>,
+    file: &Path,
+    shown: &str,
+    transcript: &mut Transcript,
+) -> Result<Option<String>, NvmExitCode> {
+    let Ok(contents) = context.fs.read_to_string(file) else {
+        return Ok(None);
+    };
+    match default_packages::parse(&contents, shown) {
+        Ok(joined) => Ok(Some(joined).filter(|joined| !joined.is_empty())),
+        Err(error) => {
+            transcript.err(error.to_string());
+            Err(NvmExitCode::Failure)
+        }
+    }
+}
+
 /// `nvm_install_default_packages`: one `npm install -g --quiet` for the lot.
 fn default_packages(
     context: &Context<'_>,
@@ -92,20 +114,12 @@ fn default_packages(
     transcript: &mut Transcript,
 ) -> Step<NvmExitCode> {
     let file = context.nvm_dir()?.join("default-packages");
-    let Ok(contents) = context.fs.read_to_string(&file) else {
-        return Ok(NvmExitCode::Success);
-    };
     let shown = file.display().to_string();
-    let joined = match default_packages::parse(&contents, &shown) {
-        Ok(joined) => joined,
-        Err(error) => {
-            transcript.err(error.to_string());
-            return Ok(NvmExitCode::Failure);
-        }
+    let joined = match listed_packages(context, &file, &shown, transcript) {
+        Ok(Some(joined)) => joined,
+        Ok(None) => return Ok(NvmExitCode::Success),
+        Err(status) => return Ok(status),
     };
-    if joined.is_empty() {
-        return Ok(NvmExitCode::Success);
-    }
     let Some(npm) = npm else {
         return Ok(skip(version, "the default packages", transcript));
     };

@@ -19,23 +19,12 @@ pub fn run(context: &Context<'_>, command: &str, args: &[String]) -> Result<Outp
         return Err(CliError::Usage(usage));
     };
     let active = current::detect(context)?.to_string();
-    let resolved = resolve_installed(context, provided)?;
-    let named = match &resolved {
-        Resolved::Installed(version) => version.to_string(),
-        Resolved::System => "system".to_owned(),
-        Resolved::Missing { .. } => "N/A".to_owned(),
-    };
+    let source = source_of(provided, resolve_installed(context, provided)?);
     let mut transcript = Transcript::default();
-    if *provided == active || named == active {
+    if *provided == active || source.label() == active {
         transcript.err("Can not reinstall packages from the current version of node.");
         return Ok(transcript.finish(NvmExitCode::MissingTarget));
     }
-    let source = match resolved {
-        Resolved::Installed(version) => Source::Version(version),
-        Resolved::System => Source::System,
-        Resolved::Missing { .. } if provided == "system" => Source::System,
-        Resolved::Missing { .. } => Source::Missing,
-    };
     if source == Source::System && system_node(context)?.is_none() {
         transcript.err("No system version of node or io.js detected.");
         return Ok(transcript.finish(NvmExitCode::InvalidVersion));
@@ -47,6 +36,16 @@ pub fn run(context: &Context<'_>, command: &str, args: &[String]) -> Result<Outp
     };
     let status = reinstall(context, &source, &destination, &mut transcript);
     Ok(transcript.finish(status))
+}
+
+/// Where the packages come from: what was asked for, once resolved.
+fn source_of(provided: &str, resolved: Resolved) -> Source {
+    match resolved {
+        Resolved::Installed(version) => Source::Version(version),
+        Resolved::System => Source::System,
+        Resolved::Missing { .. } if provided == "system" => Source::System,
+        Resolved::Missing { .. } => Source::Missing,
+    }
 }
 
 #[cfg(test)]

@@ -77,7 +77,8 @@ pub fn acquire<'a>(
     request: &LockRequest<'_>,
     notes: &mut Vec<String>,
 ) -> Result<Option<InstallLock<'a>>, CliError> {
-    if fs.create_dir_all(request.root).is_err() {
+    let root_exists = fs.create_dir_all(request.root).is_ok();
+    if !root_exists {
         return Ok(None);
     }
     let path = request.root.join(lock_name(request.version));
@@ -88,26 +89,44 @@ pub fn acquire<'a>(
             Err(error) if error.kind() != io::ErrorKind::AlreadyExists => return Ok(None),
             Err(_) => {}
         }
-        if is_stale(fs, &path, request, waited) {
-            notes.push(format!(
-                "Removing stale install lock for {} (older than {} minute(s))",
-                request.version, request.stale_minutes
-            ));
-            let _ = fs.remove_dir_all(&path);
+        if steal_if_stale(fs, &path, request, waited, notes) {
             continue;
         }
         if waited >= request.timeout_seconds {
             return Err(timed_out(request, &path));
         }
         if waited == 0 {
-            notes.push(format!(
-                "Waiting for another install of {} to finish...",
-                request.version
-            ));
+            notes.push(waiting(request));
         }
         sleeper.sleep(Duration::from_secs(1));
         waited += 1;
     }
+}
+
+/// An abandoned lock is removed, with a note; true when it was.
+fn steal_if_stale(
+    fs: &dyn FileSystem,
+    path: &Path,
+    request: &LockRequest<'_>,
+    waited: u64,
+    notes: &mut Vec<String>,
+) -> bool {
+    if !is_stale(fs, path, request, waited) {
+        return false;
+    }
+    notes.push(format!(
+        "Removing stale install lock for {} (older than {} minute(s))",
+        request.version, request.stale_minutes
+    ));
+    let _ = fs.remove_dir_all(path);
+    true
+}
+
+fn waiting(request: &LockRequest<'_>) -> String {
+    format!(
+        "Waiting for another install of {} to finish...",
+        request.version
+    )
 }
 
 fn timed_out(request: &LockRequest<'_>, path: &Path) -> CliError {

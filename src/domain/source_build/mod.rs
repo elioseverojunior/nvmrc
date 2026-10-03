@@ -24,30 +24,32 @@ pub fn natural_jobs(text: &str) -> Option<usize> {
 /// else one fewer than the cores when there are more than two.
 #[must_use]
 pub fn jobs(requested: Option<&str>, cores: Option<usize>) -> Jobs {
+    if let Some(number) = requested.and_then(natural_jobs) {
+        return Jobs {
+            jobs: number,
+            stdout: vec![format!("number of `make` jobs: {number}")],
+            stderr: Vec::new(),
+        };
+    }
+    let mut said = from_cores(cores);
+    if let Some(bad) = requested.filter(|text| !text.is_empty()) {
+        said.stderr.insert(
+            0,
+            format!("{bad} is invalid for number of `make` jobs, must be a natural number"),
+        );
+    }
+    said
+}
+
+/// What to do when the number of jobs is left to the machine.
+fn from_cores(cores: Option<usize>) -> Jobs {
     let mut said = Jobs {
         jobs: 1,
         stdout: Vec::new(),
         stderr: Vec::new(),
     };
-    if let Some(number) = requested.and_then(natural_jobs) {
-        said.jobs = number;
-        said.stdout.push(format!("number of `make` jobs: {number}"));
-        return said;
-    }
-    if let Some(bad) = requested.filter(|text| !text.is_empty()) {
-        said.stderr.push(format!(
-            "{bad} is invalid for number of `make` jobs, must be a natural number"
-        ));
-    }
     let Some(cores) = cores.filter(|cores| *cores > 0) else {
-        said.stderr.push(
-            "Can not determine how many core(s) are available, running in single-threaded mode."
-                .to_owned(),
-        );
-        said.stderr.push(
-            "Please report an issue on GitHub to help us make nvm run faster on your computer!"
-                .to_owned(),
-        );
+        said.stderr.extend(unknown_cores());
         return said;
     };
     said.stdout
@@ -65,6 +67,15 @@ pub fn jobs(requested: Option<&str>, cores: Option<usize>) -> Jobs {
         );
     }
     said
+}
+
+fn unknown_cores() -> [String; 2] {
+    [
+        "Can not determine how many core(s) are available, running in single-threaded mode."
+            .to_owned(),
+        "Please report an issue on GitHub to help us make nvm run faster on your computer!"
+            .to_owned(),
+    ]
 }
 
 /// The version `clang --version` reports as `(major, minor)`: the word after

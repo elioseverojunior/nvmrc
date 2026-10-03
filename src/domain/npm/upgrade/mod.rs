@@ -42,25 +42,32 @@ pub fn steps(node: Triple, npm: Triple) -> Vec<Step> {
     } else if !is_0_9 {
         plan.extend(first_jump(npm));
     }
-    if is_0_6 || is_0_9 {
-        plan.push(Step {
+    plan.extend(then_the_newest(node, npm, is_0_6 || is_0_9));
+    plan
+}
+
+/// What follows the first hop: nothing for `node` 0.6 and 0.9, a fixed `npm`
+/// for the oldest ones, and the table for `node` 4 and later.
+fn then_the_newest(node: Triple, npm: Triple, cannot_go_further: bool) -> Vec<Step> {
+    if cannot_go_further {
+        return vec![Step {
             note: "* node v0.6 and v0.9 are unable to upgrade further",
             install: Install::Nothing,
-        });
-    } else if node < (1, 1, 0) {
-        plan.push(step(
+        }];
+    }
+    if node < (1, 1, 0) {
+        return vec![step(
             "* `npm` v4.5.x is the last version that works on `node` versions < v1.1.0",
             "npm@4.5",
-        ));
-    } else if node < (4, 0, 0) {
-        plan.push(step(
+        )];
+    }
+    if node < (4, 0, 0) {
+        return vec![step(
             "* `npm` v5 and higher do not work on `node` versions below v4.0.0",
             "npm@4",
-        ));
-    } else {
-        plan.extend(modern(node, npm));
+        )];
     }
-    plan
+    modern(node, npm)
 }
 
 /// `npm` 1.x and 2.x have to hop through their last release first.

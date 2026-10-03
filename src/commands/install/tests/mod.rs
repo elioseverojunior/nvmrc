@@ -74,7 +74,9 @@ fn lines(text: &str) -> Vec<&str> {
     text.lines().collect()
 }
 
+mod built;
 mod failures;
+mod hook;
 mod npm;
 mod offline_and_save;
 mod source;

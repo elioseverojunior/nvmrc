@@ -31,16 +31,7 @@ pub fn install_latest(
 ) -> NvmExitCode {
     transcript.out("Attempting to upgrade to the latest working version of npm...");
     let npm_version = npm.and_then(|npm| npm.version(context));
-    let node_text = match node {
-        Node::Version(text) => Some(text.strip_prefix("iojs-").unwrap_or(text)),
-        Node::None => {
-            let shown = npm_version.as_deref().unwrap_or_default();
-            transcript.out(format!("Detected node version none, npm version v{shown}"));
-            None
-        }
-    };
-    let Some(node_text) = node_text.filter(|text| triple(text).is_some()) else {
-        transcript.err("Unable to obtain node version.");
+    let Some(node_text) = known_node(node, npm_version.as_deref(), transcript) else {
         return NvmExitCode::Failure;
     };
     let (Some(npm), Some(npm_version)) = (npm, npm_version) else {
@@ -53,9 +44,46 @@ pub fn install_latest(
             "Detected node version {node_text}, npm version v{npm_version}"
         ));
     }
+    upgrade(context, npm, (node_text, &npm_version), debug, transcript);
+    let upgraded = npm.version(context).unwrap_or_default();
+    transcript.out(format!("* npm upgraded to: v{upgraded}"));
+    NvmExitCode::Success
+}
+
+/// The node version to go by, without an `iojs-`; none (after saying so) when
+/// there is no node, or what it says is not a version.
+fn known_node<'a>(
+    node: &Node<'a>,
+    npm_version: Option<&str>,
+    transcript: &mut Transcript,
+) -> Option<&'a str> {
+    let text = match node {
+        Node::Version(text) => Some(text.strip_prefix("iojs-").unwrap_or(text)),
+        Node::None => {
+            let shown = npm_version.unwrap_or_default();
+            transcript.out(format!("Detected node version none, npm version v{shown}"));
+            None
+        }
+    };
+    let text = text.filter(|text| triple(text).is_some());
+    if text.is_none() {
+        transcript.err("Unable to obtain node version.");
+    }
+    text
+}
+
+/// Says why and installs, step by step, for the `(node, npm)` versions.
+fn upgrade(
+    context: &Context<'_>,
+    npm: &Npm,
+    versions: (&str, &str),
+    debug: bool,
+    transcript: &mut Transcript,
+) {
+    let (node, current) = versions;
     let plan = steps(
-        triple(node_text).unwrap_or_default(),
-        triple(&npm_version).unwrap_or_default(),
+        triple(node).unwrap_or_default(),
+        triple(current).unwrap_or_default(),
     );
     for step in plan {
         transcript.out(step.note);
@@ -65,9 +93,6 @@ pub fn install_latest(
             Install::Spec(spec) => install(context, npm, spec, debug, transcript),
         }
     }
-    let upgraded = npm.version(context).unwrap_or_default();
-    transcript.out(format!("* npm upgraded to: v{upgraded}"));
-    NvmExitCode::Success
 }
 
 fn install(context: &Context<'_>, npm: &Npm, spec: &str, debug: bool, transcript: &mut Transcript) {

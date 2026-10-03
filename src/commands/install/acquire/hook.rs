@@ -10,6 +10,22 @@ use crate::domain::version::Flavor;
 use crate::error::NvmExitCode;
 use crate::ports::Invocation;
 
+/// `<hook> <version> <flavor> std <method> <path>`.
+fn invocation(program: &str, options: &Options, target: &Target) -> Invocation {
+    let flavor = match target.version.flavor {
+        Flavor::Node => "node",
+        Flavor::IoJs => "iojs",
+    };
+    let method = if options.no_binary {
+        "source"
+    } else {
+        "binary"
+    };
+    let version = target.version.to_string();
+    let path = target.path.display().to_string();
+    Invocation::new(program).args(&[&version, flavor, "std", method, &path])
+}
+
 /// Runs the hook, and checks that it left a version behind.
 ///
 /// # Errors
@@ -23,19 +39,9 @@ pub fn run(
     transcript: &mut Transcript,
 ) -> Step<()> {
     transcript.err("** $NVM_INSTALL_THIRD_PARTY_HOOK env var set; dispatching to third-party installation method **");
-    let flavor = match target.version.flavor {
-        Flavor::Node => "node",
-        Flavor::IoJs => "iojs",
-    };
-    let method = if options.no_binary {
-        "source"
-    } else {
-        "binary"
-    };
-    let version = target.version.to_string();
-    let path = target.path.display().to_string();
-    let invocation = Invocation::new(program).args(&[&version, flavor, "std", method, &path]);
-    let done = context.process().execute(&invocation);
+    let done = context
+        .process()
+        .execute(&invocation(program, options, target));
     if let Ok(done) = &done {
         done.stdout.lines().for_each(|line| transcript.out(line));
         done.stderr.lines().for_each(|line| transcript.err(line));

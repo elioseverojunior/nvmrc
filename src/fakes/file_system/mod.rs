@@ -50,6 +50,19 @@ impl FakeFileSystem {
     }
 }
 
+/// The paths of `all` that are `from` or inside it.
+fn under<'a>(all: impl Iterator<Item = &'a PathBuf>, from: &Path) -> Vec<PathBuf> {
+    all.filter(|path| path.starts_with(from)).cloned().collect()
+}
+
+/// Renames, in a set of paths, those that are `from` or inside it.
+fn move_paths(set: &mut BTreeSet<PathBuf>, from: &Path, moved: &dyn Fn(&Path) -> PathBuf) {
+    for name in under(set.iter(), from) {
+        set.remove(&name);
+        set.insert(moved(&name));
+    }
+}
+
 impl FileSystem for FakeFileSystem {
     fn read_to_string(&self, path: &Path) -> io::Result<String> {
         let bytes = self.files.borrow().get(path).cloned();
@@ -143,36 +156,13 @@ impl FileSystem for FakeFileSystem {
         }
         let moved = |old: &Path| to.join(old.strip_prefix(from).unwrap_or(old));
         let mut files = self.files.borrow_mut();
-        let names: Vec<PathBuf> = files
-            .keys()
-            .filter(|f| f.starts_with(from))
-            .cloned()
-            .collect();
-        for name in names {
+        for name in under(files.keys(), from) {
             if let Some(contents) = files.remove(&name) {
                 files.insert(moved(&name), contents);
             }
         }
-        let mut executables = self.executables.borrow_mut();
-        let names: Vec<PathBuf> = executables
-            .iter()
-            .filter(|e| e.starts_with(from))
-            .cloned()
-            .collect();
-        for name in names {
-            executables.remove(&name);
-            executables.insert(moved(&name));
-        }
-        let mut dirs = self.dirs.borrow_mut();
-        let names: Vec<PathBuf> = dirs
-            .iter()
-            .filter(|d| d.starts_with(from))
-            .cloned()
-            .collect();
-        for name in names {
-            dirs.remove(&name);
-            dirs.insert(moved(&name));
-        }
+        move_paths(&mut self.executables.borrow_mut(), from, &moved);
+        move_paths(&mut self.dirs.borrow_mut(), from, &moved);
         Ok(())
     }
 
