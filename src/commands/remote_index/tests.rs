@@ -68,3 +68,27 @@ fn the_iojs_index_is_read_from_its_own_mirror() {
     let releases = fetch(&context, Flavor::IoJs).unwrap().releases.unwrap();
     assert_eq!(releases[0].version.to_string(), "iojs-v3.3.1");
 }
+
+#[test]
+fn fetch_if_skips_the_download_when_not_wanted() {
+    let fs = FakeFileSystem::default();
+    let env = env();
+    let http = FakeHttp::default();
+    let context = Context::new(&fs, &env).with_http(&http);
+    let mut warnings = Vec::new();
+    let releases = fetch_if(&context, false, Flavor::Node, &mut warnings).unwrap();
+    assert_eq!(releases, None);
+    assert!(warnings.is_empty());
+}
+
+#[test]
+fn fetch_if_keeps_the_warning_about_an_unusable_mirror() {
+    let fs = FakeFileSystem::default();
+    let env = env().with_var("NVM_NODEJS_ORG_MIRROR", "not a url");
+    let http = FakeHttp::default();
+    let context = Context::new(&fs, &env).with_http(&http);
+    let mut warnings = Vec::new();
+    let releases = fetch_if(&context, true, Flavor::Node, &mut warnings).unwrap();
+    assert_eq!(releases, None);
+    assert_eq!(warnings.len(), 1);
+}

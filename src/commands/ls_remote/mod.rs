@@ -8,10 +8,10 @@ mod named_aliases;
 
 use crate::commands::Output;
 use crate::commands::current;
-use crate::commands::remote_index::{Fetched, fetch, lts_filter};
+use crate::commands::remote_index::{fetch_if, lts_filter};
 use crate::context::Context;
 use crate::domain::listing::{RowKind, format_row};
-use crate::domain::remote::{Query, list, scope};
+use crate::domain::remote::{Query, RemoteRow, list, scope};
 use crate::domain::remote_format::{FormatInput, format_remote_rows};
 use crate::domain::version::Flavor;
 use crate::error::{CliError, NvmExitCode};
@@ -114,23 +114,9 @@ fn not_available(warnings: Vec<String>) -> Output {
         .with_status(NvmExitCode::InvalidVersion)
 }
 
-fn fetch_if(
-    context: &Context<'_>,
-    wanted: bool,
-    flavor: Flavor,
-    warnings: &mut Vec<String>,
-) -> Result<Option<Vec<crate::domain::index::Release>>, CliError> {
-    if !wanted {
-        return Ok(None);
-    }
-    let Fetched { releases, warning } = fetch(context, flavor)?;
-    warnings.extend(warning);
-    Ok(releases)
-}
-
 fn format_rows(
     context: &Context<'_>,
-    rows: &[crate::domain::remote::RemoteRow],
+    rows: &[RemoteRow],
     plain: bool,
 ) -> Result<Vec<String>, CliError> {
     let installed = context.installed_versions()?;

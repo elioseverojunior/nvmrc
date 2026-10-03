@@ -48,6 +48,26 @@ pub fn fetch(context: &Context<'_>, flavor: Flavor) -> Result<Fetched, CliError>
     })
 }
 
+/// The releases of `flavor` when `wanted`, else `None` without downloading;
+/// what `nvm.sh` prints about a mirror that cannot be used is added to
+/// `warnings`.
+///
+/// # Errors
+/// As [`fetch`].
+pub fn fetch_if(
+    context: &Context<'_>,
+    wanted: bool,
+    flavor: Flavor,
+    warnings: &mut Vec<String>,
+) -> Result<Option<Vec<Release>>, CliError> {
+    if !wanted {
+        return Ok(None);
+    }
+    let Fetched { releases, warning } = fetch(context, flavor)?;
+    warnings.extend(warning);
+    Ok(releases)
+}
+
 /// Writes `alias/lts/*` and one alias per codename. `nvm.sh` hides every
 /// failure of this, and so does it.
 fn refresh_lts_aliases(context: &Context<'_>, directory: &Path, releases: &[Release]) {

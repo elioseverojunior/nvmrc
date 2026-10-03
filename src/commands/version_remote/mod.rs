@@ -6,9 +6,8 @@
 //! message and exits 0 after a blank line for `node` and `iojs`.
 
 use crate::commands::Output;
-use crate::commands::remote_index::{Fetched, fetch, lts_filter};
+use crate::commands::remote_index::{fetch_if, lts_filter};
 use crate::context::Context;
-use crate::domain::index::Release;
 use crate::domain::remote::resolve::resolve;
 use crate::domain::remote::{Query, scope};
 use crate::domain::version::Flavor;
@@ -63,20 +62,6 @@ fn needs(query: &Query) -> (bool, bool) {
         None | Some("node" | "stable" | "unstable") => (true, false),
         Some(_) => scope(query).map_or((false, false), |scope| (scope.node_runs, scope.iojs_runs)),
     }
-}
-
-fn fetch_if(
-    context: &Context<'_>,
-    wanted: bool,
-    flavor: Flavor,
-    warnings: &mut Vec<String>,
-) -> Result<Option<Vec<Release>>, CliError> {
-    if !wanted {
-        return Ok(None);
-    }
-    let Fetched { releases, warning } = fetch(context, flavor)?;
-    warnings.extend(warning);
-    Ok(releases)
 }
 
 fn not_available(warnings: &[String]) -> Output {
