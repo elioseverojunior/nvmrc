@@ -6036,9 +6036,8 @@ git commit -S -m "feat(cli): add install and uninstall and run them end to end"
   program), closes stdin, and puts `path_prefix` first on `PATH`;
   `NoProcess::execute` is `Unsupported`; the test-only `FakeProcess` gains
   `with_execution(program, args, Completed)`, `with_success(program, args,
-  stdout)`, `with_effect(program, args, closure)` and `executed()` (every
-  `Invocation` it was given). `Process::run` (bounded, for `node --version`)
-  is unchanged.
+  stdout)` and `executed()` (every `Invocation` it was given).
+  `Process::run` (bounded, for `node --version`) is unchanged.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -11838,6 +11837,8 @@ git commit -S -m "feat(domain): decide jobs, compiler and make for a source buil
 - Produces: `NvmExitCode` is no longer a C-like enum: `NvmExitCode::Passed(u8)`
   carries the status of a program that ran and `NvmExitCode::passing_on(Option<
   i32>)` builds it, `NvmExitCode::HookClaimedSuccess` is 33; `Completed::code`;
+  the test-only `FakeProcess::with_effect(program, args, closure)`, which runs
+  `closure` when the program is executed (a fake `make` that creates files);
   `fetch::Artifact::source_of` and `fetch::fetch(.., &Artifact, ..)`;
   `place::unpack`; `Options::{no_binary, no_source, make_jobs, extra}`;
   `commands::install::acquire::acquire`; `commands::install::source::{build,
