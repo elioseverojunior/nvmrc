@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use ureq::config::RedirectAuthHeaders;
+use ureq::tls::{RootCerts, TlsConfig};
 
 use crate::ports::{Http, HttpError};
 
@@ -34,7 +35,13 @@ impl UreqHttp {
         auth_header: Option<String>,
     ) -> Self {
         // Like curl: the credentials follow a redirect to the same host only.
+        // Like curl: trust the system certificate store, so a corporate CA
+        // (a TLS-inspecting proxy) is honoured.
+        let tls = TlsConfig::builder()
+            .root_certs(RootCerts::PlatformVerifier)
+            .build();
         let config = builder
+            .tls_config(tls)
             .timeout_global(Some(TIMEOUT))
             .redirect_auth_headers(RedirectAuthHeaders::SameHost)
             .build();
