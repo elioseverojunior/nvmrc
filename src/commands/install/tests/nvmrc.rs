@@ -6,11 +6,7 @@ use super::*;
 use crate::domain::nvmrc::invalid_message;
 
 pub(super) const V18_NODE: &str = "/n/versions/node/v18.19.0/bin/node";
-pub(super) const SHELL: [(&str, &str); 3] = [
-    ("PWD", "/p/sub"),
-    ("PATH", "/usr/bin"),
-    ("NVMRC_SCRIPT_FD", "3"),
-];
+pub(super) const SHELL: [(&str, &str); 2] = [("PWD", "/p/sub"), ("PATH", "/usr/bin")];
 pub(super) const USAGE: &str = "Usage: nvm install [<version>]\n  \
 Provide a <version>, or run from a directory containing an .nvmrc file.\n  \
 Run `nvm --help` for full help.";
@@ -35,7 +31,7 @@ fn lab(nvmrc: Option<&str>) -> World {
         Some(text) => fs.with_file("/p/.nvmrc", text),
         None => fs,
     };
-    World { fs, ..World::new() }.with_env(&SHELL)
+    World { fs, ..World::new() }.with_env(&SHELL).in_function()
 }
 
 fn assert_run(output: &Output, stdout: &[&str], stderr: &[&str], status: NvmExitCode) {
@@ -188,7 +184,8 @@ fn without_a_default_alias_the_raw_nvmrc_text_becomes_the_default() {
         fs: both_installed().with_file("/p/.nvmrc", "18\n"),
         ..World::new()
     }
-    .with_env(&SHELL);
+    .with_env(&SHELL)
+    .in_function();
     let output = world.run("").unwrap();
     let stdout = [
         FOUND_18,
@@ -226,7 +223,6 @@ fn the_version_in_use_is_used_again() {
     let world = lab(Some("20\n")).with_env(&[
         ("PWD", "/p/sub"),
         ("PATH", "/n/versions/node/v20.10.0/bin:/usr/bin"),
-        ("NVMRC_SCRIPT_FD", "3"),
     ]);
     let output = world.run("").unwrap();
     let stdout = [FOUND_20, "Now using node v20.10.0"];

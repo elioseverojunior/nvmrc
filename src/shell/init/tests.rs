@@ -71,15 +71,25 @@ fn the_function_runs_the_binary_with_the_code_on_descriptor_3() {
     assert!(text.contains("\nnvm() {\n"), "{text}");
     let zsh = snippet(Shell::Zsh, &InitOptions::default());
     assert!(zsh.contains("\nfunction nvm {\n"), "{zsh}");
-    assert!(text.contains("NVMRC_SCRIPT_FD=3 command nvm \"$@\" 3>&1 1>&4 4>&-"));
-    for passed in ["MANPATH", "NODE_PATH", "NVM_SYMLINK_CURRENT", "PREFIX"] {
-        assert!(
-            text.contains(&format!("{passed}=\"${{{passed}-}}\"")),
-            "{passed}"
-        );
-    }
+    assert!(text.contains("NVMRC_SCRIPT_FD=3 command \\nvm \"$@\" 3>&1 1>&4 4>&-"));
     assert!(text.contains("use | deactivate | install | i | __auto)"));
+    assert!(!text.contains("command nvm"), "{text}");
     assert!(text.contains("eval \"$__nvmrc_code\""));
+}
+
+#[test]
+fn every_command_gets_the_passed_variables_exported_only_when_set() {
+    let text = snippet(Shell::Ksh, &InitOptions::default());
+    for passed in ["MANPATH", "NODE_PATH", "NVM_SYMLINK_CURRENT", "PREFIX"] {
+        let export = format!("if [ -n \"${{{passed}+set}}\" ]; then export {passed}; fi");
+        assert_eq!(text.matches(&export).count(), 2, "{passed}: {text}");
+        assert!(!text.contains(&format!("{passed}=")), "{passed}: {text}");
+    }
+    assert!(!text.contains("@EXPORTS@"), "{text}");
+    assert!(
+        text.contains("\n        command \\nvm \"$@\"\n      )\n"),
+        "{text}"
+    );
 }
 
 #[test]

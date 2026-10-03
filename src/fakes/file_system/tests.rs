@@ -152,3 +152,17 @@ fn fake_file_system_remembers_symlinks_and_refuses_to_overwrite() {
     fs.symlink(Path::new("/v/2"), Path::new("/d/current"))
         .unwrap();
 }
+
+#[test]
+fn fake_file_system_tells_the_same_directory_through_a_symlink() {
+    let fs = FakeFileSystem::default()
+        .with_dir("/real")
+        .with_file("/real/sub/f", "")
+        .with_dir("/other");
+    fs.symlink(Path::new("/real"), Path::new("/link")).unwrap();
+    let same = |a: &str, b: &str| fs.same_directory(Path::new(a), Path::new(b));
+    assert!(same("/link", "/real") && same("/real", "/real") && same("/link/sub", "/real/sub"));
+    assert!(
+        !same("/other", "/real") && !same("/gone", "/gone") && !same("/real/sub/f", "/real/sub/f")
+    );
+}

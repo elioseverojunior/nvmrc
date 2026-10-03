@@ -9,7 +9,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Output;
 
-use common::{Mirror, command_for, nvm_with, stderr, stdout};
+use common::{Mirror, command_for, stderr, stdout};
 
 const USAGE: &str = "No version provided and no .nvmrc file found\n\
 Usage: nvm install [<version>]\n  \
@@ -42,11 +42,16 @@ fn project(nvmrc: Option<&str>) -> (tempfile::TempDir, String) {
     (home, shown)
 }
 
+/// The binary on its own, run from `project` (as a shell there would run it).
 fn install_in(home: &Path, mirror: &str, project: &str, args: &[&str]) -> Output {
-    let args: Vec<&str> = std::iter::once("install")
-        .chain(args.iter().copied())
-        .collect();
-    nvm_with(home, mirror, &args, "/nonexistent", &[("PWD", project)])
+    let binary = OsStr::new(env!("CARGO_BIN_EXE_nvm"));
+    let mut command = command_for(binary, home, mirror, "/nonexistent");
+    command
+        .env("PWD", project)
+        .current_dir(project)
+        .arg("install")
+        .args(args);
+    command.output().expect("run the binary")
 }
 
 fn in_function(home: &Path, mirror: &str, project: &str, args: &[&str]) -> Output {

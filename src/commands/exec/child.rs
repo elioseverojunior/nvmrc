@@ -52,7 +52,7 @@ pub(crate) fn installed(
     node_version: &str,
 ) -> Result<Environment, CliError> {
     let mut environment = Environment::default().set("PATH", path);
-    if let Some(manpath) = switch.manpath(context, path) {
+    if let Some(manpath) = switch.manpath(context, path)? {
         environment = environment.set("MANPATH", &manpath);
     }
     environment
@@ -63,7 +63,7 @@ pub(crate) fn installed(
 
 /// `system`: what a silent `nvm deactivate` changes, and the new `PATH`.
 pub(crate) fn system(context: &Context<'_>) -> Result<(String, Environment), CliError> {
-    let mut path = context.env.var("PATH").unwrap_or_default();
+    let mut path = context.text_var("PATH")?;
     let mut environment = Environment::default();
     for change in changes(context, true, &mut Transcript::default())? {
         environment = match change.value {

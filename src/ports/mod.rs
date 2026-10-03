@@ -99,6 +99,10 @@ pub trait FileSystem {
     /// Propagates the underlying I/O error (for example when `link` is
     /// missing or is not a symbolic link).
     fn read_link(&self, link: &Path) -> io::Result<PathBuf>;
+
+    /// Whether `a` and `b` are one existing directory, symlinks followed
+    /// (the same device and inode on Unix).
+    fn same_directory(&self, a: &Path, b: &Path) -> bool;
 }
 
 /// What a finished child process left behind.
@@ -196,7 +200,8 @@ pub trait Process {
     /// `invocation.env` is added to it, and an entry named
     /// `PATH` replaces the `PATH` the child would inherit. `path_prefix` is
     /// then put in front of whichever `PATH` the child ends up with. A
-    /// program named without a `/` is looked up on that final `PATH`.
+    /// program named without a `/` is looked up on that final `PATH`. No
+    /// program gets `NVMRC_SCRIPT_FD`, whatever `invocation` says.
     ///
     /// # Errors
     /// Fails when the program cannot be started (`NotFound` when it does not
@@ -271,4 +276,19 @@ pub trait Env {
     /// Every variable, as text. A variable whose name or value is not valid
     /// UTF-8 is skipped.
     fn vars(&self) -> Vec<(String, String)>;
+
+    /// The directory of the process, as the system resolves it.
+    ///
+    /// # Errors
+    /// Fails when it cannot be read (removed, or not searchable).
+    fn current_dir(&self) -> io::Result<PathBuf>;
+}
+
+/// Where the shell code of a command goes in the `nvm` function.
+pub trait ScriptChannel {
+    /// Hands `code` over to the calling shell.
+    ///
+    /// # Errors
+    /// Propagates the underlying I/O error.
+    fn send(&self, code: &str) -> io::Result<()>;
 }

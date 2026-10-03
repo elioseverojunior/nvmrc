@@ -9,7 +9,7 @@ use crate::commands::Output;
 use crate::context::Context;
 use crate::domain::fixtures::index_text;
 use crate::error::{CliError, NvmExitCode};
-use crate::fakes::{FakeEnv, FakeFileSystem, FakeHttp, FakeProcess};
+use crate::fakes::{FakeEnv, FakeFileSystem, FakeHttp, FakeProcess, FakeScriptChannel};
 
 const N18: &str = "/n/versions/node/v18.20.4";
 const N20: &str = "/n/versions/node/v20.11.1";
@@ -24,6 +24,8 @@ const IOJS_INDEX: &str = "https://iojs.org/dist/index.tab";
 struct Lab {
     fs: FakeFileSystem,
     env: FakeEnv,
+    /// Run in the `nvm` function: with its channel open.
+    in_function: bool,
 }
 
 impl Lab {
@@ -40,7 +42,13 @@ impl Lab {
             .with_var("NVM_DIR", "/n")
             .with_var("HOME", "/h")
             .with_var("PWD", "/proj");
-        Self { fs, env }.path(BASE_PATH)
+        let in_function = false;
+        Self {
+            fs,
+            env,
+            in_function,
+        }
+        .path(BASE_PATH)
     }
 
     fn alias(mut self, name: &str, target: &str) -> Self {
@@ -64,6 +72,11 @@ impl Lab {
         self
     }
 
+    fn in_function(mut self) -> Self {
+        self.in_function = true;
+        self
+    }
+
     fn path(self, path: &str) -> Self {
         self.var("PATH", path)
     }
@@ -81,6 +94,10 @@ impl Lab {
         let context = Context::new(&self.fs, &self.env)
             .with_process(&process)
             .with_http(&http);
+        let channel = FakeScriptChannel::default();
+        if self.in_function {
+            return run(&context.with_script_channel(&channel), &[mode.to_owned()]);
+        }
         run(&context, &[mode.to_owned()])
     }
 

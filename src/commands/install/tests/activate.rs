@@ -11,7 +11,7 @@ currently set to \"/zz\"\nRun `unset PREFIX` to unset it.";
 
 fn world_in(fs: FakeFileSystem, vars: &[(&str, &str)]) -> World {
     let all: Vec<(&str, &str)> = SHELL.iter().chain(vars).copied().collect();
-    World { fs, ..World::new() }.with_env(&all)
+    World { fs, ..World::new() }.with_env(&all).in_function()
 }
 
 fn v18_installed() -> FakeFileSystem {
@@ -35,18 +35,6 @@ fn standalone_an_installed_version_is_not_activated() {
 }
 
 #[test]
-fn a_descriptor_that_is_not_a_number_does_not_activate() {
-    let world = World {
-        fs: v18_installed(),
-        ..World::new()
-    }
-    .with_env(&[("PWD", "/p"), ("NVMRC_SCRIPT_FD", "x")]);
-    let output = world.run("18").unwrap();
-    assert_eq!(output.stdout, "");
-    assert!(output.script.is_empty());
-}
-
-#[test]
 fn a_fresh_install_is_used_before_the_default_alias_is_made() {
     let world = world_in(FakeFileSystem::default(), &[]);
     let output = world.run("20").unwrap();
@@ -66,11 +54,9 @@ fn a_fresh_install_is_used_before_the_default_alias_is_made() {
 #[test]
 fn a_fresh_install_of_the_version_in_use_is_not_used_again() {
     let fs = FakeFileSystem::default().with_file(NODE, "");
-    let world = World { fs, ..World::new() }.with_env(&[
-        ("PWD", "/p"),
-        ("PATH", "/n/versions/node/v20.10.0/bin"),
-        ("NVMRC_SCRIPT_FD", "3"),
-    ]);
+    let world = World { fs, ..World::new() }
+        .with_env(&[("PWD", "/p"), ("PATH", "/n/versions/node/v20.10.0/bin")])
+        .in_function();
     let output = world.run("20").unwrap();
     assert_eq!(output.status, NvmExitCode::Success);
     assert!(!output.stdout.contains("Now using"), "{}", output.stdout);

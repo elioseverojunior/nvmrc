@@ -13,7 +13,7 @@ use crate::domain::alias::AliasStore;
 use crate::domain::platform::{Os, Platform};
 use crate::domain::version::Version;
 use crate::error::CliError;
-use crate::ports::{Archive, Cpu, Digest, Env, FileSystem, Http, Process, Sleeper};
+use crate::ports::{Archive, Cpu, Digest, Env, FileSystem, Http, Process, ScriptChannel, Sleeper};
 
 pub struct Context<'a> {
     pub fs: &'a dyn FileSystem,
@@ -25,6 +25,7 @@ pub struct Context<'a> {
     sleeper: &'a dyn Sleeper,
     cpu: &'a dyn Cpu,
     platform: Option<Platform>,
+    script_channel: Option<&'a dyn ScriptChannel>,
 }
 
 impl<'a> Context<'a> {
@@ -45,7 +46,24 @@ impl<'a> Context<'a> {
                 os: Os::Linux,
                 arch: "x64".to_owned(),
             }),
+            script_channel: None,
         }
+    }
+
+    /// The channel of the `nvm` function, through which the shell code of a
+    /// command reaches the calling shell. A context starts out without one:
+    /// the binary runs on its own.
+    #[must_use]
+    pub fn with_script_channel(mut self, channel: &'a dyn ScriptChannel) -> Self {
+        self.script_channel = Some(channel);
+        self
+    }
+
+    /// The channel of the `nvm` function; `None` when the binary runs on its
+    /// own.
+    #[must_use]
+    pub fn script_channel(&self) -> Option<&dyn ScriptChannel> {
+        self.script_channel
     }
 
     #[must_use]
@@ -208,5 +226,6 @@ impl Context<'_> {
     }
 }
 
+mod environment;
 #[cfg(test)]
 mod tests;

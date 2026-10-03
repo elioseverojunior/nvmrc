@@ -13,17 +13,9 @@ pub struct FakeFileSystem {
     executables: RefCell<BTreeSet<PathBuf>>,
     modified: RefCell<BTreeMap<PathBuf, SystemTime>>,
     links: RefCell<BTreeMap<PathBuf, PathBuf>>,
-    unwritable: RefCell<BTreeSet<PathBuf>>,
 }
 
 impl FakeFileSystem {
-    /// Makes every write to `path` fail with a permission error.
-    #[must_use]
-    pub fn with_unwritable(self, path: &str) -> Self {
-        self.unwritable.borrow_mut().insert(PathBuf::from(path));
-        self
-    }
-
     #[must_use]
     pub fn with_file(mut self, path: &str, contents: &str) -> Self {
         self.files
@@ -135,9 +127,6 @@ impl FileSystem for FakeFileSystem {
     }
 
     fn write_bytes(&self, path: &Path, contents: &[u8]) -> io::Result<()> {
-        if self.unwritable.borrow().contains(path) {
-            return Err(io::Error::from(io::ErrorKind::PermissionDenied));
-        }
         self.files
             .borrow_mut()
             .insert(path.to_path_buf(), contents.to_vec());
@@ -207,6 +196,22 @@ impl FileSystem for FakeFileSystem {
     fn read_link(&self, link: &Path) -> io::Result<PathBuf> {
         let found = self.links.borrow().get(link).cloned();
         found.ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
+    }
+
+    fn same_directory(&self, a: &Path, b: &Path) -> bool {
+        let (a, b) = (self.resolve(a), self.resolve(b));
+        a == b && self.file_info(&a).is_ok_and(|info| info.is_dir)
+    }
+}
+
+impl FakeFileSystem {
+    /// `path` with a symlink it starts with replaced by its target.
+    fn resolve(&self, path: &Path) -> PathBuf {
+        let links = self.links.borrow();
+        let found = links
+            .iter()
+            .find_map(|(link, target)| Some(target.join(path.strip_prefix(link).ok()?)));
+        found.unwrap_or_else(|| path.to_path_buf())
     }
 }
 

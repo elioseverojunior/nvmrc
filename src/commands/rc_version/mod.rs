@@ -16,14 +16,15 @@ const MISSING_MESSAGE: &str = "No version provided and no .nvmrc file found";
 pub enum RcVersion {
     /// The file and the single bare version in it.
     Found { path: PathBuf, version: String },
-    /// No `.nvmrc` (or none that could be read, or no `PWD` to start from).
+    /// No `.nvmrc` (or none that could be read, or no directory to start
+    /// from).
     Missing,
     /// A `.nvmrc` that breaks the content rules; its message was printed.
     Invalid,
 }
 
-/// `nvm_rc_version`, starting at the logical working directory (`$PWD`, as
-/// nvm.sh does; without it nothing is found).
+/// `nvm_rc_version`, starting at the logical working directory
+/// ([`Context::working_directory`]: `$PWD` as bash validates it).
 ///
 /// Not silent: a find prints `Found '<path>' with version <<version>>` on
 /// stdout, and a miss prints `No version provided and no .nvmrc file found`
@@ -35,9 +36,8 @@ pub enum RcVersion {
 /// result.
 pub fn rc_version(context: &Context<'_>, silent: bool, transcript: &mut Transcript) -> RcVersion {
     let content = context
-        .env
-        .var_os("PWD")
-        .and_then(|directory| find_nvmrc(context.fs, &PathBuf::from(directory)))
+        .working_directory()
+        .and_then(|directory| find_nvmrc(context.fs, &directory))
         .and_then(|path| Some((context.fs.read_to_string(&path).ok()?, path)));
     let Some((text, path)) = content else {
         if !silent {

@@ -21,7 +21,7 @@ use crate::domain::path_edit::{change_path, manpath_with_trailing_colon, strip_p
 use crate::domain::path_search::find_in_path;
 use crate::domain::version::{Flavor, Version};
 use crate::error::{CliError, NvmExitCode};
-use crate::shell::{Script, ShellError};
+use crate::shell::Script;
 
 /// Switches to `target`, with everything already in `transcript` printed
 /// first.
@@ -55,7 +55,7 @@ fn installed(
 ) -> Result<Output, CliError> {
     let nvm_dir = context.nvm_dir()?;
     let switch = Switch::new(&nvm_dir, directory);
-    let path = switch.path(context);
+    let path = switch.path(context)?;
     let script = switch.script(context, &path)?;
     link_current(context, &nvm_dir, directory, &mut transcript);
     let message = (!options.silent).then(|| now_using(version, &npm_suffix(context, &path)));
@@ -111,9 +111,11 @@ impl Switch {
     }
 
     /// `nvm_change_path` of the current `PATH`.
-    #[must_use]
-    pub fn path(&self, context: &Context<'_>) -> String {
-        self.change(&context.env.var("PATH").unwrap_or_default(), "/bin")
+    ///
+    /// # Errors
+    /// [`CliError::NotText`] when `PATH` is not UTF-8.
+    pub fn path(&self, context: &Context<'_>) -> Result<String, CliError> {
+        Ok(self.change(&context.text_var("PATH")?, "/bin"))
     }
 
     /// `NVM_BIN`.
@@ -130,8 +132,8 @@ impl Switch {
 
     /// `MANPATH` (only when a `manpath` program is on the new `PATH`), then
     /// `PATH`, `hash -r`, `NVM_BIN` and `NVM_INC`, in nvm.sh's order.
-    fn script(&self, context: &Context<'_>, path: &str) -> Result<Script, ShellError> {
-        let script = match self.manpath(context, path) {
+    fn script(&self, context: &Context<'_>, path: &str) -> Result<Script, CliError> {
+        let script = match self.manpath(context, path)? {
             Some(manpath) => Script::new().export("MANPATH", &manpath)?,
             None => Script::new(),
         };
@@ -140,18 +142,23 @@ impl Switch {
             .hash_reset()
             .export("NVM_BIN", &self.bin())?
             .export("NVM_INC", &self.include())
+            .map_err(CliError::from)
     }
 
     /// The new `MANPATH`, only when a `manpath` program is on the new
     /// `path`: `nvm_change_path` of the current one, with the trailing `:`
     /// rule.
-    #[must_use]
-    pub fn manpath(&self, context: &Context<'_>, path: &str) -> Option<String> {
-        find_in_path(context.fs, OsStr::new(path), "manpath")?;
-        let old = context.env.var("MANPATH").unwrap_or_default();
-        Some(manpath_with_trailing_colon(
+    ///
+    /// # Errors
+    /// [`CliError::NotText`] when `MANPATH` has to change and is not UTF-8.
+    pub fn manpath(&self, context: &Context<'_>, path: &str) -> Result<Option<String>, CliError> {
+        if find_in_path(context.fs, OsStr::new(path), "manpath").is_none() {
+            return Ok(None);
+        }
+        let old = context.text_var("MANPATH")?;
+        Ok(Some(manpath_with_trailing_colon(
             &self.change(&old, "/share/man"),
-        ))
+        )))
     }
 }
 
@@ -187,11 +194,7 @@ fn system(
     let script = deactivate(context, true, &mut Transcript::default())?;
     if !options.silent {
         let nvm_dir = text(&context.nvm_dir()?);
-        let path = strip_path(
-            &context.env.var("PATH").unwrap_or_default(),
-            "/bin",
-            &nvm_dir,
-        );
+        let path = strip_path(&context.text_var("PATH")?, "/bin", &nvm_dir);
         transcript.out(system_now_using(context, node, &path));
     }
     Ok(transcript.finish_with(NvmExitCode::Success, script))

@@ -57,12 +57,22 @@ the work between Rust and a tiny generated shell snippet.
 - Three binaries share one library: `nvmrc`, `nvm` and `nvm-exec`. `nvm` and
   `nvmrc` accept the same subcommands; `nvm` exists for compatibility with
   scripts, CI and tools that invoke `nvm` as an executable.
-- `nvmrc init <shell>` prints a snippet defining a shell function `nvm`. The
-  function calls the binary and `eval`s its stdout only for `use` and
-  `deactivate`. Human-readable messages go to stderr.
-- `use` and `deactivate` print shell code (`export PATH=...`,
-  `export NVM_BIN=...`, `hash -r`). Rust decides the values; the snippet is
-  generated, never hand-maintained.
+- `nvmrc init <shell>` prints a snippet defining a shell function `nvm`. For
+  `use`, `deactivate`, `install` and the automatic `use` at start, the
+  function opens descriptor 3 on a pipe, names it in `NVMRC_SCRIPT_FD=3`, and
+  `eval`s what the binary writes there. Messages stay on their normal
+  streams, as in `nvm.sh`. Every other command goes through the function's
+  pass-through branch, which never opens descriptor 3 and only exports
+  `MANPATH`, `NODE_PATH`, `NVM_SYMLINK_CURRENT` and `PREFIX` when they are
+  set.
+- The binary takes descriptor 3 over at startup as a close-on-exec copy, so
+  the programs it starts never inherit it or the variable. These commands
+  write shell code there (`export PATH=...`, `export NVM_BIN=...`,
+  `hash -r`). Rust decides the values; the snippet is generated, never
+  hand-maintained.
+- Run on its own, without the variable, the binary prints that code on
+  stdout and moves its stdout messages to stderr, so
+  `eval "$(nvm use 18)"` still works by hand.
 
 Known, accepted limits:
 
@@ -175,6 +185,7 @@ Only the public contract of each subcommand is fixed. Confirmed so far:
 - 6 conflicting options (`-s` with `-b`, `--default` with `--alias`).
 - 7 below the version floor, or invalid floor.
 - 8 alias loop.
+- 11 incompatible prefix settings (`nvm use` refusing an npm `prefix`).
 - 33 third-party install hook claimed success but failed.
 - 55 unsupported option.
 - 127 command not found.

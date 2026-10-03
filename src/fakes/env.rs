@@ -1,11 +1,14 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
+use std::io;
+use std::path::PathBuf;
 
 use crate::ports::Env;
 
 #[derive(Default)]
 pub struct FakeEnv {
     vars: BTreeMap<String, OsString>,
+    current_dir: Option<PathBuf>,
 }
 
 impl FakeEnv {
@@ -17,6 +20,13 @@ impl FakeEnv {
     #[must_use]
     pub fn with_var_os(mut self, key: &str, value: OsString) -> Self {
         self.vars.insert(key.to_owned(), value);
+        self
+    }
+
+    /// The directory of the process; without it, reading it fails.
+    #[must_use]
+    pub fn with_current_dir(mut self, directory: &str) -> Self {
+        self.current_dir = Some(PathBuf::from(directory));
         self
     }
 }
@@ -37,6 +47,12 @@ impl Env for FakeEnv {
             .iter()
             .filter_map(|(name, value)| Some((name.clone(), value.to_str()?.to_owned())))
             .collect()
+    }
+
+    fn current_dir(&self) -> io::Result<PathBuf> {
+        self.current_dir
+            .clone()
+            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
     }
 }
 

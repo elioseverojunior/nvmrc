@@ -47,7 +47,7 @@ fn installed(
     let nvm_dir = context.nvm_dir()?;
     let directory = version_path(context, version)?;
     let switch = Switch::new(&nvm_dir, &directory);
-    let path = switch.path(context);
+    let path = switch.path(context)?;
     let prefixes = Prefixes {
         context,
         version,

@@ -5,12 +5,18 @@
 //! with `NVMRC_SCRIPT_FD=3`: the binary writes the shell code for the
 //! calling shell to descriptor 3, which the function captures and `eval`s,
 //! while stdout and stderr pass straight through (so `nvm use 18 >/dev/null`
-//! silences only the messages). The unexported variables the binary reads
-//! are passed in. Every other command is the binary, untouched, without
-//! descriptor 3. The function keeps its status in `$1` (positional
-//! parameters are local to a function in every POSIX shell) so it can unset
-//! its temporaries, and a failure inside `$(...)` does not end a `set -e`
-//! shell before the code is applied.
+//! silences only the messages). Every other command is the binary,
+//! untouched, without descriptor 3. Both run in a subshell that exports the
+//! unexported variables the binary reads (`MANPATH`, `NODE_PATH`,
+//! `NVM_SYMLINK_CURRENT`, `PREFIX`) when they are set, so `nvm exec` links
+//! `current` and checks the prefix as `use` does, and an unset one never
+//! reaches a program the binary starts as an empty variable (a `make` run by
+//! `nvm install` seeing `PREFIX=`). The binary is always `command \nvm`: a
+//! quoted name is never taken for an alias, even after ksh93's
+//! `alias command='command '`. The function keeps its status in `$1`
+//! (positional parameters are local to a function in every POSIX shell) so
+//! it can unset its temporaries, and a failure inside `$(...)` does not end
+//! a `set -e` shell before the code is applied.
 //!
 //! As sourcing `nvm.sh` does, the snippet ends with the automatic `use` (or
 //! `install`), whose status is the status of the whole snippet: `eval
@@ -112,16 +118,18 @@ const BODY: &str = r#"
   case "${1-}" in
     use | deactivate | install | i | __auto) ;;
     *)
-      command nvm "$@"
+      (
+        @EXPORTS@
+        command \nvm "$@"
+      )
       return
       ;;
   esac
   __nvmrc_status=0
   {
     __nvmrc_code=$(
-      MANPATH="${MANPATH-}" NODE_PATH="${NODE_PATH-}" \
-        NVM_SYMLINK_CURRENT="${NVM_SYMLINK_CURRENT-}" PREFIX="${PREFIX-}" \
-        NVMRC_SCRIPT_FD=3 command nvm "$@" 3>&1 1>&4 4>&-
+      @EXPORTS@
+      NVMRC_SCRIPT_FD=3 command \nvm "$@" 3>&1 1>&4 4>&-
     ) || __nvmrc_status=$?
   } 4>&1
   eval "$__nvmrc_code"
@@ -131,6 +139,25 @@ const BODY: &str = r#"
 }
 "#;
 
+/// The variables the binary reads that a shell may hold unexported.
+const PASSED: [&str; 4] = ["MANPATH", "NODE_PATH", "NVM_SYMLINK_CURRENT", "PREFIX"];
+
+/// [`BODY`] with each `@EXPORTS@` line replaced by one line per [`PASSED`]
+/// variable, at the same indentation, exporting it only when it is set.
+fn body() -> String {
+    BODY.lines()
+        .map(|line| match line.strip_suffix("@EXPORTS@") {
+            Some(indent) => PASSED
+                .iter()
+                .map(|name| {
+                    format!("{indent}if [ -n \"${{{name}+set}}\" ]; then export {name}; fi\n")
+                })
+                .collect(),
+            None => format!("{line}\n"),
+        })
+        .collect()
+}
+
 /// The init snippet for `shell`, newline-terminated.
 #[must_use]
 pub fn snippet(shell: Shell, options: &InitOptions) -> String {
@@ -138,8 +165,9 @@ pub fn snippet(shell: Shell, options: &InitOptions) -> String {
     format!(
         "{BEGIN_MARKER}\n\
 # The nvm function of nvmrc, from `eval \"$(nvm init {name})\"` in the {name} startup file.\n\
-{PREAMBLE}{header}{BODY}{auto}{END_MARKER}\n",
+{PREAMBLE}{header}{body}{auto}{END_MARKER}\n",
         header = shell.function_header(),
+        body = body(),
         auto = options.auto_statement()
     )
 }

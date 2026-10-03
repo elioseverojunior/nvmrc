@@ -3,110 +3,9 @@
 //! `$NVM_DIR` and the built binary on `PATH` as `nvm`.
 #![cfg(unix)]
 
-use std::fs;
-use std::os::unix::fs::{PermissionsExt, symlink};
-use std::path::{Path, PathBuf};
-use std::process::Command;
+mod init_lab;
 
-const BINARY: &str = env!("CARGO_BIN_EXE_nvm");
-const SHELLS: [&str; 5] = ["bash", "zsh", "sh", "dash", "ksh"];
-const USING_18: &str = "Now using node v18.20.4 (npm v10.7.0)\n";
-
-/// The absolute path of `name` on the `PATH` of the tests, if installed.
-fn find_shell(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH").unwrap_or_default();
-    std::env::split_paths(&path)
-        .chain([PathBuf::from("/bin")])
-        .map(|directory| directory.join(name))
-        .find(|candidate| candidate.is_file())
-}
-
-fn script(path: &Path, body: &str) {
-    fs::write(path, format!("#!/bin/sh\n{body}\n")).unwrap();
-    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-}
-
-struct Lab {
-    root: tempfile::TempDir,
-}
-
-/// What a shell printed, and its status.
-struct Run {
-    status: i32,
-    stdout: String,
-    stderr: String,
-}
-
-impl Lab {
-    fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
-        for (version, npm) in [("v18.20.4", "10.7.0"), ("v20.11.1", "10.2.4")] {
-            let bin = root.path().join(format!("nvm/versions/node/{version}/bin"));
-            fs::create_dir_all(&bin).unwrap();
-            script(&bin.join("node"), &format!("echo {version}"));
-            script(&bin.join("npm"), &format!("echo {npm}"));
-        }
-        for directory in ["bin", "path", "home", "proj", "nvm/alias"] {
-            fs::create_dir_all(root.path().join(directory)).unwrap();
-        }
-        symlink(BINARY, root.path().join("bin/nvm")).unwrap();
-        Self { root }
-    }
-
-    fn file(self, relative: &str, text: &str) -> Self {
-        fs::write(self.root.path().join(relative), text).unwrap();
-        self
-    }
-
-    fn at(&self, relative: &str) -> String {
-        self.root.path().join(relative).display().to_string()
-    }
-
-    fn base_path(&self) -> String {
-        format!("{}:{}", self.at("bin"), self.at("path"))
-    }
-
-    fn version_bin(&self, version: &str) -> String {
-        self.at(&format!("nvm/versions/node/{version}/bin"))
-    }
-
-    /// Runs `commands` in `shell`, from the project directory.
-    fn run(&self, shell: &Path, commands: &str) -> Run {
-        let mut command = Command::new(shell);
-        if shell.ends_with("zsh") {
-            command.arg("-f");
-        }
-        let output = command
-            .args(["-c", commands])
-            .env_clear()
-            .env("PATH", self.base_path())
-            .env("NVM_DIR", self.at("nvm"))
-            .env("HOME", self.at("home"))
-            .env("PWD", self.at("proj"))
-            .current_dir(self.at("proj"))
-            .output()
-            .unwrap();
-        Run {
-            status: output.status.code().unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        }
-    }
-}
-
-/// Runs `body` once per installed shell, with the shell's name for messages.
-fn each_shell(body: impl Fn(&str, &Path)) {
-    for name in SHELLS {
-        match find_shell(name) {
-            Some(shell) => body(name, &shell),
-            None => eprintln!("skipped: {name} is not installed"),
-        }
-    }
-}
-
-fn with_function(name: &str, commands: &str) -> String {
-    format!("eval \"$(nvm init {name} --no-use)\"\n{commands}")
-}
+use init_lab::{Lab, USING_18, each_shell, with_function};
 
 #[test]
 fn use_switches_the_shell_and_says_so_on_stdout() {
@@ -210,10 +109,11 @@ fn the_function_survives_set_u_set_e_and_an_alias_named_nvm() {
     each_shell(|name, shell| {
         let commands = format!(
             "set -eu\nshopt -s expand_aliases 2>/dev/null || true\nalias nvm=false\n\
-eval \"$(\\nvm init {name} --no-use)\"\nnvm use 18 >/dev/null\necho \"$NVM_BIN\""
+eval \"$(\\nvm init {name} --no-use)\"\nnvm use 18 >/dev/null\necho \"$NVM_BIN\"\n\
+nvm bogus 2>/dev/null || echo \"bogus=$?\""
         );
         let run = lab.run(shell, &commands);
-        let expected = format!("{}\n", lab.version_bin("v18.20.4"));
+        let expected = format!("{}\nbogus=127\n", lab.version_bin("v18.20.4"));
         assert_eq!(
             (run.status, run.stdout.as_str()),
             (0, expected.as_str()),

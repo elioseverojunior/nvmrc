@@ -1,5 +1,6 @@
 use std::io;
 
+use super::std_process::without_channel;
 use crate::ports::Invocation;
 
 use std::ffi::OsString;
@@ -21,7 +22,7 @@ pub(super) fn spawn_inherited(invocation: &Invocation) -> io::Result<i32> {
     if let Some(prefix) = &invocation.path_prefix {
         command.env("PATH", path_with_prefix(prefix, invocation)?);
     }
-    Ok(exit_code(command.status()?))
+    Ok(exit_code(without_channel(&mut command).status()?))
 }
 
 /// `prefix` in front of the `PATH` the child ends up with: the `env` entry
@@ -128,6 +129,16 @@ mod tests {
         let invocation = sh(&script).env_remove("HOME");
         assert_eq!(StdProcess::default().spawn(&invocation).unwrap(), 0);
         assert_eq!(std::fs::read_to_string(out).unwrap(), "unset\n");
+    }
+
+    #[test]
+    fn the_variable_of_the_channel_is_never_inherited() {
+        let root = tempfile::tempdir().unwrap();
+        let out = root.path().join("out");
+        let script = format!("echo \"${{NVMRC_SCRIPT_FD-none}}\" > {}", out.display());
+        let invocation = sh(&script).env("NVMRC_SCRIPT_FD", "3");
+        assert_eq!(StdProcess::default().spawn(&invocation).unwrap(), 0);
+        assert_eq!(std::fs::read_to_string(out).unwrap(), "none\n");
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! What an install does in the `nvm` function (`NVMRC_SCRIPT_FD` set): it
+//! What an install does in the `nvm` function (its channel open): it
 //! switches the shell to the version, as `nvm.sh` does with `nvm use`
 //! (digest 9). Standalone, nothing is activated: the binary cannot change the
 //! shell that runs it, so it behaves as a plain install.
@@ -11,7 +11,6 @@ use crate::context::Context;
 use crate::domain::current::Current;
 use crate::domain::version::Version;
 use crate::error::NvmExitCode;
-use crate::shell::script_descriptor;
 
 /// `nvm use <version>` for a version that was already installed: always,
 /// even when it is the one in use, so `Now using ...` is printed again.
@@ -20,7 +19,7 @@ pub(super) fn use_always(
     version: &Version,
     transcript: &mut Transcript,
 ) -> NvmExitCode {
-    if script_descriptor(context.env).is_none() {
+    if context.script_channel().is_none() {
         return NvmExitCode::Success;
     }
     use_installed(context, version, transcript)
@@ -36,7 +35,7 @@ pub(super) fn use_if_needed(
     version: &Version,
     transcript: &mut Transcript,
 ) -> Step<NvmExitCode> {
-    if script_descriptor(context.env).is_none() {
+    if context.script_channel().is_none() {
         return Ok(NvmExitCode::Success);
     }
     if matches!(detect(context)?, Current::Version(current) if current == *version) {

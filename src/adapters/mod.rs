@@ -1,3 +1,4 @@
+pub mod fd_channel;
 pub mod fs_alias_store;
 pub mod no_archive;
 pub mod no_cpu;

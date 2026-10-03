@@ -6,6 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::ports::{Completed, Invocation, Process, ProcessOutput};
+use crate::shell::DESCRIPTOR_VARIABLE;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
@@ -49,7 +50,7 @@ impl Process for StdProcess {
         if let Some(prefix) = &invocation.path_prefix {
             command.env("PATH", path_with_prefix(prefix)?);
         }
-        let mut child = command.spawn()?;
+        let mut child = without_channel(&mut command).spawn()?;
         let stdout = collect(child.stdout.take());
         let stderr = collect(child.stderr.take());
         let status = child.wait()?;
@@ -67,7 +68,7 @@ impl Process for StdProcess {
 
     fn run(&self, program: &Path, args: &[&str]) -> io::Result<ProcessOutput> {
         let deadline = Instant::now() + self.timeout;
-        let mut child = Command::new(program)
+        let mut child = without_channel(&mut Command::new(program))
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -85,6 +86,12 @@ impl Process for StdProcess {
             stdout: String::from_utf8_lossy(&bytes).into_owned(),
         })
     }
+}
+
+/// `command` without the variable of the `nvm` function's channel, which is
+/// for this process only (its descriptor is close-on-exec already).
+pub(super) fn without_channel(command: &mut Command) -> &mut Command {
+    command.env_remove(DESCRIPTOR_VARIABLE)
 }
 
 /// `prefix` in front of the `PATH` this process has.
@@ -162,6 +169,20 @@ mod tests {
             .env_remove("HOME");
         let done = StdProcess::default().execute(&invocation).unwrap();
         assert_eq!(done.stdout, "unset\n");
+    }
+
+    #[test]
+    fn no_program_gets_the_variable_of_the_channel() {
+        let show = "echo \"${NVMRC_SCRIPT_FD-none}\"";
+        let invocation = Invocation::new("/bin/sh")
+            .args(&["-c", show])
+            .env("NVMRC_SCRIPT_FD", "3");
+        let done = StdProcess::default().execute(&invocation).unwrap();
+        assert_eq!(done.stdout, "none\n");
+        assert_eq!(
+            shell(&StdProcess::default(), show).unwrap().stdout,
+            "none\n"
+        );
     }
 
     #[test]

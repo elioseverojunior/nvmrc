@@ -35,9 +35,7 @@ fn a_default_that_is_not_a_version_falls_back_to_the_nvmrc() {
 
 #[test]
 fn in_the_nvm_function_the_installed_version_is_activated() {
-    let lab = Lab::new()
-        .alias("default", "18")
-        .var("NVMRC_SCRIPT_FD", "3");
+    let lab = Lab::new().alias("default", "18").in_function();
     let output = auto_install(&lab);
     assert_eq!(output.status, NvmExitCode::Success);
     assert_eq!(output.stdout, "");

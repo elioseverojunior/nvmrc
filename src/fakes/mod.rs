@@ -1,6 +1,7 @@
 //! In-memory implementations of the ports, for unit tests only.
 
 mod archive;
+mod channel;
 mod cpu;
 mod digest;
 mod env;
@@ -10,6 +11,7 @@ mod process;
 mod sleeper;
 
 pub use archive::FakeArchive;
+pub use channel::FakeScriptChannel;
 pub use cpu::FakeCpu;
 pub use digest::FakeDigest;
 pub use env::FakeEnv;

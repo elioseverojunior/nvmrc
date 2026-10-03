@@ -123,6 +123,9 @@ pub enum CliError {
     /// Options that cannot be combined, with the message to print.
     #[error("{0}")]
     InvalidOptions(String),
+    /// A variable a command would rewrite that is set but is not UTF-8.
+    #[error("${0} is not valid UTF-8, so nvm cannot change it.")]
+    NotText(String),
     /// A failed file-system change, naming the path it was made on.
     #[error("{}: {source}", path.display())]
     Io {
@@ -147,6 +150,7 @@ impl CliError {
         match self {
             Self::Version(_) | Self::NotInstalled => NvmExitCode::InvalidVersion,
             Self::NvmDirUnresolved
+            | Self::NotText(_)
             | Self::VersionNotInstalled(_)
             | Self::InvalidArgument(_)
             | Self::Shell(_)
@@ -221,6 +225,7 @@ mod tests {
         assert_exit_codes([
             (CliError::NotInstalled, NvmExitCode::InvalidVersion),
             (CliError::NvmDirUnresolved, NvmExitCode::Failure),
+            (CliError::NotText("PATH".into()), NvmExitCode::Failure),
             (
                 CliError::VersionNotInstalled("x".into()),
                 NvmExitCode::Failure,

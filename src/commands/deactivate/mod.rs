@@ -32,12 +32,15 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
 /// which its deactivate takes for a change and so empties `PATH`. Here the
 /// same message goes to `transcript` and the call fails with
 /// [`CliError::NvmDirUnresolved`] (status 1), producing no script, so nothing
-/// is exported or unset.
+/// is exported or unset. Likewise for a `PATH`, `MANPATH` or `NODE_PATH` that
+/// is not UTF-8, whose bytes nvm.sh edits: [`CliError::NotText`] (status 1),
+/// rather than a value rebuilt from nothing.
 ///
 /// # Errors
-/// [`CliError::NvmDirUnresolved`] when `NVM_DIR` cannot be resolved, and
-/// [`CliError::Shell`] only if the script cannot be built, which the fixed
-/// variable names make a programming error.
+/// [`CliError::NvmDirUnresolved`] when `NVM_DIR` cannot be resolved,
+/// [`CliError::NotText`] as [`changes`], and [`CliError::Shell`] only if the
+/// script cannot be built, which the fixed variable names make a programming
+/// error.
 pub fn deactivate(
     context: &Context<'_>,
     silent: bool,
@@ -56,6 +59,9 @@ pub fn deactivate(
     Ok(script)
 }
 
+/// The variables deactivating takes the nvm entries out of.
+const STRIPPED: [&str; 3] = ["PATH", "MANPATH", "NODE_PATH"];
+
 /// A variable deactivating changes: its new value, or `None` to unset it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Change {
@@ -69,7 +75,9 @@ pub struct Change {
 ///
 /// # Errors
 /// [`CliError::NvmDirUnresolved`] when `NVM_DIR` cannot be resolved, after
-/// `${NVM_DIR} not set!` went to `transcript`.
+/// `${NVM_DIR} not set!` went to `transcript`, and [`CliError::NotText`]
+/// when `PATH`, `MANPATH` or `NODE_PATH` is set but is not UTF-8 (nothing
+/// is printed).
 pub fn changes(
     context: &Context<'_>,
     silent: bool,
@@ -78,6 +86,9 @@ pub fn changes(
     let nvm_dir = context
         .nvm_dir()
         .inspect_err(|_| transcript.err("${NVM_DIR} not set!"))?;
+    for name in STRIPPED {
+        context.text_var(name)?;
+    }
     let stripper = Stripper {
         context,
         nvm_dir: nvm_dir.to_string_lossy().into_owned(),

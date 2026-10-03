@@ -213,3 +213,20 @@ fn a_leading_double_dash_is_dropped() {
     let output = Fixture::new().nvm_exec(Some("18"), &["--", "node", "a"]);
     assert_result(&output, ("node v18.20.4 argv: a\n", "", 0));
 }
+
+#[test]
+fn a_parent_that_sets_no_pwd_or_a_stale_one_still_finds_the_nvmrc_of_the_directory() {
+    let fixture = Fixture::new();
+    fixture.write_nvmrc("20\n");
+    let real = fs::canonicalize(fixture.project()).unwrap();
+    let expected = format!(
+        "Found '{}/.nvmrc' with version <20>\nnode v20.11.1 argv: a\n",
+        real.display()
+    );
+    let mut stale = fixture.command();
+    stale.env("PWD", fixture.root.path()).args(["node", "a"]);
+    assert_result(&stale.output().unwrap(), (&expected, "", 0));
+    let mut missing = fixture.command();
+    missing.env_remove("PWD").args(["node", "a"]);
+    assert_result(&missing.output().unwrap(), (&expected, "", 0));
+}

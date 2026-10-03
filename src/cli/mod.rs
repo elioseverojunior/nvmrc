@@ -12,6 +12,7 @@ use clap::Parser;
 
 use self::commands::{Command, dispatch};
 
+use crate::adapters::fd_channel::FdChannel;
 use crate::adapters::retrying_http::RetryingHttp;
 use crate::adapters::sha256_digest::Sha256Digest;
 use crate::adapters::std_cpu::StdCpu;
@@ -127,8 +128,11 @@ fn print(output: &Output, context: &Context<'_>, out: &mut dyn Write, err: &mut 
 }
 
 /// Calls `body` with the context of the real machine: the standard file
-/// system, environment, process runner, network and clock.
+/// system, environment, process runner, network and clock, and the channel
+/// of the `nvm` function when it opened one.
 fn with_real_context<R>(body: impl FnOnce(&Context<'_>) -> R) -> R {
+    // First: the descriptor must be taken over before anything else opens one.
+    let channel = FdChannel::from_env(&StdEnv);
     let process = StdProcess::default();
     let auth_header = StdEnv
         .var("NVM_AUTH_HEADER")
@@ -146,7 +150,10 @@ fn with_real_context<R>(body: impl FnOnce(&Context<'_>) -> R) -> R {
         .with_sleeper(&StdSleeper)
         .with_cpu(&StdCpu)
         .with_platform(platform);
-    body(&context)
+    match &channel {
+        Some(channel) => body(&context.with_script_channel(channel)),
+        None => body(&context),
+    }
 }
 
 /// Entry point shared by the `nvmrc` and `nvm` binaries.

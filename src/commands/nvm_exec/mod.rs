@@ -114,7 +114,7 @@ fn environment(context: &Context<'_>, target: &Target) -> Result<Environment, Cl
         Target::System(_) => child::system(context).map(|(_, environment)| environment),
         Target::Installed { directory, .. } => {
             let switch = Switch::new(&context.nvm_dir()?, directory);
-            child::installed(context, &switch, &switch.path(context), "")
+            child::installed(context, &switch, &switch.path(context)?, "")
         }
     }
 }

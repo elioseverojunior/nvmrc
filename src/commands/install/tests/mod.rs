@@ -3,7 +3,8 @@ use std::path::Path;
 use super::*;
 use crate::domain::fixtures::index_text;
 use crate::fakes::{
-    FakeArchive, FakeDigest, FakeEnv, FakeFileSystem, FakeHttp, FakeProcess, FakeSleeper,
+    FakeArchive, FakeDigest, FakeEnv, FakeFileSystem, FakeHttp, FakeProcess, FakeScriptChannel,
+    FakeSleeper,
 };
 use crate::ports::FileSystem;
 
@@ -23,6 +24,8 @@ struct World {
     sleeper: FakeSleeper,
     env: FakeEnv,
     process: FakeProcess,
+    /// Run in the `nvm` function: with its channel open.
+    in_function: bool,
 }
 
 impl World {
@@ -40,6 +43,15 @@ impl World {
             sleeper: FakeSleeper::default(),
             env: FakeEnv::default().with_var("NVM_DIR", "/n"),
             process: FakeProcess::default(),
+            in_function: false,
+        }
+    }
+
+    /// The same world, run in the `nvm` function.
+    fn in_function(self) -> Self {
+        Self {
+            in_function: true,
+            ..self
         }
     }
 
@@ -62,6 +74,10 @@ impl World {
             .with_archive(&archive)
             .with_sleeper(&self.sleeper)
             .with_process(&self.process);
+        let channel = FakeScriptChannel::default();
+        if self.in_function {
+            return super::run(&context.with_script_channel(&channel), words);
+        }
         super::run(&context, words)
     }
 

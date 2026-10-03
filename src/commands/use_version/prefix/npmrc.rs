@@ -77,10 +77,14 @@ fn files(context: &Context<'_>, directory: &str) -> [(Scope, String); 4] {
     ]
 }
 
-/// `nvm_find_project_dir`: the nearest ancestor of the logical `$PWD` with a
-/// `package.json` file or a `node_modules` directory; empty when none has.
+/// `nvm_find_project_dir`: the nearest ancestor of the logical working
+/// directory ([`Context::working_directory`]) with a `package.json` file or
+/// a `node_modules` directory; empty when none has.
 fn project_dir(context: &Context<'_>) -> String {
-    let mut directory = context.env.var("PWD").unwrap_or_default();
+    let mut directory = context
+        .working_directory()
+        .map(|directory| directory.to_string_lossy().into_owned())
+        .unwrap_or_default();
     while !directory.is_empty() && directory != "." && !holds_project(context, &directory) {
         directory = directory
             .rsplit_once('/')

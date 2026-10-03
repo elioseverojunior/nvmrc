@@ -1,13 +1,12 @@
 //! `--save` / `-w` of `install` and `use`: write a version to `.nvmrc` in
 //! the current directory (`nvm_write_nvmrc`).
 
-use std::path::PathBuf;
-
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::error::NvmExitCode;
 
-/// Writes `<version>\n` to `$PWD/.nvmrc` and says so on stdout. Failing to is
+/// Writes `<version>\n` to `.nvmrc` in the logical working directory
+/// ([`Context::working_directory`]) and says so on stdout. Failing to is
 /// status 3, after the warning `nvm.sh` gives on stderr. `silent` drops both
 /// messages, as `NVM_SILENT=1` does.
 pub fn write(
@@ -16,8 +15,8 @@ pub fn write(
     silent: bool,
     transcript: &mut Transcript,
 ) -> NvmExitCode {
-    let directory = context.env.var_os("PWD").map(PathBuf::from);
-    let written = directory
+    let written = context
+        .working_directory()
         .map(|directory| directory.join(".nvmrc"))
         .map(|file| context.fs.write_file(&file, &format!("{version}\n")));
     let succeeded = matches!(written, Some(Ok(())));

@@ -89,6 +89,23 @@ impl FileSystem for StdFileSystem {
     fn read_link(&self, _link: &Path) -> io::Result<PathBuf> {
         Err(io::Error::from(io::ErrorKind::Unsupported))
     }
+
+    #[cfg(unix)]
+    fn same_directory(&self, a: &Path, b: &Path) -> bool {
+        use std::os::unix::fs::MetadataExt;
+        match (fs::metadata(a), fs::metadata(b)) {
+            (Ok(a), Ok(b)) => a.is_dir() && a.dev() == b.dev() && a.ino() == b.ino(),
+            _ => false,
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn same_directory(&self, a: &Path, b: &Path) -> bool {
+        match (fs::canonicalize(a), fs::canonicalize(b)) {
+            (Ok(a), Ok(b)) => a == b && a.is_dir(),
+            _ => false,
+        }
+    }
 }
 
 #[cfg(unix)]
@@ -130,6 +147,20 @@ mod tests {
         std::os::unix::fs::symlink(&target, &link).unwrap();
         StdFileSystem.remove_dir_all(&link).unwrap();
         assert!(!link.exists() && target.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn same_directory_follows_symlinks_and_tells_directories_apart() {
+        let root = tempfile::tempdir().unwrap();
+        let (real, other) = (root.path().join("real"), root.path().join("other"));
+        fs::create_dir(&real).unwrap();
+        fs::create_dir(&other).unwrap();
+        let link = root.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        assert!(StdFileSystem.same_directory(&link, &real));
+        assert!(!StdFileSystem.same_directory(&other, &real));
+        assert!(!StdFileSystem.same_directory(&root.path().join("gone"), &real));
     }
 
     #[test]

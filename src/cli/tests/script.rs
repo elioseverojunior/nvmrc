@@ -1,4 +1,5 @@
 use super::*;
+use crate::fakes::FakeScriptChannel;
 use crate::shell::Script;
 
 fn script_output(stdout: &str, stderr: &str) -> Output {
@@ -8,13 +9,15 @@ fn script_output(stdout: &str, stderr: &str) -> Output {
         .with_script(script)
 }
 
-fn deliver(output: &Output, fs: &FakeFileSystem, descriptor: Option<&str>) -> (u8, String, String) {
-    let env = match descriptor {
-        Some(value) => FakeEnv::default().with_var("NVMRC_SCRIPT_FD", value),
-        None => FakeEnv::default(),
+fn deliver(output: &Output, channel: Option<&FakeScriptChannel>) -> (u8, String, String) {
+    let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
+    let context = Context::new(&fs, &env);
+    let context = match channel {
+        Some(channel) => context.with_script_channel(channel),
+        None => context,
     };
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    let code = finish("nvm", output, &Context::new(fs, &env), &mut out, &mut err);
+    let code = finish("nvm", output, &context, &mut out, &mut err);
     (
         code,
         String::from_utf8(out).unwrap(),
@@ -23,45 +26,46 @@ fn deliver(output: &Output, fs: &FakeFileSystem, descriptor: Option<&str>) -> (u
 }
 
 #[test]
-fn with_a_descriptor_the_code_is_written_to_it_and_the_streams_pass_through() {
-    let fs = FakeFileSystem::default();
-    let result = deliver(&script_output("o", "e"), &fs, Some("3"));
+fn with_a_channel_the_code_is_sent_to_it_and_the_streams_pass_through() {
+    let channel = FakeScriptChannel::default();
+    let result = deliver(&script_output("o", "e"), Some(&channel));
     assert_eq!(result, (0, "o\n".into(), "e\n".into()));
-    let written = fs.read_to_string(Path::new("/dev/fd/3")).unwrap();
-    assert_eq!(written, "unset NVM_BIN\n");
+    assert_eq!(channel.sent(), "unset NVM_BIN\n");
 }
 
 #[test]
-fn without_a_descriptor_the_code_goes_to_stdout_and_the_text_to_stderr() {
-    let fs = FakeFileSystem::default();
-    let result = deliver(&script_output("o", "e"), &fs, None);
+fn without_a_channel_the_code_goes_to_stdout_and_the_text_to_stderr() {
+    let result = deliver(&script_output("o", "e"), None);
     assert_eq!(result, (0, "unset NVM_BIN\n".into(), "e\no\n".into()));
-    assert!(!fs.is_file(Path::new("/dev/fd/3")));
 }
 
 #[test]
 fn an_empty_script_changes_nothing_in_either_mode() {
-    let fs = FakeFileSystem::default();
-    for descriptor in [None, Some("3")] {
-        let result = deliver(&Output::stdout("o").with_stderr("e"), &fs, descriptor);
+    let channel = FakeScriptChannel::default();
+    for channel in [None, Some(&channel)] {
+        let result = deliver(&Output::stdout("o").with_stderr("e"), channel);
         assert_eq!(result, (0, "o\n".into(), "e\n".into()));
     }
-    assert!(!fs.is_file(Path::new("/dev/fd/3")));
+    assert_eq!(channel.sent(), "");
 }
 
 #[test]
-fn a_descriptor_that_is_not_decimal_digits_is_ignored() {
+fn the_variable_alone_opens_no_channel() {
     let fs = FakeFileSystem::default();
-    for bad in ["", "x", "3x", "-1", "../etc"] {
-        let result = deliver(&script_output("o", ""), &fs, Some(bad));
-        assert_eq!(result, (0, "unset NVM_BIN\n".into(), "o\n".into()), "{bad}");
-    }
+    let env = FakeEnv::default().with_var("NVMRC_SCRIPT_FD", "3");
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let output = script_output("o", "");
+    let code = finish("nvm", &output, &Context::new(&fs, &env), &mut out, &mut err);
+    assert_eq!(
+        (code, out, err),
+        (0, b"unset NVM_BIN\n".to_vec(), b"o\n".to_vec())
+    );
 }
 
 #[test]
-fn a_failed_write_is_reported_and_makes_the_status_one() {
-    let fs = FakeFileSystem::default().with_unwritable("/dev/fd/3");
-    let (code, out, err) = deliver(&script_output("o", "e"), &fs, Some("3"));
+fn a_failed_send_is_reported_and_makes_the_status_one() {
+    let channel = FakeScriptChannel::broken();
+    let (code, out, err) = deliver(&script_output("o", "e"), Some(&channel));
     assert_eq!((code, out.as_str()), (1, "o\n"));
     assert!(
         err.starts_with("e\nnvm: cannot hand the shell code over"),
@@ -70,10 +74,10 @@ fn a_failed_write_is_reported_and_makes_the_status_one() {
 }
 
 #[test]
-fn a_failed_write_keeps_the_status_of_a_command_that_already_failed() {
-    let fs = FakeFileSystem::default().with_unwritable("/dev/fd/3");
+fn a_failed_send_keeps_the_status_of_a_command_that_already_failed() {
+    let channel = FakeScriptChannel::broken();
     let output = script_output("", "e").with_status(NvmExitCode::InvalidVersion);
-    assert_eq!(deliver(&output, &fs, Some("3")).0, 3);
+    assert_eq!(deliver(&output, Some(&channel)).0, 3);
 }
 
 #[test]
