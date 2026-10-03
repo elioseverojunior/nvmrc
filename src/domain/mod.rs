@@ -10,6 +10,7 @@ pub mod implicit;
 pub mod index;
 pub mod listing;
 pub mod mirror;
+pub mod npm;
 pub mod nvmrc;
 pub mod path_search;
 pub mod platform;
