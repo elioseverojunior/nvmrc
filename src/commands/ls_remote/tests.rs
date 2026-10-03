@@ -250,3 +250,20 @@ fn listing_refreshes_the_lts_aliases() {
     let read = |name: &str| fs.read_to_string(std::path::Path::new(name)).unwrap();
     assert_eq!(read("/n/alias/lts/*"), "lts/iron\n");
 }
+
+#[test]
+fn an_alias_target_without_the_v_is_shown_on_its_release() {
+    let fs = FakeFileSystem::default()
+        .with_file("/n/alias/default", "20\n")
+        .with_file("/n/alias/old", "0.12\n");
+    let output = run_with(&fs, &env(), &mirror(), "");
+    let rows = lines(&output);
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("v20.10.0") && row.ends_with("(Aliases: default)"))
+    );
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("v0.12.18") && row.ends_with("(Aliases: old)"))
+    );
+}

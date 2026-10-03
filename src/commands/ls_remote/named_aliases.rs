@@ -3,11 +3,12 @@
 
 use crate::context::Context;
 use crate::domain::alias::resolve;
+use crate::domain::version_prefix::with_v_prefix;
 use crate::error::CliError;
 
 /// `(target, name)` for every alias file directly in `$NVM_DIR/alias`, by name.
 /// The built-in names, aliases that loop and values with control characters
-/// are left out.
+/// are left out. A target is shown with its `v`, as `nvm_resolve_alias` has it.
 ///
 /// # Errors
 /// [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
@@ -30,7 +31,7 @@ pub fn collect(context: &Context<'_>) -> Result<Vec<(String, String)>, CliError>
         .filter_map(|name| {
             let target = resolve(&store, &name).ok()?;
             let usable = !target.is_empty() && !target.chars().any(char::is_control);
-            usable.then_some((target, name))
+            usable.then(|| (with_v_prefix(&target), name))
         })
         .collect())
 }
