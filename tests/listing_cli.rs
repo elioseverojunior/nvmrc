@@ -157,6 +157,11 @@ unstable -> N/A (default)
 "
     );
     assert_eq!(output.status.code(), Some(3));
+    for pattern in ["20", "node", "iojs", "system", "foo"] {
+        let listed = nvm(dir.path(), &["ls", pattern]);
+        assert_eq!(stdout(&listed), "            N/A *\n", "{pattern}");
+        assert_eq!(listed.status.code(), Some(3));
+    }
 }
 
 #[test]

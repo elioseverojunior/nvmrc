@@ -18,6 +18,8 @@ enum Entry {
     Version(Version),
     /// The system node, with its version when it answers `--version`.
     System(Option<String>),
+    /// Nothing matched: `N/A`.
+    NotAvailable,
     Raw(String, RowKind),
 }
 
@@ -83,11 +85,15 @@ pub fn run_command(context: &Context<'_>, args: &[String]) -> Result<Output, Cli
 /// Returns [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
 pub fn run(context: &Context<'_>, pattern: Option<&str>) -> Result<Output, CliError> {
     let current = current::detect(context)?.to_string();
-    let selection = select(context, pattern.filter(|text| !text.is_empty()), &current)?;
+    let mut installed = context.installed_versions()?;
+    installed.sort();
+    let not_available = not_available_kind(context, &installed)?;
+    let pattern = pattern.filter(|text| !text.is_empty());
+    let selection = select(context, installed, pattern, &current)?;
     let rows: Vec<String> = selection
         .entries
         .iter()
-        .map(|entry| render(entry, &current))
+        .map(|entry| render(entry, &current, not_available))
         .collect();
     let output = Output::stdout(rows.join("\n"));
     Ok(if selection.missing {
@@ -99,11 +105,10 @@ pub fn run(context: &Context<'_>, pattern: Option<&str>) -> Result<Output, CliEr
 
 fn select(
     context: &Context<'_>,
+    installed: Vec<Version>,
     pattern: Option<&str>,
     current: &str,
 ) -> Result<Selection, CliError> {
-    let mut installed = context.installed_versions()?;
-    installed.sort();
     match pattern {
         None => everything(context, installed),
         Some("current") => Ok(found(vec![Entry::Raw(
@@ -126,9 +131,21 @@ fn found(entries: Vec<Entry>) -> Selection {
 
 fn nothing_found() -> Selection {
     Selection {
-        entries: vec![Entry::Raw("N/A".to_owned(), RowKind::Plain)],
+        entries: vec![Entry::NotAvailable],
         missing: true,
     }
+}
+
+/// With nothing installed at all (no system node either) `nvm.sh` prints
+/// `N/A` as if it were an installed version (`            N/A *`), whatever
+/// the pattern; otherwise it is a plain `N/A` row.
+fn not_available_kind(context: &Context<'_>, installed: &[Version]) -> Result<RowKind, CliError> {
+    let nothing_installed = installed.is_empty() && system_node(context)?.is_none();
+    Ok(if nothing_installed {
+        RowKind::Installed
+    } else {
+        RowKind::Plain
+    })
 }
 
 fn some_or_nothing(entries: Vec<Entry>) -> Selection {
@@ -150,19 +167,10 @@ fn system_entry(context: &Context<'_>) -> Result<Option<Entry>, CliError> {
     Ok(Some(Entry::System(system_version(context)?)))
 }
 
-/// With nothing installed `nvm.sh` prints `N/A` as if it were an installed
-/// version (`            N/A *`), and so does this.
 fn everything(context: &Context<'_>, installed: Vec<Version>) -> Result<Selection, CliError> {
     let mut entries = versions(installed);
     entries.extend(system_entry(context)?);
-    if entries.is_empty() {
-        let raw = Entry::Raw("N/A".to_owned(), RowKind::Installed);
-        return Ok(Selection {
-            entries: vec![raw],
-            missing: true,
-        });
-    }
-    Ok(found(entries))
+    Ok(some_or_nothing(entries))
 }
 
 fn system_only(context: &Context<'_>) -> Result<Selection, CliError> {
@@ -219,7 +227,7 @@ fn kind_for(text: &str, current: &str) -> RowKind {
     }
 }
 
-fn render(entry: &Entry, current: &str) -> String {
+fn render(entry: &Entry, current: &str, not_available: RowKind) -> String {
     match entry {
         Entry::Version(version) => {
             let text = version.to_string();
@@ -228,6 +236,7 @@ fn render(entry: &Entry, current: &str) -> String {
         Entry::System(version) => {
             format_system_row(kind_for("system", current), version.as_deref())
         }
+        Entry::NotAvailable => format_row("N/A", not_available),
         Entry::Raw(text, kind) => format_row(text, *kind),
     }
 }

@@ -219,6 +219,27 @@ fn nothing_installed_prints_na_as_if_installed_and_exits_3() {
     assert_eq!(ls_on(&fs, "/nonexistent", None), expected);
 }
 
+// One row even for an alias, where `nvm.sh` prints two (see the module doc).
+#[test]
+fn nothing_installed_prints_na_as_if_installed_for_patterns_too() {
+    let fs = FakeFileSystem::default().with_file("/n/alias/work", "20");
+    let expected = Output::stdout("            N/A *").with_status(NvmExitCode::InvalidVersion);
+    for pattern in ["20", "node", "iojs", "system", "work", "stable", "foo"] {
+        assert_eq!(
+            ls_on(&fs, "/nonexistent", Some(pattern)),
+            expected,
+            "{pattern}"
+        );
+    }
+}
+
+#[test]
+fn a_system_node_alone_keeps_the_plain_na_row() {
+    let fs = FakeFileSystem::default().with_file("/sys/node", "");
+    let expected = Output::stdout("            N/A").with_status(NvmExitCode::InvalidVersion);
+    assert_eq!(ls_on(&fs, "/sys", Some("20")), expected);
+}
+
 #[test]
 fn only_a_system_node_lists_just_that_row() {
     let fs = FakeFileSystem::default().with_file("/sys/node", "");
