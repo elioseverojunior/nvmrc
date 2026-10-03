@@ -13,9 +13,17 @@ pub struct FakeFileSystem {
     executables: RefCell<BTreeSet<PathBuf>>,
     modified: RefCell<BTreeMap<PathBuf, SystemTime>>,
     links: RefCell<BTreeMap<PathBuf, PathBuf>>,
+    unwritable: RefCell<BTreeSet<PathBuf>>,
 }
 
 impl FakeFileSystem {
+    /// Makes every write to `path` fail with a permission error.
+    #[must_use]
+    pub fn with_unwritable(self, path: &str) -> Self {
+        self.unwritable.borrow_mut().insert(PathBuf::from(path));
+        self
+    }
+
     #[must_use]
     pub fn with_file(mut self, path: &str, contents: &str) -> Self {
         self.files
@@ -127,6 +135,9 @@ impl FileSystem for FakeFileSystem {
     }
 
     fn write_bytes(&self, path: &Path, contents: &[u8]) -> io::Result<()> {
+        if self.unwritable.borrow().contains(path) {
+            return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+        }
         self.files
             .borrow_mut()
             .insert(path.to_path_buf(), contents.to_vec());

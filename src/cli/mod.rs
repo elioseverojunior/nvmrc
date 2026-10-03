@@ -1,10 +1,15 @@
 //! Argument parsing and the translation of results into streams and exit codes.
 
+mod channel;
+mod commands;
+
 use std::ffi::OsString;
 use std::io::Write;
 use std::path::Path;
 
-use clap::{Parser, Subcommand};
+use clap::Parser;
+
+use self::commands::{Command, dispatch};
 
 use crate::adapters::retrying_http::RetryingHttp;
 use crate::adapters::sha256_digest::Sha256Digest;
@@ -15,7 +20,7 @@ use crate::adapters::std_process::StdProcess;
 use crate::adapters::std_sleeper::StdSleeper;
 use crate::adapters::tar_archive::TarArchive;
 use crate::adapters::ureq_http::UreqHttp;
-use crate::commands::{self, Output};
+use crate::commands::Output;
 use crate::context::Context;
 use crate::domain::http_header::sanitize_auth_header;
 use crate::domain::platform::Platform;
@@ -27,111 +32,6 @@ use crate::ports::{Env, FileSystem};
 struct Cli {
     #[command(subcommand)]
     command: Command,
-}
-
-#[derive(Subcommand)]
-enum Command {
-    /// Print the highest installed version matching a version or alias
-    /// (the current version when no argument is given).
-    Version { pattern: Option<String> },
-    /// Print the version of the node that is active in this shell.
-    Current,
-    /// List the installed versions and the aliases (`--no-alias` omits them;
-    /// a pattern lists only the versions matching it).
-    #[command(visible_alias = "list")]
-    Ls {
-        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
-        args: Vec<String>,
-    },
-    /// List the versions a mirror offers (`--lts[=name]` keeps the LTS
-    /// releases; a pattern keeps the versions matching it).
-    #[command(name = "ls-remote", visible_alias = "list-remote")]
-    LsRemote {
-        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
-        args: Vec<String>,
-    },
-    /// Print the cache directory (`dir`) or empty it (`clear`).
-    Cache {
-        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
-        args: Vec<String>,
-    },
-    /// Download and install a version (a partial version, an alias, `--lts`,
-    /// `lts/<name>`); `--default` or `--alias=<name>` also make an alias.
-    #[command(visible_alias = "i")]
-    Install {
-        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
-        args: Vec<String>,
-    },
-    /// Upgrade the `npm` of the node in use to the newest one that works on it.
-    #[command(name = "install-latest-npm")]
-    InstallLatestNpm {
-        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
-        args: Vec<String>,
-    },
-    /// Install, in the node in use, the global packages of another version.
-    #[command(name = "reinstall-packages")]
-    ReinstallPackages {
-        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
-        args: Vec<String>,
-    },
-    /// The same as `reinstall-packages`.
-    #[command(name = "copy-packages")]
-    CopyPackages {
-        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
-        args: Vec<String>,
-    },
-    /// Remove an installed version (`--lts` and `--lts=<name>` pick one by
-    /// its LTS alias) and the aliases that name it.
-    Uninstall {
-        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
-        args: Vec<String>,
-    },
-    /// Print the newest release a version, alias or `--lts[=name]` stands for
-    /// on the mirror (`N/A` when there is none).
-    #[command(name = "version-remote")]
-    VersionRemote {
-        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
-        args: Vec<String>,
-    },
-    /// Print the path to the node binary of a version or alias (or of the
-    /// `.nvmrc` version when none is given).
-    Which {
-        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
-        args: Vec<String>,
-    },
-    /// List aliases, show those starting with a name, or create an alias for
-    /// a version (an empty target deletes the alias).
-    Alias {
-        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
-        args: Vec<String>,
-    },
-    /// Delete an alias.
-    Unalias { names: Vec<String> },
-}
-
-fn dispatch(command: &Command, context: &Context<'_>) -> Result<Output, CliError> {
-    match command {
-        Command::Version { pattern } => {
-            commands::version::run(context, pattern.as_deref().unwrap_or("current"))
-        }
-        Command::Current => commands::current::run(context),
-        Command::Ls { args } => commands::ls::run_command(context, args),
-        Command::LsRemote { args } => commands::ls_remote::run(context, args),
-        Command::VersionRemote { args } => commands::version_remote::run(context, args),
-        Command::Cache { args } => commands::cache::run(context, args),
-        Command::Install { args } => commands::install::run(context, args),
-        Command::InstallLatestNpm { args } => commands::install_latest_npm::run(context, args),
-        Command::ReinstallPackages { args } => {
-            commands::reinstall_packages::run(context, "reinstall-packages", args)
-        }
-        Command::CopyPackages { args } => {
-            commands::reinstall_packages::run(context, "copy-packages", args)
-        }
-        Command::Uninstall { args } => commands::uninstall::run(context, args),
-        Command::Which { args } => commands::which::run_command(context, args),
-        Command::Alias { args } => commands::aliases::run(context, args),
-        Command::Unalias { names } => commands::unalias::run(context, names),
-    }
 }
 
 /// Writes `text` and flushes, so a closed or full stream is noticed.
@@ -167,32 +67,34 @@ where
         }
     };
     match dispatch(&cli.command, context) {
-        Ok(output) => finish(&output, out, err),
+        Ok(output) => finish(&output, context, out, err),
         // nvm.sh prints N/A on stdout, not stderr.
         Err(error @ CliError::NotInstalled) => {
             let output = Output::stdout(error.to_string()).with_status(error.exit_code());
-            finish(&output, out, err)
+            finish(&output, context, out, err)
         }
         Err(error) => {
             let output = Output::default()
                 .with_stderr(error.to_string())
                 .with_status(error.exit_code());
-            finish(&output, out, err)
+            finish(&output, context, out, err)
         }
     }
 }
 
 /// Prints diagnostics first, then the result, and finishes with the status the
-/// command asked for, unless writing the result failed.
-fn finish(output: &Output, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
-    if !output.stderr.is_empty() {
+/// command asked for, unless writing the result failed. The shell code of the
+/// command travels as `channel` says.
+fn finish(output: &Output, context: &Context<'_>, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+    let delivery = channel::deliver(output, context);
+    if !delivery.stderr.is_empty() {
         // Nowhere left to report a failed stderr write.
-        let _ = emit(err, &format!("{}\n", output.stderr));
+        let _ = emit(err, &delivery.stderr);
     }
-    if output.stdout.is_empty() {
-        return output.status.code();
+    if delivery.stdout.is_empty() {
+        return delivery.status.code();
     }
-    exit_code_for_write(emit(out, &format!("{}\n", output.stdout)), output.status)
+    exit_code_for_write(emit(out, &delivery.stdout), delivery.status)
 }
 
 /// Entry point shared by the `nvmrc` and `nvm` binaries.

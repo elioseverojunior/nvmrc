@@ -290,3 +290,4 @@ fn uninstall_needs_one_word_and_a_missing_version_is_only_a_message() {
 }
 
 mod install;
+mod script;
