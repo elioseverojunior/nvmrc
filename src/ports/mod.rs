@@ -74,6 +74,10 @@ pub enum HttpError {
     Status { url: String, code: u16 },
     #[error("{url}: {message}")]
     Transport { url: String, message: String },
+    /// The server answered, but the body is not usable (too large, or not
+    /// text). Asking again would not change that.
+    #[error("{url}: {message}")]
+    Body { url: String, message: String },
 }
 
 pub trait Http {

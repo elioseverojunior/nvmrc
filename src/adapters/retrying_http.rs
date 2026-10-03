@@ -6,7 +6,7 @@ use crate::ports::{Http, HttpError, Sleeper};
 
 /// Wraps an [`Http`]: a network error, a 5xx or a 429 is tried again after
 /// `base_delay`, then twice as long, and so on, up to `attempts` tries in all.
-/// Any other status (a 404, say) is final at once.
+/// Any other status (a 404, say) and an unusable body are final at once.
 pub struct RetryingHttp<'a> {
     inner: &'a dyn Http,
     sleeper: &'a dyn Sleeper,
@@ -37,6 +37,7 @@ fn is_transient(error: &HttpError) -> bool {
     match error {
         HttpError::Transport { .. } => true,
         HttpError::Status { code, .. } => *code >= 500 || *code == 429,
+        HttpError::Body { .. } => false,
     }
 }
 
@@ -150,6 +151,17 @@ mod tests {
                 code: 404
             }
         );
+        assert!(slept.is_empty());
+    }
+
+    #[test]
+    fn an_unusable_body_is_final_at_once() {
+        let body = Err(HttpError::Body {
+            url: "u".to_owned(),
+            message: "too big".to_owned(),
+        });
+        let (result, slept) = fetch(vec![body, Ok("never".to_owned())]);
+        assert!(matches!(result, Err(HttpError::Body { .. })));
         assert!(slept.is_empty());
     }
 

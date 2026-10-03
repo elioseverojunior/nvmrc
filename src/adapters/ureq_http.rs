@@ -52,6 +52,24 @@ fn transport(url: &str, message: impl ToString) -> HttpError {
     }
 }
 
+/// A body that is over the limit or not text is final; anything else that
+/// goes wrong while reading it (a reset, say) is a transport error.
+fn read_failure(url: &str, error: ureq::Error) -> HttpError {
+    let unusable = match &error {
+        ureq::Error::BodyExceedsLimit(_) => true,
+        ureq::Error::Io(source) => source.kind() == std::io::ErrorKind::InvalidData,
+        _ => false,
+    };
+    if unusable {
+        HttpError::Body {
+            url: url.to_owned(),
+            message: error.to_string(),
+        }
+    } else {
+        transport(url, error)
+    }
+}
+
 impl Http for UreqHttp {
     fn get_text(&self, url: &str) -> Result<String, HttpError> {
         let mut request = self.agent.get(url);
@@ -64,7 +82,7 @@ impl Http for UreqHttp {
                 .with_config()
                 .limit(MAX_BODY_BYTES)
                 .read_to_string()
-                .map_err(|error| transport(url, error)),
+                .map_err(|error| read_failure(url, error)),
             Err(ureq::Error::StatusCode(code)) => Err(HttpError::Status {
                 url: url.to_owned(),
                 code,
@@ -170,6 +188,40 @@ mod tests {
             "{}",
             requests[1]
         );
+    }
+
+    /// Answers one connection with `response`, sent as raw bytes.
+    fn serve_bytes(response: Vec<u8>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = [0_u8; 4096];
+            let _ = stream.read(&mut buffer);
+            let _ = stream.write_all(&response);
+        });
+        base
+    }
+
+    fn reply_with(body: &[u8], declared: usize) -> Vec<u8> {
+        let head =
+            format!("HTTP/1.1 200 OK\r\nContent-Length: {declared}\r\nConnection: close\r\n\r\n");
+        [head.as_bytes(), body].concat()
+    }
+
+    #[test]
+    fn a_body_that_is_not_text_is_a_body_error() {
+        let base = serve_bytes(reply_with(&[0xff, 0xfe, 0xfd], 3));
+        let error = UreqHttp::unproxied(None).get_text(&format!("{base}/x"));
+        assert!(matches!(error, Err(HttpError::Body { .. })), "{error:?}");
+    }
+
+    #[test]
+    fn a_body_over_the_limit_is_a_body_error() {
+        let size = usize::try_from(MAX_BODY_BYTES).unwrap() + 1024;
+        let base = serve_bytes(reply_with(&vec![b'a'; size], size));
+        let error = UreqHttp::unproxied(None).get_text(&format!("{base}/x"));
+        assert!(matches!(error, Err(HttpError::Body { .. })), "{error:?}");
     }
 
     #[test]
