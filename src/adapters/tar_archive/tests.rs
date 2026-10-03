@@ -217,3 +217,55 @@ fn a_truncated_xz_archive_is_an_error() {
     fs::create_dir(&destination).unwrap();
     assert!(TarArchive.extract(&archive, &destination).is_err());
 }
+
+/// The CRC-32 (IEEE) that guards an xz block header.
+fn crc32(bytes: &[u8]) -> u32 {
+    let mut crc = !0_u32;
+    for byte in bytes {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            crc = (crc >> 1) ^ (0xedb8_8320 & (crc & 1).wrapping_neg());
+        }
+    }
+    !crc
+}
+
+/// Rewrites the LZMA2 dictionary size the first block header declares (the
+/// property byte after filter id 0x21 and its size 1) and fixes its CRC.
+fn declare_dictionary(archive: &Path, property: u8) {
+    const BLOCK: usize = 12; // the xz stream header comes first
+    let mut bytes = fs::read(archive).unwrap();
+    let length = (usize::from(bytes[BLOCK]) + 1) * 4;
+    let header = BLOCK..BLOCK + length - 4;
+    let filter = bytes[header.clone()]
+        .windows(2)
+        .position(|pair| pair == [0x21, 0x01])
+        .unwrap();
+    bytes[BLOCK + filter + 2] = property;
+    let crc = crc32(&bytes[header.clone()]).to_le_bytes();
+    bytes[header.end..header.end + 4].copy_from_slice(&crc);
+    fs::write(archive, bytes).unwrap();
+}
+
+#[test]
+fn an_xz_archive_that_needs_too_much_memory_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = build_xz(root.path(), &[("top/file", "x")]);
+    declare_dictionary(&archive, 36); // a 1 GiB dictionary
+    let destination = root.path().join("out");
+    fs::create_dir(&destination).unwrap();
+    let error = TarArchive.extract(&archive, &destination).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::OutOfMemory);
+    assert!(!destination.join("top/file").exists());
+}
+
+#[test]
+fn an_xz_archive_with_a_node_sized_dictionary_still_unpacks() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = build_xz(root.path(), &[("top/file", "x")]);
+    declare_dictionary(&archive, 28); // 64 MiB, as `xz -9` (and Node) uses
+    let destination = root.path().join("out");
+    fs::create_dir(&destination).unwrap();
+    TarArchive.extract(&archive, &destination).unwrap();
+    assert!(destination.join("top/file").exists());
+}

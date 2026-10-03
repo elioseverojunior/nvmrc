@@ -9,6 +9,10 @@ use crate::ports::Archive;
 
 const GZIP_MAGIC: &[u8] = &[0x1f, 0x8b];
 const XZ_MAGIC: &[u8] = &[0xfd, b'7', b'z', b'X', b'Z', 0x00];
+/// The most memory, in KiB, the xz decoder may ask for: 256 MiB. Node's
+/// archives use a dictionary of 64 MiB or less, so only a crafted archive
+/// that would make the decoder allocate gigabytes is refused.
+const XZ_MEMORY_LIMIT_KIB: u32 = 256 * 1024;
 
 /// The real [`Archive`]: a gzip- or xz-compressed tar, told apart by its first
 /// bytes (as `tar` does) and unpacked by the `tar` crate. An entry that would
@@ -25,7 +29,10 @@ impl Archive for TarArchive {
         if magic[..read].starts_with(GZIP_MAGIC) {
             unpack(GzDecoder::new(file), destination)
         } else if magic[..read].starts_with(XZ_MAGIC) {
-            unpack(XzReader::new(file, true), destination)
+            unpack(
+                XzReader::new_mem_limit(file, true, XZ_MEMORY_LIMIT_KIB),
+                destination,
+            )
         } else {
             Err(io::Error::new(
                 io::ErrorKind::InvalidData,

@@ -33,11 +33,19 @@ fn run_steps(
     process: &FakeProcess,
     options: &Options,
 ) -> (NvmExitCode, String, String) {
+    run_for(&target(None), fs, process, options)
+}
+
+fn run_for(
+    target: &Target,
+    fs: &FakeFileSystem,
+    process: &FakeProcess,
+    options: &Options,
+) -> (NvmExitCode, String, String) {
     let env = FakeEnv::default().with_var("NVM_DIR", "/n");
     let context = Context::new(fs, &env).with_process(process);
     let mut transcript = Transcript::default();
-    let target = target(None);
-    let status = run(&context, options, &target, &mut transcript).unwrap();
+    let status = run(&context, options, target, &mut transcript).unwrap();
     let output = transcript.finish(status);
     (status, output.stdout, output.stderr)
 }
@@ -105,17 +113,23 @@ fn a_line_with_two_values_is_status_1_and_names_the_file() {
     );
 }
 
-#[test]
-fn a_failed_package_install_is_status_1_with_the_hint() {
-    let failed = Completed {
+fn failed_npm() -> Completed {
+    Completed {
         success: false,
         stdout: String::new(),
         stderr: "E404\n".to_owned(),
         ..Completed::default()
-    };
-    let process = FakeProcess::default().with_execution(NPM, "install -g --quiet yarn", failed);
+    }
+}
+
+/// `nvm.sh` ignores what `nvm_install_default_packages` returns, so a failed
+/// `npm install` prints the hint and the install still succeeds.
+#[test]
+fn a_failed_package_install_prints_the_hint_and_still_succeeds() {
+    let process =
+        FakeProcess::default().with_execution(NPM, "install -g --quiet yarn", failed_npm());
     let (status, _, stderr) = run_steps(&world(Some("yarn\n")), &process, &options(false, false));
-    assert_eq!(status, NvmExitCode::Failure);
+    assert_eq!(status, NvmExitCode::Success);
     assert_eq!(
         stderr,
         "E404\nFailed installing default packages. Please check if your default-packages file or a package in it has problems!"
@@ -173,13 +187,8 @@ fn reinstall_from(
     fs: &FakeFileSystem,
     process: &FakeProcess,
 ) -> (NvmExitCode, String, String) {
-    let env = FakeEnv::default().with_var("NVM_DIR", "/n");
-    let context = Context::new(fs, &env).with_process(process);
-    let mut transcript = Transcript::default();
     let target = target(Some(source.clone()));
-    let status = run(&context, &options(false, true), &target, &mut transcript).unwrap();
-    let output = transcript.finish(status);
-    (status, output.stdout, output.stderr)
+    run_for(&target, fs, process, &options(false, true))
 }
 
 #[test]
@@ -216,4 +225,19 @@ fn a_version_without_npm_skips_the_reinstall_with_a_warning() {
         stderr,
         "npm was not found in v20.10.0; skipping the reinstall of global packages."
     );
+}
+
+#[test]
+fn the_packages_of_the_source_are_still_installed_after_a_failed_default_package() {
+    let old = "/n/versions/node/v18.19.0/bin/npm";
+    let fs = world(Some("yarn\n")).with_executable(old, "");
+    let process = FakeProcess::default()
+        .with_execution(NPM, "install -g --quiet yarn", failed_npm())
+        .with_success(old, "list -g --depth=0", "/x\n├── pnpm@8.15.0\n")
+        .with_success(NPM, "install -g --quiet pnpm@8.15.0", "added\n");
+    let target = target(Some(Source::Version("v18.19.0".parse().unwrap())));
+    let (status, stdout, _) = run_for(&target, &fs, &process, &options(false, false));
+    assert_eq!(status, NvmExitCode::Success);
+    assert!(stdout.contains("Reinstalling global packages from v18.19.0..."));
+    assert!(calls(&process).contains(&"install -g --quiet pnpm@8.15.0".to_owned()));
 }

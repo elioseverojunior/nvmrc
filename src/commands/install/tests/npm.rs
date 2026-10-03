@@ -76,6 +76,24 @@ fn the_alias_of_an_installed_version_is_not_made_when_an_npm_step_failed() {
 }
 
 #[test]
+fn a_failed_default_package_still_makes_the_alias_and_succeeds() {
+    let world = World::new();
+    world.run("20").unwrap();
+    world
+        .fs
+        .write_file(Path::new("/n/default-packages"), "yarn\n")
+        .unwrap();
+    let output = world.run("--alias=work 20").unwrap();
+    assert_eq!(output.status, NvmExitCode::Success);
+    assert!(
+        output
+            .stderr
+            .contains("Failed installing default packages.")
+    );
+    assert!(world.text("/n/alias/work").is_some());
+}
+
+#[test]
 fn skip_default_packages_does_not_read_the_file() {
     let world = World::new();
     world

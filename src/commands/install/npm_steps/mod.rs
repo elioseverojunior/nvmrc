@@ -18,7 +18,9 @@ use crate::error::NvmExitCode;
 
 /// The steps (`--latest-npm`, the default packages, the packages of
 /// `--reinstall-packages-from`), stopping at the first one that does not
-/// succeed; its status is the install's.
+/// succeed; its status is the install's. As in `nvm.sh`, a failed
+/// `npm install` of the default packages only warns; a malformed
+/// `default-packages` file does stop the steps.
 ///
 /// # Errors
 /// [`crate::commands::install::flow::Halt::Error`] when `$NVM_DIR` is unknown.
@@ -107,6 +109,8 @@ fn listed_packages(
 }
 
 /// `nvm_install_default_packages`: one `npm install -g --quiet` for the lot.
+/// A failed `npm install` prints the hint and is still a success, because
+/// both callers in `nvm.sh` ignore what this function returns.
 fn default_packages(
     context: &Context<'_>,
     npm: Option<&Npm>,
@@ -129,11 +133,10 @@ fn default_packages(
     transcript.out(format!("npm install -g --quiet {joined}"));
     let mut args = vec!["install", "-g", "--quiet"];
     args.extend(joined.split_whitespace());
-    if npm.run(context, &args, transcript) {
-        return Ok(NvmExitCode::Success);
+    if !npm.run(context, &args, transcript) {
+        transcript.err("Failed installing default packages. Please check if your default-packages file or a package in it has problems!");
     }
-    transcript.err("Failed installing default packages. Please check if your default-packages file or a package in it has problems!");
-    Ok(NvmExitCode::Failure)
+    Ok(NvmExitCode::Success)
 }
 
 #[cfg(test)]
