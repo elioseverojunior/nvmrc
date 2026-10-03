@@ -1,13 +1,16 @@
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::ports::{Process, ProcessOutput};
+use crate::ports::{Completed, Invocation, Process, ProcessOutput};
 
 /// Programs by path: each prints a fixed output, or fails when it has none.
 #[derive(Default)]
 pub struct FakeProcess {
     outputs: BTreeMap<PathBuf, ProcessOutput>,
+    executions: BTreeMap<(PathBuf, String), Completed>,
+    executed: RefCell<Vec<Invocation>>,
 }
 
 impl FakeProcess {
@@ -32,7 +35,44 @@ impl FakeProcess {
     }
 }
 
+impl FakeProcess {
+    /// What `execute` answers to `program` run with exactly `args` (joined
+    /// with spaces); any other invocation is not found.
+    #[must_use]
+    pub fn with_execution(mut self, program: &str, args: &str, done: Completed) -> Self {
+        self.executions
+            .insert((PathBuf::from(program), args.to_owned()), done);
+        self
+    }
+
+    /// A successful execution that printed `stdout`.
+    #[must_use]
+    pub fn with_success(self, program: &str, args: &str, stdout: &str) -> Self {
+        let done = Completed {
+            success: true,
+            stdout: stdout.to_owned(),
+            stderr: String::new(),
+        };
+        self.with_execution(program, args, done)
+    }
+
+    /// Every invocation `execute` was given, in order.
+    #[must_use]
+    pub fn executed(&self) -> Vec<Invocation> {
+        self.executed.borrow().clone()
+    }
+}
+
 impl Process for FakeProcess {
+    fn execute(&self, invocation: &Invocation) -> io::Result<Completed> {
+        self.executed.borrow_mut().push(invocation.clone());
+        let key = (invocation.program.clone(), invocation.args.join(" "));
+        self.executions
+            .get(&key)
+            .cloned()
+            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
+    }
+
     fn run(&self, program: &Path, _args: &[&str]) -> io::Result<ProcessOutput> {
         self.outputs
             .get(program)
@@ -44,6 +84,18 @@ impl Process for FakeProcess {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fake_process_executes_by_program_and_arguments_and_records_what_it_ran() {
+        let process = FakeProcess::default().with_success("/n/bin/npm", "--version", "10.2.3\n");
+        let invocation = Invocation::new("/n/bin/npm")
+            .args(&["--version"])
+            .dir("/work");
+        assert_eq!(process.execute(&invocation).unwrap().stdout, "10.2.3\n");
+        let other = Invocation::new("/n/bin/npm").args(&["list"]);
+        assert!(process.execute(&other).is_err());
+        assert_eq!(process.executed(), [invocation, other]);
+    }
 
     #[test]
     fn fake_process_answers_by_program_path() {

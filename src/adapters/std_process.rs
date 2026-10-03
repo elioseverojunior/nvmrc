@@ -5,7 +5,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::ports::{Process, ProcessOutput};
+use crate::ports::{Completed, Invocation, Process, ProcessOutput};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
@@ -30,6 +30,33 @@ impl Default for StdProcess {
 }
 
 impl Process for StdProcess {
+    /// No time limit and no cap: a build may take an hour and print a lot.
+    /// Both streams are read at once, so a full pipe cannot stall the program.
+    fn execute(&self, invocation: &Invocation) -> io::Result<Completed> {
+        let mut command = Command::new(&invocation.program);
+        command
+            .args(&invocation.args)
+            .envs(invocation.env.iter().map(|(name, value)| (name, value)))
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(dir) = &invocation.dir {
+            command.current_dir(dir);
+        }
+        if let Some(prefix) = &invocation.path_prefix {
+            command.env("PATH", path_with_prefix(prefix)?);
+        }
+        let mut child = command.spawn()?;
+        let stdout = collect(child.stdout.take());
+        let stderr = collect(child.stderr.take());
+        let status = child.wait()?;
+        Ok(Completed {
+            success: status.success(),
+            stdout: stdout.join().unwrap_or_default(),
+            stderr: stderr.join().unwrap_or_default(),
+        })
+    }
+
     fn run(&self, program: &Path, args: &[&str]) -> io::Result<ProcessOutput> {
         let deadline = Instant::now() + self.timeout;
         let mut child = Command::new(program)
@@ -50,6 +77,24 @@ impl Process for StdProcess {
             stdout: String::from_utf8_lossy(&bytes).into_owned(),
         })
     }
+}
+
+/// `prefix` in front of the `PATH` this process has.
+fn path_with_prefix(prefix: &Path) -> io::Result<std::ffi::OsString> {
+    let current = std::env::var_os("PATH").unwrap_or_default();
+    let directories = std::iter::once(prefix.to_path_buf()).chain(std::env::split_paths(&current));
+    std::env::join_paths(directories).map_err(io::Error::other)
+}
+
+/// Reads a pipe to its end on another thread.
+fn collect<R: Read + Send + 'static>(pipe: Option<R>) -> thread::JoinHandle<String> {
+    thread::spawn(move || {
+        let mut bytes = Vec::new();
+        if let Some(mut pipe) = pipe {
+            let _ = pipe.read_to_end(&mut bytes);
+        }
+        String::from_utf8_lossy(&bytes).into_owned()
+    })
 }
 
 /// Reads at most `cap` bytes on another thread. The thread is never joined:
@@ -147,5 +192,63 @@ mod tests {
     fn a_missing_program_cannot_run() {
         let missing = Path::new("/nonexistent/node");
         assert!(StdProcess::default().run(missing, &[]).is_err());
+    }
+
+    fn execute(script: &str) -> Completed {
+        let invocation = Invocation::new("/bin/sh").args(&["-c", script]);
+        StdProcess::default().execute(&invocation).unwrap()
+    }
+
+    #[test]
+    fn execute_returns_both_streams_and_the_outcome() {
+        let done = execute("echo out; echo err >&2; exit 3");
+        assert_eq!(
+            (done.stdout.as_str(), done.stderr.as_str()),
+            ("out\n", "err\n")
+        );
+        assert!(!done.success);
+        assert!(execute("true").success);
+    }
+
+    #[test]
+    fn execute_has_no_output_cap_and_no_deadlock_on_a_full_pipe() {
+        let done = execute(
+            "head -c 300000 /dev/zero | tr '\\0' a; head -c 300000 /dev/zero | tr '\\0' b >&2",
+        );
+        assert_eq!((done.stdout.len(), done.stderr.len()), (300_000, 300_000));
+    }
+
+    #[test]
+    fn execute_runs_where_it_is_told_with_the_environment_it_is_given() {
+        let root = tempfile::tempdir().unwrap();
+        let invocation = Invocation::new("/bin/sh")
+            .args(&["-c", "pwd; echo $GREETING"])
+            .dir(root.path())
+            .env("GREETING", "hello");
+        let done = StdProcess::default().execute(&invocation).unwrap();
+        let lines: Vec<&str> = done.stdout.lines().collect();
+        let real = std::fs::canonicalize(root.path()).unwrap();
+        assert_eq!(std::path::PathBuf::from(lines[0]), real);
+        assert_eq!(lines[1], "hello");
+    }
+
+    #[test]
+    fn execute_puts_the_prefix_first_on_the_path() {
+        let root = tempfile::tempdir().unwrap();
+        let tool = root.path().join("mytool");
+        std::fs::write(&tool, "#!/bin/sh\necho from-prefix\n").unwrap();
+        std::fs::set_permissions(&tool, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+        let invocation = Invocation::new("/bin/sh")
+            .args(&["-c", "mytool"])
+            .path_prefix(root.path());
+        let done = StdProcess::default().execute(&invocation).unwrap();
+        assert_eq!(done.stdout, "from-prefix\n");
+    }
+
+    #[test]
+    fn execute_of_a_missing_program_is_an_error() {
+        let invocation = Invocation::new("/nonexistent/npm");
+        assert!(StdProcess::default().execute(&invocation).is_err());
     }
 }
