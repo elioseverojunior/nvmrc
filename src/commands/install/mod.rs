@@ -1,13 +1,17 @@
-//! `nvm install`: the version a description stands for, from the mirror, into
-//! `$NVM_DIR/versions`. Prebuilt binaries (`.tar.xz` or `.tar.gz`) are installed; the
-//! install is not activated, which is the shell's job (`nvm use`).
+//! `nvm install`: the version a description stands for (or the one `.nvmrc`
+//! asks for), from the mirror, into `$NVM_DIR/versions`. Prebuilt binaries
+//! (`.tar.xz` or `.tar.gz`) are installed. In the `nvm` function the version
+//! is then activated through the shell code, as `nvm use` would; standalone
+//! it is not.
 
 mod acquire;
+mod activate;
 mod defaults;
 pub mod fetch;
 mod flow;
 pub mod lock;
 mod npm_steps;
+mod nvmrc_version;
 mod offline;
 pub mod options;
 pub mod place;
@@ -25,17 +29,16 @@ use crate::domain::version::Version;
 use crate::domain::version_prefix::with_v_prefix;
 use crate::error::{CliError, NvmExitCode};
 use flow::{Halt, Step, Target};
+use nvmrc_version::with_nvmrc_version;
 use options::Options;
 use resolve::{check_floor, resolve};
 
-const USAGE: &str = "No version provided and no .nvmrc file found\n\
-Usage: nvm install [<version>]\n  \
-Provide a <version>, or run from a directory containing an .nvmrc file.\n  \
-Run `nvm --help` for full help.";
-
+/// No version and no usable `.nvmrc` is not an error but an [`Output`] with
+/// the usage on stderr and status 127.
+///
 /// # Errors
-/// As [`options::parse`], [`CliError::Usage`] without a version, and
-/// [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
+/// As [`options::parse`], and [`CliError::NvmDirUnresolved`] when `$NVM_DIR`
+/// cannot be found.
 pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
     let options = options::parse(args)?;
     let mut transcript = Transcript::default();
@@ -48,8 +51,8 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
 
 fn install(context: &Context<'_>, given: &Options, transcript: &mut Transcript) -> Step<()> {
     let make_jobs = requested_jobs(given, transcript);
-    let options = &no_source_fallback(context, given)?;
-    announce(options, transcript)?;
+    let options = &with_nvmrc_version(context, no_source_fallback(context, given)?, transcript)?;
+    announce(options, transcript);
     let version = resolve(context, options, transcript)?;
     check_floor(context, &version, transcript)?;
     let path = place::version_path(context, &version)?;
@@ -67,9 +70,11 @@ fn install(context: &Context<'_>, given: &Options, transcript: &mut Transcript) 
     }
 }
 
-/// A valid install is left as it is; the steps after the install still run.
-/// The status of the last one is the status of the command: `--save`, which
-/// writes `.nvmrc`, replaces that of the `npm` steps, as in `nvm.sh`.
+/// A valid install is left as it is; it is used (in the `nvm` function) and
+/// the steps after the install still run, the `npm` ones only after a
+/// successful `use`. The status of the last one is the status of the command:
+/// `--save`, which writes `.nvmrc`, replaces that of `use` and the `npm`
+/// steps, as in `nvm.sh`.
 fn already_installed(
     context: &Context<'_>,
     options: &Options,
@@ -77,7 +82,10 @@ fn already_installed(
     transcript: &mut Transcript,
 ) -> Step<()> {
     transcript.err(format!("{} is already installed.", target.version));
-    let mut status = npm_steps::run(context, options, target, transcript)?;
+    let mut status = activate::use_always(context, &target.version, transcript);
+    if status == NvmExitCode::Success {
+        status = npm_steps::run(context, options, target, transcript)?;
+    }
     defaults::ensure_default(context, &alias_target(options), transcript)?;
     if options.save {
         status = nvmrc_file::write(context, &target.version.to_string(), false, transcript);
@@ -88,8 +96,10 @@ fn already_installed(
     end_with(status)
 }
 
-/// Unlike `nvm.sh`, which forgets `--save` on a fresh install, `.nvmrc` is
-/// written here too, after everything else.
+/// The new version is used if it is not in use already (in the `nvm`
+/// function); a failing `use` ends the install with its status. Unlike
+/// `nvm.sh`, which forgets `--save` on a fresh install, `.nvmrc` is written
+/// here too, after everything else.
 fn fresh_install(
     context: &Context<'_>,
     options: &Options,
@@ -106,6 +116,11 @@ fn fresh_install(
         transcript.err(message);
         return Err(Halt::Exit(NvmExitCode::Failure));
     }
+    end_with(activate::use_if_needed(
+        context,
+        &target.version,
+        transcript,
+    )?)?;
     defaults::ensure_default(context, &alias_target(options), transcript)?;
     let mut status = npm_steps::run(context, options, target, transcript)?;
     if options.save && status == NvmExitCode::Success {
@@ -196,10 +211,7 @@ fn apply_alias(context: &Context<'_>, options: &Options, transcript: &mut Transc
     }
 }
 
-fn announce(options: &Options, transcript: &mut Transcript) -> Step<()> {
-    if !options.version_given && options.lts.is_none() {
-        return Err(Halt::Error(CliError::Usage(USAGE.to_owned())));
-    }
+fn announce(options: &Options, transcript: &mut Transcript) {
     match (options.announce_lts, options.lts.as_deref()) {
         (true, Some("*")) => transcript.out("Installing latest LTS version."),
         (true, Some(name)) => {
@@ -209,7 +221,6 @@ fn announce(options: &Options, transcript: &mut Transcript) -> Step<()> {
         }
         _ => {}
     }
-    Ok(())
 }
 
 #[cfg(test)]

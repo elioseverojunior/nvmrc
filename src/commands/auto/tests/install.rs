@@ -30,7 +30,23 @@ fn a_default_that_is_not_a_version_falls_back_to_the_nvmrc() {
     let lab = Lab::new().alias("default", "lts/*").nvmrc("18\n");
     let output = auto_install(&lab);
     assert_eq!(output.stdout, "");
-    assert!(!output.stderr.is_empty(), "install ran and said something");
+    assert_eq!(output.stderr, "v18.20.4 is already installed.");
+}
+
+#[test]
+fn in_the_nvm_function_the_installed_version_is_activated() {
+    let lab = Lab::new()
+        .alias("default", "18")
+        .var("NVMRC_SCRIPT_FD", "3");
+    let output = auto_install(&lab);
+    assert_eq!(output.status, NvmExitCode::Success);
+    assert_eq!(output.stdout, "");
+    assert_eq!(output.stderr, "v18.20.4 is already installed.");
+    let script = output.script.render();
+    assert!(
+        script.contains("export PATH='/n/versions/node/v18.20.4/bin:"),
+        "{script}"
+    );
 }
 
 #[test]

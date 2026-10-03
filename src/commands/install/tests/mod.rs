@@ -44,6 +44,11 @@ impl World {
     }
 
     fn run(&self, line: &str) -> Result<Output, CliError> {
+        let words: Vec<String> = line.split_whitespace().map(str::to_owned).collect();
+        self.run_words(&words)
+    }
+
+    fn run_words(&self, words: &[String]) -> Result<Output, CliError> {
         let archive = FakeArchive::new(&self.fs).with_archive(
             TARBALL,
             &[
@@ -57,8 +62,16 @@ impl World {
             .with_archive(&archive)
             .with_sleeper(&self.sleeper)
             .with_process(&self.process);
-        let words: Vec<String> = line.split_whitespace().map(str::to_owned).collect();
-        super::run(&context, &words)
+        super::run(&context, words)
+    }
+
+    /// The same world with `NVM_DIR=/n` and `vars` as its environment.
+    fn with_env(self, vars: &[(&str, &str)]) -> Self {
+        let env = vars.iter().fold(
+            FakeEnv::default().with_var("NVM_DIR", "/n"),
+            |env, (name, value)| env.with_var(name, value),
+        );
+        Self { env, ..self }
     }
 
     fn installed(&self) -> bool {
@@ -74,10 +87,12 @@ fn lines(text: &str) -> Vec<&str> {
     text.lines().collect()
 }
 
+mod activate;
 mod built;
 mod failures;
 mod hook;
 mod npm;
+mod nvmrc;
 mod offline_and_save;
 mod source;
 

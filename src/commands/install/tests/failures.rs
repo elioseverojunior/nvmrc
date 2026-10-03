@@ -12,9 +12,9 @@ fn a_version_that_does_not_exist_is_status_3_with_the_hint() {
 
 #[test]
 fn no_version_at_all_is_the_usage_with_status_127() {
-    let error = World::new().run("").unwrap_err();
-    assert_eq!(error.exit_code(), NvmExitCode::NotFound);
-    assert!(error.to_string().starts_with(
+    let output = World::new().run("").unwrap();
+    assert_eq!(output.status, NvmExitCode::NotFound);
+    assert!(output.stderr.starts_with(
         "No version provided and no .nvmrc file found\nUsage: nvm install [<version>]"
     ));
 }

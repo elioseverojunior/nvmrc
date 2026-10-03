@@ -10,8 +10,7 @@ use std::path::PathBuf;
 use crate::commands::Output;
 use crate::context::Context;
 use crate::error::NvmExitCode;
-
-const DESCRIPTOR_VARIABLE: &str = "NVMRC_SCRIPT_FD";
+use crate::shell::script_descriptor;
 
 /// The final text of each stream, newlines included, and the exit status.
 #[derive(Debug, PartialEq, Eq)]
@@ -31,9 +30,7 @@ fn line(text: &str) -> String {
 
 /// The file a descriptor number in the environment names, if it is one.
 fn descriptor_path(context: &Context<'_>) -> Option<PathBuf> {
-    let value = context.env.var(DESCRIPTOR_VARIABLE)?;
-    let is_number = !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit());
-    is_number.then(|| PathBuf::from(format!("/dev/fd/{value}")))
+    script_descriptor(context.env).map(|value| PathBuf::from(format!("/dev/fd/{value}")))
 }
 
 pub(super) fn deliver(output: &Output, context: &Context<'_>) -> Delivery {

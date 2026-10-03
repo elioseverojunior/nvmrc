@@ -6,6 +6,7 @@
 #![allow(dead_code)]
 
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::Path;
@@ -174,21 +175,15 @@ pub fn mirror(listed: Option<&str>) -> Option<String> {
     Some(Mirror::new().binary("v20.10.0", &[], listed)?.serve())
 }
 
-/// Runs the binary with the environment `extra` added, and `path` as `PATH`.
-pub fn nvm_with(
-    nvm_dir: &Path,
-    mirror: &str,
-    args: &[&str],
-    path: &str,
-    extra: &[(&str, &str)],
-) -> Output {
+/// `program` set up to run against `mirror`: `NVM_DIR` and `PWD` are
+/// `nvm_dir`, `PATH` is `path`, and no proxy setting is inherited.
+pub fn command_for(program: &OsStr, nvm_dir: &Path, mirror: &str, path: &str) -> Command {
     let iojs = serve(BTreeMap::from([(
         "/index.tab".to_owned(),
         IOJS_INDEX.as_bytes().to_vec(),
     )]));
-    let mut command = Command::new(env!("CARGO_BIN_EXE_nvm"));
+    let mut command = Command::new(program);
     command
-        .args(args)
         .env("NVM_DIR", nvm_dir)
         .env("PWD", nvm_dir)
         .env("PATH", path)
@@ -199,9 +194,20 @@ pub fn nvm_with(
     for name in INHERITED_NETWORK_SETTINGS {
         command.env_remove(name);
     }
-    for (name, value) in extra {
-        command.env(name, value);
-    }
+    command
+}
+
+/// Runs the binary with the environment `extra` added, and `path` as `PATH`.
+pub fn nvm_with(
+    nvm_dir: &Path,
+    mirror: &str,
+    args: &[&str],
+    path: &str,
+    extra: &[(&str, &str)],
+) -> Output {
+    let binary = OsStr::new(env!("CARGO_BIN_EXE_nvm"));
+    let mut command = command_for(binary, nvm_dir, mirror, path);
+    command.args(args).envs(extra.iter().copied());
     command.output().expect("run the binary")
 }
 

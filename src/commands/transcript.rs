@@ -9,6 +9,7 @@ use crate::shell::Script;
 pub struct Transcript {
     stdout: Vec<String>,
     stderr: Vec<String>,
+    script: Script,
 }
 
 impl Transcript {
@@ -20,8 +21,10 @@ impl Transcript {
         self.stderr.push(line.into());
     }
 
-    /// Adds the stdout and stderr of an [`Output`] a command returned.
+    /// Adds the stdout, stderr and shell code of an [`Output`] a command
+    /// returned.
     pub fn absorb(&mut self, output: Output) {
+        self.script = std::mem::take(&mut self.script).append(output.script);
         self.stdout
             .extend(Some(output.stdout).filter(|text| !text.is_empty()));
         self.stderr
@@ -33,13 +36,14 @@ impl Transcript {
         self.finish_with(status, Script::new())
     }
 
-    /// Like [`Self::finish`], for a command that also has shell code.
+    /// Like [`Self::finish`], with `script` after the shell code absorbed so
+    /// far.
     #[must_use]
     pub fn finish_with(self, status: NvmExitCode, script: Script) -> Output {
         Output::stdout(self.stdout.join("\n"))
             .with_stderr(self.stderr.join("\n"))
             .with_status(status)
-            .with_script(script)
+            .with_script(self.script.append(script))
     }
 }
 
@@ -64,6 +68,18 @@ mod tests {
         let script = Script::new().hash_reset();
         let output = Transcript::default().finish_with(NvmExitCode::Success, script);
         assert_eq!(output.script.render(), "hash -r 2>/dev/null || true\n");
+    }
+
+    #[test]
+    fn absorbed_shell_code_comes_before_the_code_given_at_the_end() {
+        let mut transcript = Transcript::default();
+        transcript.absorb(Output::default().with_script(Script::new().hash_reset()));
+        let last = Script::new().unset("NVM_BIN").unwrap();
+        let output = transcript.finish_with(NvmExitCode::Success, last);
+        assert_eq!(
+            output.script.render(),
+            "hash -r 2>/dev/null || true\nunset NVM_BIN\n"
+        );
     }
 
     #[test]

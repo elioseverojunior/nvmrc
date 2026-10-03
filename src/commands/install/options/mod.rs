@@ -45,6 +45,17 @@ pub struct Options {
     pub extra: Vec<String>,
 }
 
+impl Options {
+    /// The same options with `version` as the version (`lts/*` and
+    /// `lts/<name>` being the LTS filter), as when it comes from `.nvmrc`.
+    #[must_use]
+    pub fn with_version(mut self, version: &str) -> Self {
+        version.clone_into(&mut self.version);
+        take_lts_version(&mut self);
+        self
+    }
+}
+
 pub const BOTH_OFF: &str =
     "-s and -b cannot be set together since they would skip install from both binary and source";
 

@@ -4,6 +4,21 @@ pub mod init;
 
 use thiserror::Error;
 
+use crate::ports::Env;
+
+/// The variable through which the `nvm` function asks for the shell code:
+/// the number of the descriptor to write it to.
+pub const DESCRIPTOR_VARIABLE: &str = "NVMRC_SCRIPT_FD";
+
+/// The descriptor number the `nvm` function opened for the shell code; `None`
+/// when the binary runs on its own (the variable unset, or not a number).
+#[must_use]
+pub fn script_descriptor(env: &dyn Env) -> Option<String> {
+    let value = env.var(DESCRIPTOR_VARIABLE)?;
+    let is_number = !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit());
+    is_number.then_some(value)
+}
+
 /// A programming error while building a script.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ShellError {
