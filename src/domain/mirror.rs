@@ -38,11 +38,17 @@ impl MirrorUrl {
         Ok(Self(raw.to_owned()))
     }
 
-    /// The release index: `<mirror>/index.tab`, appended as is (a trailing
-    /// slash in the mirror stays, as in `nvm.sh`).
+    /// `<mirror>/<path>`, appended as is (a trailing slash in the mirror
+    /// stays, as in `nvm.sh`).
+    #[must_use]
+    pub fn join(&self, path: &str) -> String {
+        format!("{}/{path}", self.0)
+    }
+
+    /// The release index: `<mirror>/index.tab`.
     #[must_use]
     pub fn index_url(&self) -> String {
-        format!("{}/index.tab", self.0)
+        self.join("index.tab")
     }
 }
 
@@ -115,6 +121,15 @@ mod tests {
         assert_eq!(mirror.index_url(), "http://x/dist//index.tab");
         let plain = MirrorUrl::parse("http://x/dist").unwrap();
         assert_eq!(plain.index_url(), "http://x/dist/index.tab");
+    }
+
+    #[test]
+    fn paths_are_joined_with_one_slash_after_the_mirror() {
+        let mirror = MirrorUrl::parse("http://x/dist").unwrap();
+        assert_eq!(
+            mirror.join("v1.0.0/f.tar.gz"),
+            "http://x/dist/v1.0.0/f.tar.gz"
+        );
     }
 
     #[test]

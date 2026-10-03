@@ -85,7 +85,7 @@ fn lts_target(context: &Context<'_>, name: &str) -> Result<Output, CliError> {
         Some(target) => Ok(Output::stdout(target)),
         None => Ok(Output::default()
             .with_stderr("Alias does not exist.")
-            .with_status(NvmExitCode::NoSuchAlias)),
+            .with_status(NvmExitCode::MissingTarget)),
     }
 }
 

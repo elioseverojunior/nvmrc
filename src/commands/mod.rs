@@ -7,6 +7,7 @@ pub mod ls;
 pub mod ls_remote;
 pub mod remote_index;
 pub mod resolve;
+pub mod transcript;
 pub mod unalias;
 pub mod version;
 pub mod version_remote;

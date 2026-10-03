@@ -96,7 +96,7 @@ fn a_missing_lts_alias_is_exit_2_with_a_message_on_stderr() {
     let fs = fixture();
     let expected = Output::default()
         .with_stderr("Alias does not exist.")
-        .with_status(NvmExitCode::NoSuchAlias);
+        .with_status(NvmExitCode::MissingTarget);
     assert_eq!(list_with(&fs, Some("lts/nope")), expected);
     assert_eq!(list_with(&fs, Some("lts/")), expected);
 }

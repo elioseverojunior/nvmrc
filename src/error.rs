@@ -13,8 +13,11 @@ pub enum NvmExitCode {
     InvalidVersion = 3,
     BelowVersionFloor = 7,
     AliasLoop = 8,
-    /// `nvm alias lts/<name>` for an alias that does not exist.
-    NoSuchAlias = 2,
+    /// Something that was asked for does not exist: an `lts/<name>` alias, or
+    /// the archive of a version whose download failed.
+    MissingTarget = 2,
+    /// Options that cannot be combined, or given twice.
+    InvalidOptions = 6,
     /// An option `nvm.sh` does not support, or one used in a combination it
     /// does not support.
     UnsupportedOption = 55,
@@ -75,6 +78,9 @@ pub enum CliError {
     /// An unsupported option, with the message to print.
     #[error("{0}")]
     Unsupported(String),
+    /// Options that cannot be combined, with the message to print.
+    #[error("{0}")]
+    InvalidOptions(String),
     /// A failed file-system change, naming the path it was made on.
     #[error("{}: {source}", path.display())]
     Io {
@@ -104,6 +110,7 @@ impl CliError {
             | Self::Io { .. } => NvmExitCode::Failure,
             Self::Usage(_) | Self::SystemNodeNotFound => NvmExitCode::NotFound,
             Self::Unsupported(_) => NvmExitCode::UnsupportedOption,
+            Self::InvalidOptions(_) => NvmExitCode::InvalidOptions,
             Self::Floor(_) => NvmExitCode::BelowVersionFloor,
             Self::Alias(_) => NvmExitCode::AliasLoop,
         }
@@ -120,7 +127,8 @@ mod tests {
         assert_eq!(NvmExitCode::InvalidVersion.code(), 3);
         assert_eq!(NvmExitCode::BelowVersionFloor.code(), 7);
         assert_eq!(NvmExitCode::AliasLoop.code(), 8);
-        assert_eq!(NvmExitCode::NoSuchAlias.code(), 2);
+        assert_eq!(NvmExitCode::MissingTarget.code(), 2);
+        assert_eq!(NvmExitCode::InvalidOptions.code(), 6);
         assert_eq!(NvmExitCode::UnsupportedOption.code(), 55);
         assert_eq!(NvmExitCode::NotFound.code(), 127);
     }
@@ -152,6 +160,8 @@ mod tests {
         assert_eq!(no_system_node.exit_code(), NvmExitCode::NotFound);
         let unsupported = CliError::Unsupported("x".into());
         assert_eq!(unsupported.exit_code(), NvmExitCode::UnsupportedOption);
+        let options = CliError::InvalidOptions("x".into());
+        assert_eq!(options.exit_code(), NvmExitCode::InvalidOptions);
         let invalid = CliError::InvalidArgument("x".into());
         assert_eq!(invalid.exit_code(), NvmExitCode::Failure);
         let source = std::io::Error::from(std::io::ErrorKind::NotFound);

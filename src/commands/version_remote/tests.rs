@@ -110,3 +110,26 @@ fn an_unreachable_mirror_is_n_a() {
     assert_eq!(output.stdout, "N/A");
     assert_eq!(output.status, NvmExitCode::InvalidVersion);
 }
+
+#[test]
+fn lookup_resolves_a_query_and_carries_the_warnings() {
+    let fs = FakeFileSystem::default();
+    let env = FakeEnv::default().with_var("NVM_DIR", "/n");
+    let http = mirror();
+    let context = Context::new(&fs, &env).with_http(&http);
+    let query = |pattern: Option<&str>, lts: Option<&str>| Query {
+        pattern: pattern.map(str::to_owned),
+        lts: lts.map(str::to_owned),
+    };
+    let found = lookup(&context, query(Some("18"), None)).unwrap();
+    assert_eq!(found.version.unwrap().to_string(), "v18.19.0");
+    let lts = lookup(&context, query(None, Some("*"))).unwrap();
+    assert_eq!(lts.version.unwrap().to_string(), "v20.10.0");
+    let bad = lookup(&context, query(None, Some("Iron"))).unwrap();
+    assert_eq!(bad.version, None);
+    assert_eq!(bad.warnings, ["LTS names must be lowercase"]);
+    assert_eq!(
+        lookup(&context, query(Some("99"), None)).unwrap().version,
+        None
+    );
+}

@@ -11,6 +11,7 @@ use crate::context::Context;
 use crate::domain::remote::resolve::resolve;
 use crate::domain::remote::{Query, scope};
 use crate::domain::version::Flavor;
+use crate::domain::version::Version;
 use crate::error::{CliError, NvmExitCode};
 
 /// The command line of `nvm version-remote`, as `nvm.sh` reads it: the first
@@ -70,15 +71,22 @@ fn not_available(warnings: &[String]) -> Output {
         .with_status(NvmExitCode::InvalidVersion)
 }
 
+/// What the mirror answered to a description of a version.
+pub struct Lookup {
+    /// `None` is `N/A`: nothing matched, or an index or `--lts` name was
+    /// unusable.
+    pub version: Option<Version>,
+    /// What `nvm.sh` prints on stderr meanwhile.
+    pub warnings: Vec<String>,
+}
+
+/// Downloads what `query` needs from the mirrors and resolves it, as
+/// `nvm_remote_version` does. `query.lts` is the raw `--lts` value.
+///
 /// # Errors
-/// As [`parse_options`], and [`CliError::NvmDirUnresolved`] when `$NVM_DIR`
-/// cannot be found.
-pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
-    let options = parse_options(args)?;
-    let mut query = Query {
-        pattern: options.pattern,
-        lts: options.lts.filter(|text| !text.is_empty()),
-    };
+/// [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
+pub fn lookup(context: &Context<'_>, mut query: Query) -> Result<Lookup, CliError> {
+    query.lts = query.lts.filter(|text| !text.is_empty());
     let (node_runs, iojs_runs) = needs(&query);
     let mut warnings = Vec::new();
     let node = fetch_if(context, node_runs, Flavor::Node, &mut warnings)?;
@@ -87,12 +95,29 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
             Ok(name) => query.lts = Some(name),
             Err(message) => {
                 warnings.push(message);
-                return Ok(not_available(&warnings));
+                return Ok(Lookup {
+                    version: None,
+                    warnings,
+                });
             }
         }
     }
     let iojs = fetch_if(context, iojs_runs, Flavor::IoJs, &mut warnings)?;
-    match resolve(node.as_deref(), iojs.as_deref(), &query) {
+    let version = resolve(node.as_deref(), iojs.as_deref(), &query);
+    Ok(Lookup { version, warnings })
+}
+
+/// # Errors
+/// As [`parse_options`], and [`CliError::NvmDirUnresolved`] when `$NVM_DIR`
+/// cannot be found.
+pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
+    let options = parse_options(args)?;
+    let query = Query {
+        pattern: options.pattern,
+        lts: options.lts,
+    };
+    let Lookup { version, warnings } = lookup(context, query)?;
+    match version {
         Some(version) => Ok(Output::stdout(version.to_string()).with_stderr(warnings.join("\n"))),
         None => Ok(not_available(&warnings)),
     }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::domain::platform::Platform;
 use crate::fakes::{FakeArchive, FakeDigest, FakeEnv, FakeFileSystem, FakeHttp, FakeSleeper};
 
 fn nvm_dir_for(env: &FakeEnv) -> Result<PathBuf, CliError> {
@@ -118,6 +119,17 @@ fn a_context_uses_the_sleeper_it_is_given() {
     let context = Context::new(&fs, &env).with_sleeper(&sleeper);
     context.sleeper().sleep(std::time::Duration::from_secs(1));
     assert_eq!(sleeper.slept().len(), 1);
+}
+
+#[test]
+fn a_context_is_linux_x64_until_told_otherwise() {
+    let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
+    let context = Context::new(&fs, &env);
+    assert_eq!(context.platform().map(|p| p.arch.as_str()), Some("x64"));
+    let mac = Platform::from_host("macos", "aarch64", false);
+    let context = context.with_platform(mac.clone());
+    assert_eq!(context.platform(), mac.as_ref());
+    assert_eq!(context.with_platform(None).platform(), None);
 }
 
 #[test]
