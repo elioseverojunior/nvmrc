@@ -154,12 +154,18 @@ impl VersionPattern {
         }
     }
 
+    /// The highest installed version the pattern matches. Unlike [`Ord`], a
+    /// Node version wins over an io.js one with the same number, as in
+    /// `nvm.sh` (`nvm version 3.0` is `v3.0.0` when both are installed).
     #[must_use]
     pub fn highest_match<'a>(&self, installed: &'a [Version]) -> Option<&'a Version> {
         installed
             .iter()
             .filter(|version| self.matches(version))
-            .max()
+            .max_by(|left, right| {
+                let node_first = right.flavor.cmp(&left.flavor);
+                left.triple().cmp(&right.triple()).then(node_first)
+            })
     }
 }
 
@@ -259,6 +265,22 @@ mod tests {
         versions.sort();
         let sorted: Vec<String> = versions.iter().map(ToString::to_string).collect();
         assert_eq!(sorted, ["v2.9.0", "iojs-v3.0.0", "v4.0.0"]);
+    }
+
+    #[test]
+    fn the_highest_match_crosses_flavors_by_number() {
+        let installed = [version("v2.9.0"), version("iojs-v3.0.0")];
+        let pattern: VersionPattern = "3".parse().unwrap();
+        assert_eq!(pattern.highest_match(&installed), Some(&installed[1]));
+    }
+
+    #[test]
+    fn the_highest_match_prefers_node_on_equal_numbers() {
+        let installed = [version("iojs-v3.0.0"), version("v3.0.0")];
+        for text in ["3", "3.0", "3.0.0"] {
+            let pattern: VersionPattern = text.parse().unwrap();
+            assert_eq!(pattern.highest_match(&installed), Some(&installed[1]));
+        }
     }
 
     #[test]
