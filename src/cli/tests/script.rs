@@ -14,7 +14,7 @@ fn deliver(output: &Output, fs: &FakeFileSystem, descriptor: Option<&str>) -> (u
         None => FakeEnv::default(),
     };
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    let code = finish(output, &Context::new(fs, &env), &mut out, &mut err);
+    let code = finish("nvm", output, &Context::new(fs, &env), &mut out, &mut err);
     (
         code,
         String::from_utf8(out).unwrap(),

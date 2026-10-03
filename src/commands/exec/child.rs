@@ -11,7 +11,7 @@ use crate::ports::Invocation;
 
 /// Variables to set (in order) and to take out.
 #[derive(Debug, Default)]
-pub(super) struct Environment {
+pub(crate) struct Environment {
     set: Vec<(String, String)>,
     removed: Vec<String>,
 }
@@ -27,6 +27,13 @@ impl Environment {
         self
     }
 
+    /// Leaves `NODE_VERSION` as the parent has it (what `nvm-exec` does: it
+    /// never sets it).
+    pub(crate) fn keep_node_version(mut self) -> Self {
+        self.set.retain(|(name, _)| name != "NODE_VERSION");
+        self
+    }
+
     fn exec_variables(self, context: &Context<'_>, node_version: &str) -> Result<Self, CliError> {
         let nvm_dir = context.nvm_dir()?;
         Ok(self
@@ -38,7 +45,7 @@ impl Environment {
 
 /// An installed version: `PATH` (already switched), `MANPATH` when a
 /// `manpath` program is on it, `NVM_BIN` and `NVM_INC`.
-pub(super) fn installed(
+pub(crate) fn installed(
     context: &Context<'_>,
     switch: &Switch,
     path: &str,
@@ -55,7 +62,7 @@ pub(super) fn installed(
 }
 
 /// `system`: what a silent `nvm deactivate` changes, and the new `PATH`.
-pub(super) fn system(context: &Context<'_>) -> Result<(String, Environment), CliError> {
+pub(crate) fn system(context: &Context<'_>) -> Result<(String, Environment), CliError> {
     let mut path = context.env.var("PATH").unwrap_or_default();
     let mut environment = Environment::default();
     for change in changes(context, true, &mut Transcript::default())? {
@@ -74,7 +81,7 @@ pub(super) fn system(context: &Context<'_>) -> Result<(String, Environment), Cli
 
 /// The command (a leading `--` dropped, as the shell's `exec` does) with
 /// `environment`, or `None` when there is no command.
-pub(super) fn invocation(command: &[String], environment: Environment) -> Option<Invocation> {
+pub(crate) fn invocation(command: &[String], environment: Environment) -> Option<Invocation> {
     let command = match command.split_first() {
         Some((first, rest)) if first == "--" => rest,
         _ => command,

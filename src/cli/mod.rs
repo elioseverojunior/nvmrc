@@ -68,7 +68,7 @@ where
         }
     };
     let output = dispatch(&cli.command, context).unwrap_or_else(|error| failure(&error));
-    finish(&output, context, out, err)
+    finish("nvm", &output, context, out, err)
 }
 
 /// What a failed command prints: its message, on stderr except for `N/A`,
@@ -83,10 +83,16 @@ fn failure(error: &CliError) -> Output {
 
 /// Prints the streams, then runs the program the command left to run, if
 /// any, whose status wins.
-fn finish(output: &Output, context: &Context<'_>, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+fn finish(
+    tool: &str,
+    output: &Output,
+    context: &Context<'_>,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8 {
     let printed = print(output, context, out, err);
     match &output.spawn {
-        Some(invocation) => child::run_child(context, invocation, err),
+        Some(invocation) => child::run_child(tool, context, invocation, err),
         None => printed,
     }
 }
@@ -106,9 +112,9 @@ fn print(output: &Output, context: &Context<'_>, out: &mut dyn Write, err: &mut 
     exit_code_for_write(emit(out, &delivery.stdout), delivery.status)
 }
 
-/// Entry point shared by the `nvmrc` and `nvm` binaries.
-#[must_use]
-pub fn run_from_env() -> u8 {
+/// Calls `body` with the context of the real machine: the standard file
+/// system, environment, process runner, network and clock.
+fn with_real_context<R>(body: impl FnOnce(&Context<'_>) -> R) -> R {
     let process = StdProcess::default();
     let auth_header = StdEnv
         .var("NVM_AUTH_HEADER")
@@ -126,12 +132,54 @@ pub fn run_from_env() -> u8 {
         .with_sleeper(&StdSleeper)
         .with_cpu(&StdCpu)
         .with_platform(platform);
-    run(
-        std::env::args_os(),
-        &context,
-        &mut std::io::stdout(),
-        &mut std::io::stderr(),
-    )
+    body(&context)
+}
+
+/// Entry point shared by the `nvmrc` and `nvm` binaries.
+#[must_use]
+pub fn run_from_env() -> u8 {
+    with_real_context(|context| {
+        run(
+            std::env::args_os(),
+            context,
+            &mut std::io::stdout(),
+            &mut std::io::stderr(),
+        )
+    })
+}
+
+/// Runs the command a script gave `nvm-exec` (the arguments after the
+/// program name, verbatim) and returns the process exit code.
+#[must_use]
+pub fn run_nvm_exec<I, T>(
+    command: I,
+    context: &Context<'_>,
+    out: &mut dyn Write,
+    err: &mut dyn Write,
+) -> u8
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString>,
+{
+    let command: Vec<String> = command
+        .into_iter()
+        .map(|argument| argument.into().to_string_lossy().into_owned())
+        .collect();
+    let output = crate::commands::nvm_exec::run(context, &command);
+    finish("nvm-exec", &output, context, out, err)
+}
+
+/// Entry point of the `nvm-exec` binary.
+#[must_use]
+pub fn nvm_exec_from_env() -> u8 {
+    with_real_context(|context| {
+        run_nvm_exec(
+            std::env::args_os().skip(1),
+            context,
+            &mut std::io::stdout(),
+            &mut std::io::stderr(),
+        )
+    })
 }
 
 #[cfg(test)]

@@ -9,6 +9,7 @@ pub mod install_latest_npm;
 pub mod ls;
 pub mod ls_remote;
 pub mod npm;
+pub mod nvm_exec;
 pub mod nvmrc_file;
 pub mod rc_version;
 pub mod reinstall_packages;

@@ -12,7 +12,7 @@ fn finish_with(output: &Output, process: &FakeProcess) -> (u8, String, String) {
     let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
     let context = Context::new(&fs, &env).with_process(process);
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    let code = finish(output, &context, &mut out, &mut err);
+    let code = finish("nvm", output, &context, &mut out, &mut err);
     (
         code,
         String::from_utf8(out).unwrap(),

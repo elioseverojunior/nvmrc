@@ -24,3 +24,7 @@ path = "src/main.rs"
 [[bin]]
 name = "nvm"
 path = "src/bin/nvm.rs"
+
+[[bin]]
+name = "nvm-exec"
+path = "src/bin/nvm-exec.rs"

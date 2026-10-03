@@ -6,7 +6,7 @@
 //! `--` is `-h`, `help` or `--help` (so `nvm exec 18 node -h` shows nvm's
 //! help); here every argument after the subcommand reaches the command.
 
-mod child;
+pub(crate) mod child;
 mod launch;
 mod options;
 mod select;
