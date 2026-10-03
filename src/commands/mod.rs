@@ -9,6 +9,7 @@ pub mod remote_index;
 pub mod resolve;
 pub mod transcript;
 pub mod unalias;
+pub mod uninstall;
 pub mod version;
 pub mod version_remote;
 pub mod which;
