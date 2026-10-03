@@ -203,3 +203,26 @@ fn names_must_be_lowercase_and_stay_as_they_are() {
     assert_eq!(normalize_lts("*", &names()).unwrap(), "*");
     assert_eq!(normalize_lts("-0", &names()).unwrap(), "-0");
 }
+
+// Captured from `nvm.sh`, whose `grep -w` reads the whole row text.
+#[test]
+fn a_codename_pattern_matches_the_rows_of_that_codename() {
+    let (lines, missing) = listing(Some("Iron"), None);
+    assert_eq!(lines, ["v20.9.0 Iron", "v20.10.0 Iron *"]);
+    assert!(missing, "io.js has no such row, so nvm.sh exits 3");
+    assert_eq!(
+        listing(Some("Hydrogen"), None).0,
+        ["v18.18.0 Hydrogen", "v18.19.0 Hydrogen *"]
+    );
+}
+
+#[test]
+fn a_codename_pattern_is_case_sensitive_and_needs_the_whole_word() {
+    assert!(listing(Some("iron"), None).0.is_empty());
+    assert!(listing(Some("Iro"), None).0.is_empty());
+}
+
+#[test]
+fn a_version_and_a_codename_together_match_the_one_row() {
+    assert_eq!(listing(Some("20.10.0 Iron"), None).0, ["v20.10.0 Iron *"]);
+}

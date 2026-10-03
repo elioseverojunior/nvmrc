@@ -188,15 +188,20 @@ fn normalize_pattern(pattern: &str, iojs: bool) -> String {
     }
 }
 
-/// `grep -w`: the pattern starts the version and is not followed by a word
-/// character, so `v20` and `v20.10` match `v20.10.0` but `v2` does not.
+/// `grep -w` over the whole row text (`v20.10.0 Iron *`): the pattern occurs
+/// with no word character right before or after it, so `v20` and `Iron` match
+/// the row of `v20.10.0 Iron` but `v2` and `Iro` do not.
 fn matches_word(row: &RemoteRow, pattern: &str) -> bool {
-    let text = row.version.directory_name();
-    text.strip_prefix(pattern).is_some_and(|rest| {
-        rest.chars()
-            .next()
-            .is_none_or(|next| !(next.is_ascii_alphanumeric() || next == '_'))
+    let line = row.line();
+    line.match_indices(pattern).any(|(start, found)| {
+        let before = line[..start].chars().next_back();
+        let after = line[start + found.len()..].chars().next();
+        !before.is_some_and(is_word_character) && !after.is_some_and(is_word_character)
     })
+}
+
+fn is_word_character(character: char) -> bool {
+    character.is_ascii_alphanumeric() || character == '_'
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
