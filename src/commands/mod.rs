@@ -1,9 +1,11 @@
 pub mod alias;
 pub mod aliases;
+pub mod auto;
 pub mod cache;
 pub mod current;
 pub mod deactivate;
 pub mod exec;
+pub mod init;
 pub mod install;
 pub mod install_latest_npm;
 pub mod ls;

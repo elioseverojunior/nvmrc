@@ -1,5 +1,7 @@
 //! POSIX shell code that the binary prints for the `nvm` function to `eval`.
 
+pub mod init;
+
 use thiserror::Error;
 
 /// A programming error while building a script.

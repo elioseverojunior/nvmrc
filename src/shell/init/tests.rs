@@ -1,0 +1,109 @@
+use super::*;
+use crate::error::NvmExitCode;
+
+const ALL: [(&str, Shell); 5] = [
+    ("bash", Shell::Bash),
+    ("zsh", Shell::Zsh),
+    ("sh", Shell::Sh),
+    ("dash", Shell::Dash),
+    ("ksh", Shell::Ksh),
+];
+
+fn lines_of(shell: Shell, options: &InitOptions) -> Vec<String> {
+    snippet(shell, options).lines().map(str::to_owned).collect()
+}
+
+/// The last statement before the closing marker.
+fn last_statement(options: &InitOptions) -> String {
+    let lines = lines_of(Shell::Bash, options);
+    lines[lines.len() - 2].clone()
+}
+
+#[test]
+fn every_supported_name_parses_and_prints_back() {
+    for (name, shell) in ALL {
+        assert_eq!(name.parse::<Shell>().unwrap(), shell);
+        assert_eq!(shell.name(), name);
+    }
+}
+
+#[test]
+fn other_names_are_a_usage_error_naming_the_supported_shells() {
+    for name in ["fish", "powershell", "Bash", "ZSH", "", "tcsh"] {
+        let error = name.parse::<Shell>().expect_err(name);
+        assert!(matches!(error, CliError::Usage(_)), "{name}");
+        assert_eq!(error.exit_code(), NvmExitCode::NotFound);
+        let message = error.to_string();
+        assert!(message.contains("bash, zsh, sh, dash, ksh"), "{message}");
+        assert!(message.contains(USAGE), "{message}");
+    }
+}
+
+#[test]
+fn the_snippet_sits_between_the_markers() {
+    for (_, shell) in ALL {
+        let lines = lines_of(shell, &InitOptions::default());
+        assert_eq!(lines.first().map(String::as_str), Some(BEGIN_MARKER));
+        assert_eq!(lines.last().map(String::as_str), Some(END_MARKER));
+        assert!(snippet(shell, &InitOptions::default()).ends_with('\n'));
+    }
+}
+
+#[test]
+fn the_snippet_names_its_shell_and_is_plain_ascii() {
+    for (name, shell) in ALL {
+        let text = snippet(shell, &InitOptions::default());
+        assert!(text.is_ascii());
+        assert!(text.contains(&format!("nvm init {name}")), "{text}");
+    }
+}
+
+#[test]
+fn the_snippet_exports_the_shell_marker_and_the_nvm_dir_default() {
+    let text = snippet(Shell::Zsh, &InitOptions::default());
+    assert!(text.contains("\nexport NVMRC_SHELL=1\n"));
+    assert!(text.contains("\nexport NVM_DIR=\"${NVM_DIR:-$HOME/.nvm}\"\n"));
+}
+
+#[test]
+fn the_function_runs_the_binary_with_the_code_on_descriptor_3() {
+    let text = snippet(Shell::Sh, &InitOptions::default());
+    assert!(text.contains("\nnvm() {\n"), "{text}");
+    let zsh = snippet(Shell::Zsh, &InitOptions::default());
+    assert!(zsh.contains("\nfunction nvm {\n"), "{zsh}");
+    assert!(text.contains("NVMRC_SCRIPT_FD=3 command nvm \"$@\" 3>&1 1>&4 4>&-"));
+    for passed in ["MANPATH", "NODE_PATH", "NVM_SYMLINK_CURRENT", "PREFIX"] {
+        assert!(
+            text.contains(&format!("{passed}=\"${{{passed}-}}\"")),
+            "{passed}"
+        );
+    }
+    assert!(text.contains("use | deactivate | install | i | __auto)"));
+    assert!(text.contains("eval \"$__nvmrc_code\""));
+}
+
+#[test]
+fn the_snippet_ends_with_the_auto_use_by_default() {
+    assert_eq!(last_statement(&InitOptions::default()), "\\nvm __auto use");
+}
+
+#[test]
+fn install_makes_the_auto_step_install() {
+    let options = InitOptions {
+        install: true,
+        ..InitOptions::default()
+    };
+    assert_eq!(last_statement(&options), "\\nvm __auto install");
+}
+
+#[test]
+fn no_use_leaves_the_auto_step_out() {
+    for install in [false, true] {
+        let options = InitOptions {
+            no_use: true,
+            install,
+        };
+        let text = snippet(Shell::Bash, &options);
+        assert!(!text.contains("nvm __auto "), "{text}");
+    }
+}

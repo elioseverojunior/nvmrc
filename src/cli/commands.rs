@@ -110,6 +110,20 @@ pub(super) enum Command {
         #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
     },
+    /// Print the shell code that defines the `nvm` function, for
+    /// `eval "$(nvm init bash)"` in the shell's startup file (`--no-use`
+    /// skips switching to the default version; `--install` installs it).
+    Init {
+        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
+    /// What the `nvm` function runs at shell start: `use`, `install` or
+    /// `none` (nvm.sh's `nvm_auto`).
+    #[command(name = "__auto", hide = true)]
+    Auto {
+        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
 }
 
 pub(super) fn dispatch(command: &Command, context: &Context<'_>) -> Result<Output, CliError> {
@@ -124,12 +138,8 @@ pub(super) fn dispatch(command: &Command, context: &Context<'_>) -> Result<Outpu
         Command::Cache { args } => commands::cache::run(context, args),
         Command::Install { args } => commands::install::run(context, args),
         Command::InstallLatestNpm { args } => commands::install_latest_npm::run(context, args),
-        Command::ReinstallPackages { args } => {
-            commands::reinstall_packages::run(context, "reinstall-packages", args)
-        }
-        Command::CopyPackages { args } => {
-            commands::reinstall_packages::run(context, "copy-packages", args)
-        }
+        Command::ReinstallPackages { args } => packages(context, "reinstall-packages", args),
+        Command::CopyPackages { args } => packages(context, "copy-packages", args),
         Command::Uninstall { args } => commands::uninstall::run(context, args),
         Command::Which { args } => commands::which::run_command(context, args),
         Command::Alias { args } => commands::aliases::run(context, args),
@@ -138,5 +148,12 @@ pub(super) fn dispatch(command: &Command, context: &Context<'_>) -> Result<Outpu
         Command::Deactivate { args } => commands::deactivate::run(context, args),
         Command::Exec { args } => commands::exec::run(context, args),
         Command::Run { args } => commands::run::run(context, args),
+        Command::Init { args } => commands::init::run(args),
+        Command::Auto { args } => commands::auto::run(context, args),
     }
+}
+
+/// `reinstall-packages` and `copy-packages`, which differ only by name.
+fn packages(context: &Context<'_>, name: &str, args: &[String]) -> Result<Output, CliError> {
+    commands::reinstall_packages::run(context, name, args)
 }
