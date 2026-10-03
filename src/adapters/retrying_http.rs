@@ -49,7 +49,7 @@ impl Http for RetryingHttp<'_> {
             match self.inner.get_text(url) {
                 Err(error) if is_transient(&error) && attempt < self.attempts => {
                     self.sleeper.sleep(delay);
-                    delay *= 2;
+                    delay = delay.saturating_mul(2);
                     attempt += 1;
                 }
                 result => return result,
@@ -163,6 +163,15 @@ mod tests {
         let (result, slept) = fetch(vec![body, Ok("never".to_owned())]);
         assert!(matches!(result, Err(HttpError::Body { .. })));
         assert!(slept.is_empty());
+    }
+
+    #[test]
+    fn the_delay_stops_growing_instead_of_overflowing() {
+        let inner = Scripted::new(vec![status(503), status(503), status(503)]);
+        let sleeper = FakeSleeper::default();
+        let http = RetryingHttp::new(&inner, &sleeper).with_policy(3, Duration::MAX);
+        assert!(http.get_text("u").is_err());
+        assert_eq!(sleeper.slept(), [Duration::MAX, Duration::MAX]);
     }
 
     #[test]
