@@ -5,6 +5,7 @@ pub mod floor;
 pub mod http_header;
 pub mod implicit;
 pub mod listing;
+pub mod mirror;
 pub mod nvmrc;
 pub mod path_search;
 pub mod version;
