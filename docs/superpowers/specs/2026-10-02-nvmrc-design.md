@@ -258,7 +258,7 @@ Linux matrix. Commits follow Conventional Commits and are GPG-signed.
 
 `clap`, `thiserror`, `anyhow`, `ureq` (blocking HTTP), `tracing`, `grep-regex`
 and `grep-searcher`. Checksums and archive extraction crates are chosen in the
-implementation plan. MSRV stays at 1.88 as declared in `Cargo.toml`.
+implementation plan. MSRV is 1.85 as declared in `Cargo.toml`.
 
 ## 11. Implementation order (v1)
 
