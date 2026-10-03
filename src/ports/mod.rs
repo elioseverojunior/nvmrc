@@ -115,6 +115,13 @@ pub enum HttpError {
 }
 
 pub trait Http {
+    /// Fetches `url` and returns the body as it is (an archive, say).
+    ///
+    /// # Errors
+    /// Fails on a non-success status, on a network error, or when the body is
+    /// over the size limit.
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError>;
+
     /// Fetches `url` and returns the body as text.
     ///
     /// # Errors

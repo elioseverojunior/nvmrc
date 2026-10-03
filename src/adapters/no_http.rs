@@ -3,12 +3,20 @@ use crate::ports::{Http, HttpError};
 /// The `Http` of a `Context` that was not given one: it fetches nothing.
 pub struct NoHttp;
 
+fn unavailable(url: &str) -> HttpError {
+    HttpError::Transport {
+        url: url.to_owned(),
+        message: "network access is not available".to_owned(),
+    }
+}
+
 impl Http for NoHttp {
     fn get_text(&self, url: &str) -> Result<String, HttpError> {
-        Err(HttpError::Transport {
-            url: url.to_owned(),
-            message: "network access is not available".to_owned(),
-        })
+        Err(unavailable(url))
+    }
+
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
+        Err(unavailable(url))
     }
 }
 

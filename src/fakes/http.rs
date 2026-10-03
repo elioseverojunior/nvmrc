@@ -7,14 +7,19 @@ use crate::ports::{Http, HttpError};
 /// every request is recorded.
 #[derive(Default)]
 pub struct FakeHttp {
-    responses: BTreeMap<String, Result<String, HttpError>>,
+    responses: BTreeMap<String, Result<Vec<u8>, HttpError>>,
     requests: RefCell<Vec<String>>,
 }
 
 impl FakeHttp {
     #[must_use]
-    pub fn with_body(mut self, url: &str, body: &str) -> Self {
-        self.responses.insert(url.to_owned(), Ok(body.to_owned()));
+    pub fn with_body(self, url: &str, body: &str) -> Self {
+        self.with_bytes(url, body.as_bytes())
+    }
+
+    #[must_use]
+    pub fn with_bytes(mut self, url: &str, body: &[u8]) -> Self {
+        self.responses.insert(url.to_owned(), Ok(body.to_vec()));
         self
     }
 
@@ -37,6 +42,14 @@ impl FakeHttp {
 
 impl Http for FakeHttp {
     fn get_text(&self, url: &str) -> Result<String, HttpError> {
+        let bytes = self.get_bytes(url)?;
+        String::from_utf8(bytes).map_err(|error| HttpError::Body {
+            url: url.to_owned(),
+            message: error.to_string(),
+        })
+    }
+
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
         self.requests.borrow_mut().push(url.to_owned());
         self.responses.get(url).cloned().unwrap_or_else(|| {
             Err(HttpError::Transport {
@@ -50,6 +63,14 @@ impl Http for FakeHttp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fake_http_serves_bytes_and_refuses_to_read_them_as_text_when_they_are_not() {
+        let http = FakeHttp::default().with_bytes("http://m/a.tgz", &[0, 255]);
+        assert_eq!(http.get_bytes("http://m/a.tgz").unwrap(), [0, 255]);
+        let error = http.get_text("http://m/a.tgz").unwrap_err();
+        assert!(matches!(error, HttpError::Body { .. }));
+    }
 
     #[test]
     fn fake_http_answers_by_url_and_records_requests() {

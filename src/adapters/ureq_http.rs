@@ -9,6 +9,8 @@ use crate::ports::{Http, HttpError};
 
 const TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_BODY_BYTES: u64 = 16 * 1024 * 1024;
+/// An archive is far bigger than an index, but never this big.
+const MAX_DOWNLOAD_BYTES: u64 = 1024 * 1024 * 1024;
 
 pub struct UreqHttp {
     agent: ureq::Agent,
@@ -77,18 +79,20 @@ fn read_failure(url: &str, error: ureq::Error) -> HttpError {
     }
 }
 
-impl Http for UreqHttp {
-    fn get_text(&self, url: &str) -> Result<String, HttpError> {
+impl UreqHttp {
+    /// Sends the request and reads the body with `read`, capped at `limit`.
+    fn fetch<T>(
+        &self,
+        url: &str,
+        limit: u64,
+        read: impl FnOnce(ureq::BodyWithConfig<'_>) -> Result<T, ureq::Error>,
+    ) -> Result<T, HttpError> {
         let mut request = self.agent.get(url);
         if let Some(value) = &self.auth_header {
             request = request.header("Authorization", value);
         }
         match request.call() {
-            Ok(mut response) => response
-                .body_mut()
-                .with_config()
-                .limit(MAX_BODY_BYTES)
-                .read_to_string()
+            Ok(mut response) => read(response.body_mut().with_config().limit(limit))
                 .map_err(|error| read_failure(url, error)),
             Err(ureq::Error::StatusCode(code)) => Err(HttpError::Status {
                 url: url.to_owned(),
@@ -96,6 +100,16 @@ impl Http for UreqHttp {
             }),
             Err(error) => Err(transport(url, error)),
         }
+    }
+}
+
+impl Http for UreqHttp {
+    fn get_text(&self, url: &str) -> Result<String, HttpError> {
+        self.fetch(url, MAX_BODY_BYTES, |body| body.read_to_string())
+    }
+
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
+        self.fetch(url, MAX_DOWNLOAD_BYTES, |body| body.read_to_vec())
     }
 }
 
@@ -221,6 +235,13 @@ mod tests {
         let base = serve_bytes(reply_with(&[0xff, 0xfe, 0xfd], 3));
         let error = UreqHttp::unproxied(None).get_text(&format!("{base}/x"));
         assert!(matches!(error, Err(HttpError::Body { .. })), "{error:?}");
+    }
+
+    #[test]
+    fn bytes_that_are_not_text_are_fetched_whole() {
+        let base = serve_bytes(reply_with(&[0xff, 0x00, 0xfd], 3));
+        let body = UreqHttp::unproxied(None).get_bytes(&format!("{base}/a.tgz"));
+        assert_eq!(body.unwrap(), [0xff, 0x00, 0xfd]);
     }
 
     #[test]

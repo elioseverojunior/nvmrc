@@ -41,12 +41,12 @@ fn is_transient(error: &HttpError) -> bool {
     }
 }
 
-impl Http for RetryingHttp<'_> {
-    fn get_text(&self, url: &str) -> Result<String, HttpError> {
+impl RetryingHttp<'_> {
+    fn retrying<T>(&self, request: impl Fn() -> Result<T, HttpError>) -> Result<T, HttpError> {
         let mut delay = self.base_delay;
         let mut attempt = 1;
         loop {
-            match self.inner.get_text(url) {
+            match request() {
                 Err(error) if is_transient(&error) && attempt < self.attempts => {
                     self.sleeper.sleep(delay);
                     delay = delay.saturating_mul(2);
@@ -55,6 +55,16 @@ impl Http for RetryingHttp<'_> {
                 result => return result,
             }
         }
+    }
+}
+
+impl Http for RetryingHttp<'_> {
+    fn get_text(&self, url: &str) -> Result<String, HttpError> {
+        self.retrying(|| self.inner.get_text(url))
+    }
+
+    fn get_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
+        self.retrying(|| self.inner.get_bytes(url))
     }
 }
 
@@ -84,6 +94,10 @@ mod tests {
                 })
             })
         }
+
+        fn get_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
+            self.get_text(url).map(String::into_bytes)
+        }
     }
 
     fn status(code: u16) -> Result<String, HttpError> {
@@ -98,6 +112,15 @@ mod tests {
         let sleeper = FakeSleeper::default();
         let result = RetryingHttp::new(&inner, &sleeper).get_text("u");
         (result, sleeper.slept())
+    }
+
+    #[test]
+    fn bytes_are_retried_like_text() {
+        let inner = Scripted::new(vec![status(502), Ok("tar".to_owned())]);
+        let sleeper = FakeSleeper::default();
+        let body = RetryingHttp::new(&inner, &sleeper).get_bytes("u");
+        assert_eq!(body.unwrap(), b"tar");
+        assert_eq!(sleeper.slept(), [Duration::from_millis(250)]);
     }
 
     #[test]
