@@ -4,6 +4,7 @@ pub mod current;
 pub mod floor;
 pub mod http_header;
 pub mod implicit;
+pub mod index;
 pub mod listing;
 pub mod mirror;
 pub mod nvmrc;
