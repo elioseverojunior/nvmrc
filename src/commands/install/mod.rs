@@ -13,6 +13,8 @@ pub mod place;
 use std::time::SystemTime;
 
 use crate::commands::Output;
+use crate::commands::npm::packages::Source;
+use crate::commands::resolve::{Resolved, resolve_installed};
 use crate::commands::transcript::Transcript;
 use crate::commands::version_remote::lookup;
 use crate::context::Context;
@@ -20,6 +22,7 @@ use crate::domain::floor::VersionFloor;
 use crate::domain::platform::binary_available;
 use crate::domain::remote::Query;
 use crate::domain::version::{Flavor, Version};
+use crate::domain::version_prefix::with_v_prefix;
 use crate::error::{CliError, NvmExitCode};
 use flow::{Halt, Step};
 use lock::{LockRequest, acquire};
@@ -49,9 +52,17 @@ fn install(context: &Context<'_>, options: &Options, transcript: &mut Transcript
     let version = resolve(context, options, transcript)?;
     check_floor(context, &version, transcript)?;
     let version_path = place::version_path(context, &version)?;
+    let source = reinstall_source(context, options, &version, transcript)?;
     if place::is_valid_install(context, &version_path) {
         transcript.err(format!("{version} is already installed."));
-        let status = npm_steps::run(context, options, &version, &version_path, transcript)?;
+        let status = npm_steps::run(
+            context,
+            options,
+            &version,
+            &version_path,
+            source.as_ref(),
+            transcript,
+        )?;
         defaults::ensure_default(context, &alias_target(options), transcript)?;
         if status == NvmExitCode::Success {
             apply_alias(context, options, transcript)?;
@@ -68,13 +79,44 @@ fn install(context: &Context<'_>, options: &Options, transcript: &mut Transcript
         return Err(Halt::Exit(NvmExitCode::Failure));
     }
     defaults::ensure_default(context, &alias_target(options), transcript)?;
-    end_with(npm_steps::run(
+    let status = npm_steps::run(
         context,
         options,
         &version,
         &version_path,
+        source.as_ref(),
         transcript,
-    )?)
+    )?;
+    end_with(status)
+}
+
+/// The version `--reinstall-packages-from` names, which must be installed and
+/// must not be the one being installed.
+fn reinstall_source(
+    context: &Context<'_>,
+    options: &Options,
+    version: &Version,
+    transcript: &mut Transcript,
+) -> Step<Option<Source>> {
+    let Some(provided) = &options.reinstall_from else {
+        return Ok(None);
+    };
+    if with_v_prefix(provided) == version.to_string() {
+        transcript.err(
+            "You can't reinstall global packages from the same version of node you're installing.",
+        );
+        return Err(Halt::Exit(NvmExitCode::SameVersion));
+    }
+    match resolve_installed(context, provided)? {
+        Resolved::Installed(from) => Ok(Some(Source::Version(from))),
+        Resolved::System => Ok(Some(Source::System)),
+        Resolved::Missing { .. } => {
+            transcript.err(
+                "If --reinstall-packages-from is provided, it must point to an installed version of node.",
+            );
+            Err(Halt::Exit(NvmExitCode::SourceNotInstalled))
+        }
+    }
 }
 
 /// The install ends with the status of its last step.

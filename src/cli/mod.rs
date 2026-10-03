@@ -67,6 +67,18 @@ enum Command {
         #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
     },
+    /// Install, in the node in use, the global packages of another version.
+    #[command(name = "reinstall-packages")]
+    ReinstallPackages {
+        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
+    /// The same as `reinstall-packages`.
+    #[command(name = "copy-packages")]
+    CopyPackages {
+        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
     /// Remove an installed version (`--lts` and `--lts=<name>` pick one by
     /// its LTS alias) and the aliases that name it.
     Uninstall {
@@ -104,6 +116,12 @@ fn dispatch(command: &Command, context: &Context<'_>) -> Result<Output, CliError
         Command::Cache { args } => commands::cache::run(context, args),
         Command::Install { args } => commands::install::run(context, args),
         Command::InstallLatestNpm { args } => commands::install_latest_npm::run(context, args),
+        Command::ReinstallPackages { args } => {
+            commands::reinstall_packages::run(context, "reinstall-packages", args)
+        }
+        Command::CopyPackages { args } => {
+            commands::reinstall_packages::run(context, "copy-packages", args)
+        }
         Command::Uninstall { args } => commands::uninstall::run(context, args),
         Command::Which { version } => commands::which::run(context, version.as_deref()),
         Command::Alias { args } => commands::aliases::run(context, args),

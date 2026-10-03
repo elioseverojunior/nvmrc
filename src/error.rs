@@ -16,6 +16,12 @@ pub enum NvmExitCode {
     /// Something that was asked for does not exist: an `lts/<name>` alias, or
     /// the archive of a version whose download failed.
     MissingTarget = 2,
+    /// `nvm install --reinstall-packages-from` the very version being
+    /// installed.
+    SameVersion = 4,
+    /// `nvm install --reinstall-packages-from` a version that is not
+    /// installed.
+    SourceNotInstalled = 5,
     /// Options that cannot be combined, or given twice.
     InvalidOptions = 6,
     /// An option `nvm.sh` does not support, or one used in a combination it
@@ -128,6 +134,8 @@ mod tests {
         assert_eq!(NvmExitCode::BelowVersionFloor.code(), 7);
         assert_eq!(NvmExitCode::AliasLoop.code(), 8);
         assert_eq!(NvmExitCode::MissingTarget.code(), 2);
+        assert_eq!(NvmExitCode::SameVersion.code(), 4);
+        assert_eq!(NvmExitCode::SourceNotInstalled.code(), 5);
         assert_eq!(NvmExitCode::InvalidOptions.code(), 6);
         assert_eq!(NvmExitCode::UnsupportedOption.code(), 55);
         assert_eq!(NvmExitCode::NotFound.code(), 127);

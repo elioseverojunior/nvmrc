@@ -7,6 +7,7 @@ pub mod install_latest_npm;
 pub mod ls;
 pub mod ls_remote;
 pub mod npm;
+pub mod reinstall_packages;
 pub mod remote_index;
 pub mod resolve;
 pub mod transcript;

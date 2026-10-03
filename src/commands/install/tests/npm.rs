@@ -88,3 +88,58 @@ fn skip_default_packages_does_not_read_the_file() {
     );
     assert_eq!(World::new().run("20").unwrap().status, NvmExitCode::Success);
 }
+
+#[test]
+fn reinstalling_from_the_version_being_installed_is_status_4() {
+    let world = World::new();
+    let output = world.run("--reinstall-packages-from=v20.10.0 20").unwrap();
+    assert_eq!(output.status, NvmExitCode::SameVersion);
+    assert_eq!(
+        output.stderr,
+        "You can't reinstall global packages from the same version of node you're installing."
+    );
+    assert!(!world.installed());
+}
+
+#[test]
+fn reinstalling_from_a_version_that_is_not_installed_is_status_5_before_anything_is_downloaded() {
+    let world = World::new();
+    let output = world.run("--reinstall-packages-from=99 20").unwrap();
+    assert_eq!(output.status, NvmExitCode::SourceNotInstalled);
+    assert_eq!(
+        output.stderr,
+        "If --reinstall-packages-from is provided, it must point to an installed version of node."
+    );
+    assert!(
+        world
+            .http
+            .requests()
+            .iter()
+            .all(|url| !url.contains("tar.gz"))
+    );
+}
+
+#[test]
+fn reinstalling_from_an_installed_version_runs_after_the_default_packages() {
+    let old = "/n/versions/node/v18.19.0/bin/npm";
+    let process = FakeProcess::default()
+        .with_success(old, "list -g --depth=0", "/x\n├── yarn@1.22.19\n")
+        .with_success(NPM, "install -g --quiet yarn@1.22.19", "added\n");
+    let world = with_npm(World::new(), process);
+    world
+        .fs
+        .write_file(Path::new("/n/versions/node/v18.19.0/bin/node"), "x")
+        .unwrap();
+    world
+        .fs
+        .set_executable(Path::new("/n/versions/node/v18.19.0/bin/node"));
+    world.fs.write_file(Path::new(old), "").unwrap();
+    world.fs.set_executable(Path::new(old));
+    let output = world.run("--reinstall-packages-from=18 20").unwrap();
+    assert_eq!(output.status, NvmExitCode::Success);
+    assert!(
+        output
+            .stdout
+            .contains("Reinstalling global packages from v18.19.0...")
+    );
+}

@@ -91,6 +91,51 @@ fn a_program_that_cannot_start_is_reported_and_is_a_failure() {
     let stderr = transcript.finish(crate::error::NvmExitCode::Success).stderr;
     assert!(stderr.starts_with("/n/versions/node/v20.10.0/bin/npm: "));
     assert_eq!(npm.output(&context, &["list"]), None);
+    assert!(!npm.run_in(
+        &context,
+        Path::new("/x"),
+        &["link"],
+        &mut Transcript::default()
+    ));
+}
+
+#[test]
+fn output_returns_what_a_failing_run_printed_too() {
+    let fs = FakeFileSystem::default().with_executable(NPM, "");
+    let env = FakeEnv::default();
+    let done = Completed {
+        success: false,
+        stdout: "tree\n".to_owned(),
+        stderr: String::new(),
+    };
+    let process = FakeProcess::default().with_execution(NPM, "list -g --depth=0", done);
+    let context = context(&fs, &env, &process);
+    let npm = Npm::in_version(&context, Path::new("/n/versions/node/v20.10.0")).unwrap();
+    assert_eq!(
+        npm.output(&context, &["list", "-g", "--depth=0"])
+            .as_deref(),
+        Some("tree\n")
+    );
+}
+
+#[test]
+fn run_in_runs_where_it_is_told() {
+    let fs = FakeFileSystem::default().with_executable(NPM, "");
+    let env = FakeEnv::default();
+    let process = FakeProcess::default().with_success(NPM, "link", "linked\n");
+    let context = context(&fs, &env, &process);
+    let npm = Npm::in_version(&context, Path::new("/n/versions/node/v20.10.0")).unwrap();
+    let mut transcript = Transcript::default();
+    assert!(npm.run_in(
+        &context,
+        Path::new("/src/mylink"),
+        &["link"],
+        &mut transcript
+    ));
+    assert_eq!(
+        process.executed()[0].dir.as_deref(),
+        Some(Path::new("/src/mylink"))
+    );
 }
 
 #[test]

@@ -6,8 +6,9 @@ use crate::error::CliError;
 
 /// Options that need a source build, `npm` or a `.nvmrc`: not in this port yet.
 const NOT_YET: [&str; 3] = ["-s", "-j", "--offline"];
-const NOT_YET_WITH_VALUE: [&str; 2] = ["--reinstall-packages-from", "--copy-packages-from"];
 const NOT_YET_AFTER_VERSION: [&str; 2] = ["--save", "-w"];
+/// Both options mean the same; `nvm.sh` words its messages after the one used.
+const REINSTALL_OPTIONS: [&str; 2] = ["--reinstall-packages-from", "--copy-packages-from"];
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Options {
@@ -26,6 +27,9 @@ pub struct Options {
     pub latest_npm: bool,
     /// `--skip-default-packages`: leave `$NVM_DIR/default-packages` alone.
     pub skip_default_packages: bool,
+    /// `--reinstall-packages-from=<version>` (or `--copy-packages-from`): the
+    /// version, as given, whose global packages are installed again.
+    pub reinstall_from: Option<String>,
 }
 
 fn unsupported(option: &str) -> CliError {
@@ -38,10 +42,37 @@ fn already_given() -> CliError {
     CliError::InvalidOptions(message.to_owned())
 }
 
-fn is_not_yet(option: &str, names: &[&str]) -> bool {
-    names
-        .iter()
-        .any(|name| option == *name || option.starts_with(&format!("{name}=")))
+/// `--reinstall-packages-from=18`, `--copy-packages-from=18` or either of
+/// them with no value.
+fn reinstall_option(option: &str) -> Option<(&'static str, Option<&str>)> {
+    REINSTALL_OPTIONS.iter().find_map(|name| {
+        if option == *name {
+            return Some((*name, None));
+        }
+        let value = option.strip_prefix(&format!("{name}="))?;
+        Some((*name, Some(value)))
+    })
+}
+
+fn read_reinstall(options: &mut Options, option: &str) -> Result<bool, CliError> {
+    let Some((name, value)) = reinstall_option(option) else {
+        return Ok(false);
+    };
+    let message = match value {
+        None => format!("If {name} is provided, it must point to an installed version of node using `=`."),
+        Some(_) if options.reinstall_from.is_some() && name == "--copy-packages-from" => {
+            "--reinstall-packages-from may not be provided more than once, or combined with `--copy-packages-from`".to_owned()
+        }
+        Some(_) if options.reinstall_from.is_some() => {
+            "--reinstall-packages-from may not be provided more than once".to_owned()
+        }
+        Some("") => format!("If {name} is provided, it must point to an installed version of node."),
+        Some(version) => {
+            options.reinstall_from = Some(version.to_owned());
+            return Ok(true);
+        }
+    };
+    Err(CliError::InvalidOptions(message))
 }
 
 /// # Errors
@@ -67,6 +98,7 @@ pub fn parse(args: &[String]) -> Result<Options, CliError> {
                 let message = "arguments with `---` are not supported - this is likely a typo";
                 return Err(CliError::Unsupported(message.to_owned()));
             }
+            other if read_reinstall(&mut options, other)? => {}
             other => return Err(unsupported(other)),
         }
     }
@@ -77,8 +109,8 @@ pub fn parse(args: &[String]) -> Result<Options, CliError> {
     for option in rest {
         if option == "--skip-default-packages" {
             options.skip_default_packages = true;
-        } else if is_not_yet(option, &NOT_YET_WITH_VALUE)
-            || NOT_YET_AFTER_VERSION.contains(&option.as_str())
+        } else if !read_reinstall(&mut options, option)?
+            && NOT_YET_AFTER_VERSION.contains(&option.as_str())
         {
             return Err(unsupported(option));
         }
@@ -97,7 +129,7 @@ fn is_option(arg: &str) -> bool {
         || arg.starts_with("--alias=")
         || arg.starts_with("---")
         || NOT_YET.contains(&arg)
-        || is_not_yet(arg, &NOT_YET_WITH_VALUE)
+        || reinstall_option(arg).is_some()
         || NOT_YET_AFTER_VERSION.contains(&arg)
 }
 

@@ -27,6 +27,60 @@ fn only_an_lts_option_without_a_version_is_announced() {
 }
 
 #[test]
+fn reinstall_and_copy_packages_from_name_the_version_to_take_packages_from() {
+    for line in [
+        "--reinstall-packages-from=18 20",
+        "20 --reinstall-packages-from=18",
+        "--copy-packages-from=18 20",
+        "20 --copy-packages-from=18",
+    ] {
+        let options = parsed(line).unwrap();
+        assert_eq!(options.reinstall_from.as_deref(), Some("18"), "{line}");
+        assert_eq!(options.version, "20", "{line}");
+    }
+}
+
+/// Every message is what the real `nvm.sh` printed.
+#[test]
+fn a_reinstall_option_given_twice_or_without_a_version_is_status_6() {
+    let cases = [
+        (
+            "--reinstall-packages-from=18 --reinstall-packages-from=18 20",
+            "--reinstall-packages-from may not be provided more than once",
+        ),
+        (
+            "--copy-packages-from=18 --reinstall-packages-from=18 20",
+            "--reinstall-packages-from may not be provided more than once",
+        ),
+        (
+            "--reinstall-packages-from=18 --copy-packages-from=18 20",
+            "--reinstall-packages-from may not be provided more than once, or combined with `--copy-packages-from`",
+        ),
+        (
+            "--reinstall-packages-from= 20",
+            "If --reinstall-packages-from is provided, it must point to an installed version of node.",
+        ),
+        (
+            "--copy-packages-from= 20",
+            "If --copy-packages-from is provided, it must point to an installed version of node.",
+        ),
+        (
+            "--reinstall-packages-from 20",
+            "If --reinstall-packages-from is provided, it must point to an installed version of node using `=`.",
+        ),
+        (
+            "20 --copy-packages-from",
+            "If --copy-packages-from is provided, it must point to an installed version of node using `=`.",
+        ),
+    ];
+    for (line, message) in cases {
+        let error = parsed(line).unwrap_err();
+        assert_eq!(error.exit_code(), NvmExitCode::InvalidOptions, "{line}");
+        assert_eq!(error.to_string(), message, "{line}");
+    }
+}
+
+#[test]
 fn the_npm_options_are_read_before_and_after_the_version() {
     let before = parsed("--latest-npm --skip-default-packages 20").unwrap();
     assert!(before.latest_npm && before.skip_default_packages);
@@ -101,15 +155,7 @@ fn three_dashes_are_a_typo_with_status_55() {
 
 #[test]
 fn options_that_need_a_source_build_or_npm_are_not_supported_yet() {
-    for line in [
-        "-s 20",
-        "-j 4 20",
-        "--offline 20",
-        "--reinstall-packages-from=18 20",
-        "20 --reinstall-packages-from=18",
-        "20 --copy-packages-from=18",
-        "20 --save",
-    ] {
+    for line in ["-s 20", "-j 4 20", "--offline 20", "20 --save"] {
         let error = parsed(line).unwrap_err();
         assert_eq!(error.exit_code(), NvmExitCode::UnsupportedOption, "{line}");
         assert!(

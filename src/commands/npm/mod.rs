@@ -4,6 +4,7 @@
 //! in front of the `PATH` of each run instead.
 
 pub mod latest;
+pub mod packages;
 
 use std::path::PathBuf;
 
@@ -73,10 +74,34 @@ impl Npm {
     }
 
     /// Runs `npm` for its output (`npm list -g`), which is returned instead.
+    /// `npm list` exits with an error when a package has problems and still
+    /// lists the others, so the output counts whatever the status.
     #[must_use]
     pub fn output(&self, context: &Context<'_>, args: &[&str]) -> Option<String> {
         let done = context.process().execute(&self.invocation(args)).ok()?;
-        done.success.then_some(done.stdout)
+        Some(done.stdout)
+    }
+
+    /// Like [`Self::run`], inside `directory`.
+    pub fn run_in(
+        &self,
+        context: &Context<'_>,
+        directory: &std::path::Path,
+        args: &[&str],
+        transcript: &mut Transcript,
+    ) -> bool {
+        let invocation = self.invocation(args).dir(directory);
+        match context.process().execute(&invocation) {
+            Ok(done) => {
+                done.stdout.lines().for_each(|line| transcript.out(line));
+                done.stderr.lines().for_each(|line| transcript.err(line));
+                done.success
+            }
+            Err(error) => {
+                transcript.err(format!("cd: {}: {error}", directory.display()));
+                false
+            }
+        }
     }
 }
 

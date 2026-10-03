@@ -9,14 +9,16 @@ use crate::commands::install::flow::Step;
 use crate::commands::install::options::Options;
 use crate::commands::npm::Npm;
 use crate::commands::npm::latest::{Node, install_latest};
+use crate::commands::npm::packages::{Source, reinstall};
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::npm::default_packages;
 use crate::domain::version::Version;
 use crate::error::NvmExitCode;
 
-/// The steps, stopping at the first one that does not succeed; its status is
-/// the install's.
+/// The steps (`--latest-npm`, the default packages, the packages of
+/// `--reinstall-packages-from`), stopping at the first one that does not
+/// succeed; its status is the install's.
 ///
 /// # Errors
 /// [`crate::commands::install::flow::Halt::Error`] when `$NVM_DIR` is unknown.
@@ -25,6 +27,7 @@ pub fn run(
     options: &Options,
     version: &Version,
     version_path: &Path,
+    source: Option<&Source>,
     transcript: &mut Transcript,
 ) -> Step<NvmExitCode> {
     let npm = Npm::in_version(context, version_path);
@@ -35,9 +38,32 @@ pub fn run(
         }
     }
     if !options.skip_default_packages {
-        return default_packages(context, npm.as_ref(), version, transcript);
+        let status = default_packages(context, npm.as_ref(), version, transcript)?;
+        if status != NvmExitCode::Success {
+            return Ok(status);
+        }
     }
-    Ok(NvmExitCode::Success)
+    Ok(source.map_or(NvmExitCode::Success, |source| {
+        copy_packages(context, npm.as_ref(), version, source, transcript)
+    }))
+}
+
+/// `nvm reinstall-packages <source>` into the version just installed.
+fn copy_packages(
+    context: &Context<'_>,
+    npm: Option<&Npm>,
+    version: &Version,
+    source: &Source,
+    transcript: &mut Transcript,
+) -> NvmExitCode {
+    if *source == Source::Version(*version) {
+        transcript.err("Can not reinstall packages from the current version of node.");
+        return NvmExitCode::MissingTarget;
+    }
+    match npm {
+        Some(npm) => reinstall(context, source, npm, transcript),
+        None => skip(version, "the reinstall of global packages", transcript),
+    }
 }
 
 fn skip(version: &Version, what: &str, transcript: &mut Transcript) -> NvmExitCode {

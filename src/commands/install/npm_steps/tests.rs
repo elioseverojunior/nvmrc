@@ -32,6 +32,7 @@ fn run_steps(
         options,
         &version(),
         Path::new(PATH),
+        None,
         &mut transcript,
     )
     .unwrap();
@@ -162,4 +163,61 @@ fn a_version_without_npm_skips_the_steps_with_a_warning_and_never_fails() {
         "npm was not found in v20.10.0; skipping the npm upgrade.\nnpm was not found in v20.10.0; skipping the default packages."
     );
     assert!(process.executed().is_empty());
+}
+
+fn reinstall_from(
+    source: &Source,
+    fs: &FakeFileSystem,
+    process: &FakeProcess,
+) -> (NvmExitCode, String, String) {
+    let env = FakeEnv::default().with_var("NVM_DIR", "/n");
+    let context = Context::new(fs, &env).with_process(process);
+    let mut transcript = Transcript::default();
+    let status = run(
+        &context,
+        &options(false, true),
+        &version(),
+        Path::new(PATH),
+        Some(source),
+        &mut transcript,
+    )
+    .unwrap();
+    let output = transcript.finish(status);
+    (status, output.stdout, output.stderr)
+}
+
+#[test]
+fn the_packages_of_the_source_are_installed_into_the_new_version() {
+    let old = "/n/versions/node/v18.19.0/bin/npm";
+    let fs = world(None).with_executable(old, "");
+    let process = FakeProcess::default()
+        .with_success(old, "list -g --depth=0", "/x\n├── yarn@1.22.19\n")
+        .with_success(NPM, "install -g --quiet yarn@1.22.19", "added\n");
+    let source = Source::Version("v18.19.0".parse().unwrap());
+    let (status, stdout, _) = reinstall_from(&source, &fs, &process);
+    assert_eq!(status, NvmExitCode::Success);
+    assert!(stdout.starts_with("Reinstalling global packages from v18.19.0..."));
+}
+
+#[test]
+fn the_version_cannot_be_its_own_source() {
+    let source = Source::Version(version());
+    let (status, _, stderr) = reinstall_from(&source, &world(None), &FakeProcess::default());
+    assert_eq!(status, NvmExitCode::MissingTarget);
+    assert_eq!(
+        stderr,
+        "Can not reinstall packages from the current version of node."
+    );
+}
+
+#[test]
+fn a_version_without_npm_skips_the_reinstall_with_a_warning() {
+    let fs = FakeFileSystem::default();
+    let source = Source::Version("v18.19.0".parse().unwrap());
+    let (status, _, stderr) = reinstall_from(&source, &fs, &FakeProcess::default());
+    assert_eq!(status, NvmExitCode::Success);
+    assert_eq!(
+        stderr,
+        "npm was not found in v20.10.0; skipping the reinstall of global packages."
+    );
 }
