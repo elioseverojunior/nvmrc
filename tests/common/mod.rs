@@ -12,8 +12,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 use std::thread;
 
-use flate2::Compression;
-use flate2::write::GzEncoder;
+use lzma_rust2::{XzOptions, XzWriter};
 use nvmrc::domain::platform::Platform;
 use sha2::{Digest, Sha256};
 
@@ -42,9 +41,11 @@ pub fn slug(version: &str) -> Option<String> {
     Some(platform.download_slug(&version.parse().unwrap()))
 }
 
-/// A gzip-compressed tar of `entries`.
-pub fn tar_gz(entries: &[Entry<'_>]) -> Vec<u8> {
-    let mut builder = tar::Builder::new(GzEncoder::new(Vec::new(), Compression::default()));
+/// An xz-compressed tar of `entries`: what nvmrc asks a mirror for, as
+/// `nvm.sh` does, for every version of Node 4 and later.
+pub fn tar_xz(entries: &[Entry<'_>]) -> Vec<u8> {
+    let writer = XzWriter::new(Vec::new(), XzOptions::with_preset(1)).unwrap();
+    let mut builder = tar::Builder::new(writer);
     for (path, contents, mode) in entries {
         let mut header = tar::Header::new_gnu();
         header.set_size(contents.len() as u64);
@@ -70,7 +71,7 @@ pub fn tarball_with(slug: &str, version: &str, extra: &[(&str, &str, u32)]) -> V
             .iter()
             .map(|(path, contents, mode)| (format!("{slug}/{path}"), *contents, *mode)),
     );
-    tar_gz(&entries)
+    tar_xz(&entries)
 }
 
 pub fn tarball(slug: &str, version: &str) -> Vec<u8> {
@@ -144,7 +145,7 @@ impl Mirror {
     ) -> Option<Self> {
         let slug = slug(version)?;
         let archive = tarball_with(&slug, version, extra);
-        self.add(version, &format!("{slug}.tar.gz"), archive, listed);
+        self.add(version, &format!("{slug}.tar.xz"), archive, listed);
         Some(self)
     }
 
@@ -155,7 +156,7 @@ impl Mirror {
             .iter()
             .map(|(path, contents, mode)| (format!("{top}/{path}"), *contents, *mode))
             .collect();
-        self.add(version, &format!("{top}.tar.gz"), tar_gz(&entries), None);
+        self.add(version, &format!("{top}.tar.xz"), tar_xz(&entries), None);
         self
     }
 

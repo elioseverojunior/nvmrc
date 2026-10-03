@@ -6,8 +6,8 @@ use crate::fakes::{FakeArchive, FakeDigest, FakeEnv, FakeFileSystem, FakeHttp, F
 use crate::ports::{Completed, FileSystem};
 
 const SUMS: &str = "https://nodejs.org/dist/v20.10.0/SHASUMS256.txt";
-const TARBALL_URL: &str = "https://nodejs.org/dist/v20.10.0/node-v20.10.0.tar.gz";
-const TARBALL: &str = "/n/.cache/src/node-v20.10.0/node-v20.10.0.tar.gz";
+const TARBALL_URL: &str = "https://nodejs.org/dist/v20.10.0/node-v20.10.0.tar.xz";
+const TARBALL: &str = "/n/.cache/src/node-v20.10.0/node-v20.10.0.tar.xz";
 const TOP: &str = "/n/.cache/src/node-v20.10.0/files";
 const PREFIX: &str = "--prefix=/n/versions/node/v20.10.0";
 
@@ -24,7 +24,7 @@ impl World {
         Self {
             fs: FakeFileSystem::default(),
             http: FakeHttp::default()
-                .with_body(SUMS, "aa11  node-v20.10.0.tar.gz\n")
+                .with_body(SUMS, "aa11  node-v20.10.0.tar.xz\n")
                 .with_bytes(TARBALL_URL, b"source"),
             digest: FakeDigest::default().with_digest(TARBALL, "aa11"),
             env: FakeEnv::default().with_var("NVM_DIR", "/n"),

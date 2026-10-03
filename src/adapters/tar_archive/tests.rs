@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use flate2::Compression;
 use flate2::write::GzEncoder;
+use lzma_rust2::{XzOptions, XzWriter};
 
 use super::*;
 
@@ -53,7 +54,7 @@ fn it_unpacks_files_into_the_destination() {
     );
     let destination = root.path().join("out");
     fs::create_dir(&destination).unwrap();
-    TarGzArchive.extract(&archive, &destination).unwrap();
+    TarArchive.extract(&archive, &destination).unwrap();
     let node = destination.join("node-v1/bin/node");
     assert_eq!(fs::read_to_string(&node).unwrap(), "binary");
     assert_eq!(
@@ -77,7 +78,7 @@ fn it_keeps_the_execute_bit_and_relative_symlinks() {
     );
     let destination = root.path().join("out");
     fs::create_dir(&destination).unwrap();
-    TarGzArchive.extract(&archive, &destination).unwrap();
+    TarArchive.extract(&archive, &destination).unwrap();
     let mode = fs::metadata(destination.join("node-v1/bin/node"))
         .unwrap()
         .permissions()
@@ -90,7 +91,7 @@ fn it_keeps_the_execute_bit_and_relative_symlinks() {
 #[test]
 fn a_missing_archive_is_an_error() {
     let root = tempfile::tempdir().unwrap();
-    let error = TarGzArchive
+    let error = TarArchive
         .extract(&root.path().join("nope.tar.gz"), root.path())
         .unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::NotFound);
@@ -101,7 +102,7 @@ fn something_that_is_not_gzip_is_an_error() {
     let root = tempfile::tempdir().unwrap();
     let archive = root.path().join("bad.tar.gz");
     fs::write(&archive, "not an archive").unwrap();
-    assert!(TarGzArchive.extract(&archive, root.path()).is_err());
+    assert!(TarArchive.extract(&archive, root.path()).is_err());
 }
 
 #[test]
@@ -124,7 +125,7 @@ fn an_entry_that_climbs_out_of_the_destination_is_refused() {
     encoder.finish().unwrap();
     let destination = root.path().join("out");
     fs::create_dir(&destination).unwrap();
-    let error = TarGzArchive.extract(&archive, &destination).unwrap_err();
+    let error = TarArchive.extract(&archive, &destination).unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::InvalidData);
     assert!(error.to_string().contains("unsafe path in archive"));
     assert!(!root.path().join("escaped").exists());
@@ -143,7 +144,76 @@ fn a_file_written_through_a_symlink_that_leaves_the_destination_is_refused() {
     );
     let destination = root.path().join("out");
     fs::create_dir(&destination).unwrap();
-    let result = TarGzArchive.extract(&archive, &destination);
+    let result = TarArchive.extract(&archive, &destination);
     assert!(result.is_err());
     assert!(!outside.join("stolen").exists());
+}
+
+/// A `.tar.xz` of `(path, contents)` files, written to
+/// `directory/archive.tar.xz`.
+fn build_xz(directory: &Path, files: &[(&str, &str)]) -> PathBuf {
+    let path = directory.join("archive.tar.xz");
+    let writer = XzWriter::new(File::create(&path).unwrap(), XzOptions::with_preset(1)).unwrap();
+    let mut builder = tar::Builder::new(writer);
+    for (name, contents) in files {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(contents.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, name, contents.as_bytes())
+            .unwrap();
+    }
+    builder.into_inner().unwrap().finish().unwrap();
+    path
+}
+
+#[test]
+fn it_unpacks_an_xz_compressed_tar() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = build_xz(
+        root.path(),
+        &[("node-v1/bin/node", "binary"), ("node-v1/README", "hi")],
+    );
+    let destination = root.path().join("out");
+    fs::create_dir(&destination).unwrap();
+    TarArchive.extract(&archive, &destination).unwrap();
+    let node = destination.join("node-v1/bin/node");
+    assert_eq!(fs::read_to_string(node).unwrap(), "binary");
+    assert_eq!(
+        fs::read_to_string(destination.join("node-v1/README")).unwrap(),
+        "hi"
+    );
+}
+
+#[test]
+fn the_compression_is_told_by_the_bytes_not_by_the_name() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = build(root.path(), &[("top/file", "x", 0o644)], &[]);
+    let renamed = root.path().join("misnamed.tar.xz");
+    fs::rename(&archive, &renamed).unwrap();
+    let destination = root.path().join("out");
+    fs::create_dir(&destination).unwrap();
+    TarArchive.extract(&renamed, &destination).unwrap();
+    assert!(destination.join("top/file").exists());
+}
+
+#[test]
+fn something_that_is_not_xz_is_an_error() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = root.path().join("bad.tar.xz");
+    fs::write(&archive, "not an archive").unwrap();
+    let error = TarArchive.extract(&archive, root.path()).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+}
+
+#[test]
+fn a_truncated_xz_archive_is_an_error() {
+    let root = tempfile::tempdir().unwrap();
+    let archive = build_xz(root.path(), &[("top/file", &"x".repeat(5000))]);
+    let bytes = fs::read(&archive).unwrap();
+    fs::write(&archive, &bytes[..bytes.len() / 2]).unwrap();
+    let destination = root.path().join("out");
+    fs::create_dir(&destination).unwrap();
+    assert!(TarArchive.extract(&archive, &destination).is_err());
 }

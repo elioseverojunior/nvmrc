@@ -10,8 +10,8 @@ use crate::ports::FileSystem;
 const NODE_INDEX: &str = "https://nodejs.org/dist/index.tab";
 const IOJS_INDEX: &str = "https://iojs.org/dist/index.tab";
 const SUMS: &str = "https://nodejs.org/dist/v20.10.0/SHASUMS256.txt";
-const TARBALL_URL: &str = "https://nodejs.org/dist/v20.10.0/node-v20.10.0-linux-x64.tar.gz";
-const TARBALL: &str = "/n/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.gz";
+const TARBALL_URL: &str = "https://nodejs.org/dist/v20.10.0/node-v20.10.0-linux-x64.tar.xz";
+const TARBALL: &str = "/n/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.xz";
 const NODE: &str = "/n/versions/node/v20.10.0/bin/node";
 const GOOD: &str = "aa11";
 
@@ -34,7 +34,7 @@ impl World {
             http: FakeHttp::default()
                 .with_body(NODE_INDEX, &node)
                 .with_body(IOJS_INDEX, &iojs)
-                .with_body(SUMS, &format!("{GOOD}  node-v20.10.0-linux-x64.tar.gz\n"))
+                .with_body(SUMS, &format!("{GOOD}  node-v20.10.0-linux-x64.tar.xz\n"))
                 .with_bytes(TARBALL_URL, b"tarball"),
             digest: FakeDigest::default().with_digest(TARBALL, GOOD),
             sleeper: FakeSleeper::default(),

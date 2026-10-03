@@ -35,7 +35,7 @@ fn a_hook_installs_in_place_of_nvm_and_is_told_how() {
             .http
             .requests()
             .iter()
-            .any(|url| url.contains(".tar.gz"))
+            .any(|url| url.contains(".tar.xz"))
     );
 }
 

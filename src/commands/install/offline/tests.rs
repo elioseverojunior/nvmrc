@@ -10,26 +10,26 @@ fn cached(fs: &FakeFileSystem, pattern: &str) -> Option<String> {
 fn cache() -> FakeFileSystem {
     FakeFileSystem::default()
         .with_file(
-            "/n/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.gz",
+            "/n/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.xz",
             "t",
         )
         .with_file(
-            "/n/.cache/bin/node-v18.19.0-linux-x64/node-v18.19.0-linux-x64.tar.gz",
+            "/n/.cache/bin/node-v18.19.0-linux-x64/node-v18.19.0-linux-x64.tar.xz",
             "t",
         )
         .with_file(
-            "/n/.cache/bin/node-v18.18.0-linux-x64/node-v18.18.0-linux-x64.tar.gz",
+            "/n/.cache/bin/node-v18.18.0-linux-x64/node-v18.18.0-linux-x64.tar.xz",
             "t",
         )
         .with_file(
-            "/n/.cache/bin/node-v22.0.0-darwin-arm64/node-v22.0.0-darwin-arm64.tar.gz",
+            "/n/.cache/bin/node-v22.0.0-darwin-arm64/node-v22.0.0-darwin-arm64.tar.xz",
             "t",
         )
         .with_file(
-            "/n/.cache/bin/iojs-v3.3.1-linux-x64/iojs-v3.3.1-linux-x64.tar.gz",
+            "/n/.cache/bin/iojs-v3.3.1-linux-x64/iojs-v3.3.1-linux-x64.tar.xz",
             "t",
         )
-        .with_file("/n/.cache/src/node-v16.20.2/node-v16.20.2.tar.gz", "t")
+        .with_file("/n/.cache/src/node-v16.20.2/node-v16.20.2.tar.xz", "t")
 }
 
 /// The expectations are what `nvm_ls_cached` of the real `nvm.sh` lists.

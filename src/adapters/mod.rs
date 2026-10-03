@@ -12,5 +12,5 @@ pub mod std_env;
 pub mod std_fs;
 pub mod std_process;
 pub mod std_sleeper;
-pub mod targz_archive;
+pub mod tar_archive;
 pub mod ureq_http;

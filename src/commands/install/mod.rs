@@ -1,5 +1,5 @@
 //! `nvm install`: the version a description stands for, from the mirror, into
-//! `$NVM_DIR/versions`. Only prebuilt binaries (`.tar.gz`) are installed; the
+//! `$NVM_DIR/versions`. Prebuilt binaries (`.tar.xz` or `.tar.gz`) are installed; the
 //! install is not activated, which is the shell's job (`nvm use`).
 
 mod acquire;

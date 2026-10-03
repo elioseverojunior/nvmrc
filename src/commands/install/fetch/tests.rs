@@ -3,9 +3,9 @@ use crate::fakes::{FakeDigest, FakeEnv, FakeFileSystem, FakeHttp};
 use crate::ports::FileSystem;
 
 const SUMS: &str = "http://127.0.0.1:1/v20.10.0/SHASUMS256.txt";
-const TARBALL_URL: &str = "http://127.0.0.1:1/v20.10.0/node-v20.10.0-linux-x64.tar.gz";
+const TARBALL_URL: &str = "http://127.0.0.1:1/v20.10.0/node-v20.10.0-linux-x64.tar.xz";
 const TARBALL: &str =
-    "/home/me/.nvm/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.gz";
+    "/home/me/.nvm/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.xz";
 const GOOD: &str = "aa11";
 
 fn artifact_of(context: &Context<'_>) -> Artifact {
@@ -24,7 +24,7 @@ fn env() -> FakeEnv {
 }
 
 fn sums(digest: &str) -> String {
-    format!("{digest}  node-v20.10.0-linux-x64.tar.gz\nff00  node-v20.10.0-linux-x64.tar.xz\n")
+    format!("{digest}  node-v20.10.0-linux-x64.tar.xz\nff00  node-v20.10.0-linux-x64.tar.gz\n")
 }
 
 fn run(
@@ -84,8 +84,8 @@ fn a_matching_cached_archive_is_used_without_downloading() {
     assert_eq!(
         stderr(transcript),
         [
-            "Local cache found: ${NVM_DIR}/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.gz",
-            "Checksums match! Using existing downloaded archive ${NVM_DIR}/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.gz",
+            "Local cache found: ${NVM_DIR}/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.xz",
+            "Checksums match! Using existing downloaded archive ${NVM_DIR}/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.xz",
         ]
     );
 }
@@ -197,7 +197,7 @@ fn the_artifact_is_named_after_the_platform() {
     let mac = crate::domain::platform::Platform::from_host("macos", "aarch64", false);
     let context = Context::new(&fs, &env).with_platform(mac);
     let artifact = Artifact::of(&context, &"v20.10.0".parse().unwrap()).unwrap();
-    assert_eq!(artifact.file_name, "node-v20.10.0-darwin-arm64.tar.gz");
+    assert_eq!(artifact.file_name, "node-v20.10.0-darwin-arm64.tar.xz");
     assert_eq!(
         artifact.files(),
         PathBuf::from("/home/me/.nvm/.cache/bin/node-v20.10.0-darwin-arm64/files")
@@ -231,7 +231,7 @@ fn offline_uses_the_cached_archive_without_a_checksum_or_the_network() {
     assert_eq!(
         stderr(transcript),
         [
-            "Offline: using cached archive ${NVM_DIR}/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.gz"
+            "Offline: using cached archive ${NVM_DIR}/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.xz"
         ]
     );
 }
@@ -253,10 +253,10 @@ fn a_source_archive_is_named_after_the_version_alone_and_lives_in_the_src_cache(
     let context = Context::new(&fs, &env);
     let artifact = Artifact::source_of(&context, &version()).unwrap();
     assert_eq!(artifact.slug, "node-v20.10.0");
-    assert_eq!(artifact.file_name, "node-v20.10.0.tar.gz");
+    assert_eq!(artifact.file_name, "node-v20.10.0.tar.xz");
     assert_eq!(
         artifact.tarball,
-        PathBuf::from("/home/me/.nvm/.cache/src/node-v20.10.0/node-v20.10.0.tar.gz")
+        PathBuf::from("/home/me/.nvm/.cache/src/node-v20.10.0/node-v20.10.0.tar.xz")
     );
     let iojs = Artifact::source_of(&context, &"iojs-v3.3.1".parse().unwrap()).unwrap();
     assert_eq!(iojs.slug, "iojs-v3.3.1");
@@ -265,12 +265,12 @@ fn a_source_archive_is_named_after_the_version_alone_and_lives_in_the_src_cache(
 #[test]
 fn a_source_archive_is_downloaded_and_checked_like_a_binary_one() {
     let fs = FakeFileSystem::default();
-    let url = "http://127.0.0.1:1/v20.10.0/node-v20.10.0.tar.gz";
-    let sums_text = format!("{GOOD}  node-v20.10.0.tar.gz\n");
+    let url = "http://127.0.0.1:1/v20.10.0/node-v20.10.0.tar.xz";
+    let sums_text = format!("{GOOD}  node-v20.10.0.tar.xz\n");
     let http = FakeHttp::default()
         .with_body(SUMS, &sums_text)
         .with_bytes(url, b"source");
-    let tarball = "/home/me/.nvm/.cache/src/node-v20.10.0/node-v20.10.0.tar.gz";
+    let tarball = "/home/me/.nvm/.cache/src/node-v20.10.0/node-v20.10.0.tar.xz";
     let digest = FakeDigest::default().with_digest(tarball, GOOD);
     let env = env();
     let context = Context::new(&fs, &env)

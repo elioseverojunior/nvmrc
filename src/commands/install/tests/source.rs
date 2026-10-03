@@ -84,7 +84,7 @@ fn b_on_a_machine_without_binaries_is_status_3_with_the_binary_message() {
     world.http = FakeHttp::default()
         .with_body(NODE_INDEX, &index_text(&[("v20.10.0", "Iron")]))
         .with_body(IOJS_INDEX, &index_text(&[]))
-        .with_body(SUMS, &format!("{GOOD}  node-v20.10.0.tar.gz\n"))
+        .with_body(SUMS, &format!("{GOOD}  node-v20.10.0.tar.xz\n"))
         .with_bytes(SRC_URL, b"source");
     let no_binary = Rc::clone(&world.fs);
     let context = Context::new(&*no_binary, &world.env)

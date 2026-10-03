@@ -204,12 +204,12 @@ pub trait Digest {
 }
 
 pub trait Archive {
-    /// Unpacks the `.tar.gz` at `archive` into the existing directory
-    /// `destination`, keeping every path inside it.
+    /// Unpacks the `.tar.gz` or `.tar.xz` at `archive` into the existing
+    /// directory `destination`, keeping every path inside it.
     ///
     /// # Errors
     /// Propagates the underlying I/O error, and fails on a file that is not a
-    /// gzip-compressed tar.
+    /// gzip- or xz-compressed tar.
     fn extract(&self, archive: &Path, destination: &Path) -> io::Result<()>;
 }
 

@@ -1,6 +1,6 @@
 //! End-to-end: `install` and `uninstall` with the real binary, a real
 //! temporary `$NVM_DIR` and a mirror served on a local port that holds a real
-//! `.tar.gz`.
+//! `.tar.xz`.
 
 mod common;
 

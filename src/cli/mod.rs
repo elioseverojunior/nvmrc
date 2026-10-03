@@ -13,7 +13,7 @@ use crate::adapters::std_env::StdEnv;
 use crate::adapters::std_fs::StdFileSystem;
 use crate::adapters::std_process::StdProcess;
 use crate::adapters::std_sleeper::StdSleeper;
-use crate::adapters::targz_archive::TarGzArchive;
+use crate::adapters::tar_archive::TarArchive;
 use crate::adapters::ureq_http::UreqHttp;
 use crate::commands::{self, Output};
 use crate::context::Context;
@@ -207,7 +207,7 @@ pub fn run_from_env() -> u8 {
         .with_process(&process)
         .with_http(&http)
         .with_digest(&Sha256Digest)
-        .with_archive(&TarGzArchive)
+        .with_archive(&TarArchive)
         .with_sleeper(&StdSleeper)
         .with_cpu(&StdCpu)
         .with_platform(platform);

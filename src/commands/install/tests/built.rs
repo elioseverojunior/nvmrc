@@ -3,8 +3,8 @@ use std::rc::Rc;
 use super::*;
 use crate::fakes::FakeCpu;
 
-pub(super) const SRC_URL: &str = "https://nodejs.org/dist/v20.10.0/node-v20.10.0.tar.gz";
-pub(super) const SRC_TARBALL: &str = "/n/.cache/src/node-v20.10.0/node-v20.10.0.tar.gz";
+pub(super) const SRC_URL: &str = "https://nodejs.org/dist/v20.10.0/node-v20.10.0.tar.xz";
+pub(super) const SRC_TARBALL: &str = "/n/.cache/src/node-v20.10.0/node-v20.10.0.tar.xz";
 pub(super) const TOP: &str = "/n/.cache/src/node-v20.10.0/files";
 pub(super) const PREFIX: &str = "--prefix=/n/versions/node/v20.10.0";
 
@@ -21,7 +21,7 @@ impl Built {
     pub(super) fn new() -> Self {
         let node = index_text(&[("v20.10.0", "Iron")]);
         let sums =
-            format!("{GOOD}  node-v20.10.0-linux-x64.tar.gz\n{GOOD}  node-v20.10.0.tar.gz\n");
+            format!("{GOOD}  node-v20.10.0-linux-x64.tar.xz\n{GOOD}  node-v20.10.0.tar.xz\n");
         Self {
             fs: Rc::new(FakeFileSystem::default()),
             http: FakeHttp::default()

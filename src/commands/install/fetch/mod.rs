@@ -1,13 +1,15 @@
 //! Getting the archive of a version into `$NVM_DIR/.cache/bin/<slug>/`, and
 //! checking it against the mirror's `SHASUMS256.txt`, as `nvm_download_artifact`
-//! does (but the `.tar.gz`, never the `.tar.xz`).
+//! does, the `.tar.xz` where it would and the `.tar.gz` elsewhere.
 
 use std::path::{Path, PathBuf};
 
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::checksum::{compare, expected_digest};
+use crate::domain::compression::Compression;
 use crate::domain::mirror::{self, MirrorUrl};
+use crate::domain::platform::Os;
 use crate::domain::version::{Flavor, Version};
 
 /// A failure whose messages are in the transcript already.
@@ -18,7 +20,7 @@ pub struct Failed;
 pub struct Artifact {
     /// `node-v20.10.0-linux-x64`.
     pub slug: String,
-    /// `node-v20.10.0-linux-x64.tar.gz`.
+    /// `node-v20.10.0-linux-x64.tar.xz`.
     pub file_name: String,
     /// `$NVM_DIR/.cache/bin/<slug>`.
     pub directory: PathBuf,
@@ -30,9 +32,10 @@ impl Artifact {
     /// unknown.
     #[must_use]
     pub fn of(context: &Context<'_>, version: &Version) -> Option<Self> {
-        let slug = context.platform()?.download_slug(version);
+        let platform = context.platform()?;
+        let slug = platform.download_slug(version);
         let directory = context.cache_dir().ok()?.join("bin").join(&slug);
-        let file_name = format!("{slug}.tar.gz");
+        let file_name = file_name(&slug, version, platform.os);
         let tarball = directory.join(&file_name);
         Some(Self {
             slug,
@@ -52,7 +55,7 @@ impl Artifact {
         };
         let slug = format!("{flavor}-{}", version.directory_name());
         let directory = context.cache_dir().ok()?.join("src").join(&slug);
-        let file_name = format!("{slug}.tar.gz");
+        let file_name = file_name(&slug, version, context.platform()?.os);
         let tarball = directory.join(&file_name);
         Some(Self {
             slug,
@@ -67,6 +70,11 @@ impl Artifact {
     pub fn files(&self) -> PathBuf {
         self.directory.join("files")
     }
+}
+
+/// `<slug>.tar.xz` or `<slug>.tar.gz`, as `nvm_get_artifact_compression` says.
+fn file_name(slug: &str, version: &Version, os: Os) -> String {
+    format!("{slug}.{}", Compression::preferred(version, os).extension())
 }
 
 /// `$NVM_DIR` and `$HOME` in a path shown to the user become the variables.
@@ -237,3 +245,6 @@ fn verify(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod name_tests;
