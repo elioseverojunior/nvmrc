@@ -6,6 +6,7 @@ mod defaults;
 pub mod fetch;
 mod flow;
 pub mod lock;
+mod npm_steps;
 pub mod options;
 pub mod place;
 
@@ -50,8 +51,12 @@ fn install(context: &Context<'_>, options: &Options, transcript: &mut Transcript
     let version_path = place::version_path(context, &version)?;
     if place::is_valid_install(context, &version_path) {
         transcript.err(format!("{version} is already installed."));
+        let status = npm_steps::run(context, options, &version, &version_path, transcript)?;
         defaults::ensure_default(context, &alias_target(options), transcript)?;
-        return apply_alias(context, options, transcript);
+        if status == NvmExitCode::Success {
+            apply_alias(context, options, transcript)?;
+        }
+        return end_with(status);
     }
     install_binary(context, &version, &version_path, transcript)?;
     apply_alias(context, options, transcript)?;
@@ -62,7 +67,22 @@ fn install(context: &Context<'_>, options: &Options, transcript: &mut Transcript
         transcript.err(message);
         return Err(Halt::Exit(NvmExitCode::Failure));
     }
-    defaults::ensure_default(context, &alias_target(options), transcript)
+    defaults::ensure_default(context, &alias_target(options), transcript)?;
+    end_with(npm_steps::run(
+        context,
+        options,
+        &version,
+        &version_path,
+        transcript,
+    )?)
+}
+
+/// The install ends with the status of its last step.
+fn end_with(status: NvmExitCode) -> Step<()> {
+    match status {
+        NvmExitCode::Success => Ok(()),
+        failed => Err(Halt::Exit(failed)),
+    }
 }
 
 /// What an alias made for this install points at.

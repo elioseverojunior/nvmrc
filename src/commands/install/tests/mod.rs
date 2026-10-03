@@ -2,7 +2,9 @@ use std::path::Path;
 
 use super::*;
 use crate::domain::fixtures::index_text;
-use crate::fakes::{FakeArchive, FakeDigest, FakeEnv, FakeFileSystem, FakeHttp, FakeSleeper};
+use crate::fakes::{
+    FakeArchive, FakeDigest, FakeEnv, FakeFileSystem, FakeHttp, FakeProcess, FakeSleeper,
+};
 use crate::ports::FileSystem;
 
 const NODE_INDEX: &str = "https://nodejs.org/dist/index.tab";
@@ -20,6 +22,7 @@ struct World {
     digest: FakeDigest,
     sleeper: FakeSleeper,
     env: FakeEnv,
+    process: FakeProcess,
 }
 
 impl World {
@@ -36,19 +39,24 @@ impl World {
             digest: FakeDigest::default().with_digest(TARBALL, GOOD),
             sleeper: FakeSleeper::default(),
             env: FakeEnv::default().with_var("NVM_DIR", "/n"),
+            process: FakeProcess::default(),
         }
     }
 
     fn run(&self, line: &str) -> Result<Output, CliError> {
         let archive = FakeArchive::new(&self.fs).with_archive(
             TARBALL,
-            &[("node-v20.10.0-linux-x64/bin/node", "binary", true)],
+            &[
+                ("node-v20.10.0-linux-x64/bin/node", "binary", true),
+                ("node-v20.10.0-linux-x64/bin/npm", "npm", true),
+            ],
         );
         let context = Context::new(&self.fs, &self.env)
             .with_http(&self.http)
             .with_digest(&self.digest)
             .with_archive(&archive)
-            .with_sleeper(&self.sleeper);
+            .with_sleeper(&self.sleeper)
+            .with_process(&self.process);
         let words: Vec<String> = line.split_whitespace().map(str::to_owned).collect();
         super::run(&context, &words)
     }
@@ -67,6 +75,7 @@ fn lines(text: &str) -> Vec<&str> {
 }
 
 mod failures;
+mod npm;
 
 #[test]
 fn a_fresh_install_downloads_unpacks_and_makes_the_default_alias() {

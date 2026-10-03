@@ -27,6 +27,16 @@ fn only_an_lts_option_without_a_version_is_announced() {
 }
 
 #[test]
+fn the_npm_options_are_read_before_and_after_the_version() {
+    let before = parsed("--latest-npm --skip-default-packages 20").unwrap();
+    assert!(before.latest_npm && before.skip_default_packages);
+    let after = parsed("20 --skip-default-packages").unwrap();
+    assert!(!after.latest_npm && after.skip_default_packages);
+    let neither = parsed("20").unwrap();
+    assert!(!neither.latest_npm && !neither.skip_default_packages);
+}
+
+#[test]
 fn nothing_at_all_is_no_version() {
     let options = parsed("").unwrap();
     assert_eq!(
@@ -95,11 +105,9 @@ fn options_that_need_a_source_build_or_npm_are_not_supported_yet() {
         "-s 20",
         "-j 4 20",
         "--offline 20",
-        "--latest-npm 20",
         "--reinstall-packages-from=18 20",
         "20 --reinstall-packages-from=18",
         "20 --copy-packages-from=18",
-        "20 --skip-default-packages",
         "20 --save",
     ] {
         let error = parsed(line).unwrap_err();

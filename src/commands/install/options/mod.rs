@@ -5,9 +5,9 @@
 use crate::error::CliError;
 
 /// Options that need a source build, `npm` or a `.nvmrc`: not in this port yet.
-const NOT_YET: [&str; 4] = ["-s", "-j", "--offline", "--latest-npm"];
+const NOT_YET: [&str; 3] = ["-s", "-j", "--offline"];
 const NOT_YET_WITH_VALUE: [&str; 2] = ["--reinstall-packages-from", "--copy-packages-from"];
-const NOT_YET_AFTER_VERSION: [&str; 3] = ["--skip-default-packages", "--save", "-w"];
+const NOT_YET_AFTER_VERSION: [&str; 2] = ["--save", "-w"];
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Options {
@@ -22,6 +22,10 @@ pub struct Options {
     /// The LTS filter came from `--lts` with no version, which `nvm.sh`
     /// announces ("Installing latest LTS version.").
     pub announce_lts: bool,
+    /// `--latest-npm`: upgrade the `npm` of the installed version.
+    pub latest_npm: bool,
+    /// `--skip-default-packages`: leave `$NVM_DIR/default-packages` alone.
+    pub skip_default_packages: bool,
 }
 
 fn unsupported(option: &str) -> CliError {
@@ -49,6 +53,8 @@ pub fn parse(args: &[String]) -> Result<Options, CliError> {
     while let Some(option) = rest.next_if(|arg| is_option(arg)) {
         match option.as_str() {
             "-b" | "--no-progress" => {}
+            "--latest-npm" => options.latest_npm = true,
+            "--skip-default-packages" => options.skip_default_packages = true,
             "--lts" => options.lts = Some("*".to_owned()),
             "--default" => set_alias(&mut options, "default")?,
             other if other.starts_with("--lts=") => {
@@ -69,7 +75,9 @@ pub fn parse(args: &[String]) -> Result<Options, CliError> {
         options.version_given = true;
     }
     for option in rest {
-        if is_not_yet(option, &NOT_YET_WITH_VALUE)
+        if option == "--skip-default-packages" {
+            options.skip_default_packages = true;
+        } else if is_not_yet(option, &NOT_YET_WITH_VALUE)
             || NOT_YET_AFTER_VERSION.contains(&option.as_str())
         {
             return Err(unsupported(option));
@@ -82,8 +90,10 @@ pub fn parse(args: &[String]) -> Result<Options, CliError> {
 
 /// A word that `nvm.sh` reads as an option rather than as the version.
 fn is_option(arg: &str) -> bool {
-    matches!(arg, "-b" | "--no-progress" | "--lts" | "--default")
-        || arg.starts_with("--lts=")
+    matches!(
+        arg,
+        "-b" | "--no-progress" | "--lts" | "--default" | "--latest-npm" | "--skip-default-packages"
+    ) || arg.starts_with("--lts=")
         || arg.starts_with("--alias=")
         || arg.starts_with("---")
         || NOT_YET.contains(&arg)
