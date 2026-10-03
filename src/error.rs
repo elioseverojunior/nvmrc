@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
+use crate::shell::ShellError;
+
 /// Public exit-code contract, taken from `nvm.sh`.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum NvmExitCode {
@@ -95,6 +97,8 @@ pub enum CliError {
     Floor(#[from] FloorError),
     #[error(transparent)]
     Alias(#[from] AliasError),
+    #[error(transparent)]
+    Shell(#[from] ShellError),
     #[error("N/A")]
     NotInstalled,
     #[error("Neither NVM_DIR nor HOME is set; cannot locate the nvm directory.")]
@@ -142,6 +146,7 @@ impl CliError {
             Self::NvmDirUnresolved
             | Self::VersionNotInstalled(_)
             | Self::InvalidArgument(_)
+            | Self::Shell(_)
             | Self::Io { .. } => NvmExitCode::Failure,
             Self::Usage(_) | Self::SystemNodeNotFound => NvmExitCode::NotFound,
             Self::Unsupported(_) => NvmExitCode::UnsupportedOption,

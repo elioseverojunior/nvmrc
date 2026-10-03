@@ -3,6 +3,7 @@
 
 use crate::commands::Output;
 use crate::error::NvmExitCode;
+use crate::shell::Script;
 
 #[derive(Debug, Default)]
 pub struct Transcript {
@@ -29,9 +30,16 @@ impl Transcript {
 
     #[must_use]
     pub fn finish(self, status: NvmExitCode) -> Output {
+        self.finish_with(status, Script::new())
+    }
+
+    /// Like [`Self::finish`], for a command that also has shell code.
+    #[must_use]
+    pub fn finish_with(self, status: NvmExitCode, script: Script) -> Output {
         Output::stdout(self.stdout.join("\n"))
             .with_stderr(self.stderr.join("\n"))
             .with_status(status)
+            .with_script(script)
     }
 }
 
@@ -49,6 +57,13 @@ mod tests {
         assert_eq!(output.stdout, "one\ntwo");
         assert_eq!(output.stderr, "warning");
         assert_eq!(output.status, NvmExitCode::MissingTarget);
+    }
+
+    #[test]
+    fn finish_with_carries_the_script() {
+        let script = Script::new().hash_reset();
+        let output = Transcript::default().finish_with(NvmExitCode::Success, script);
+        assert_eq!(output.script.render(), "hash -r 2>/dev/null || true\n");
     }
 
     #[test]

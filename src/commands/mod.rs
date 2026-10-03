@@ -2,6 +2,7 @@ pub mod alias;
 pub mod aliases;
 pub mod cache;
 pub mod current;
+pub mod deactivate;
 pub mod install;
 pub mod install_latest_npm;
 pub mod ls;
@@ -21,6 +22,7 @@ pub mod version_remote;
 pub mod which;
 
 use crate::error::NvmExitCode;
+use crate::shell::Script;
 
 /// What a command wants printed, and the exit status to finish with. Text
 /// carries no trailing newline: the CLI adds one to each non-empty stream.
@@ -29,6 +31,9 @@ pub struct Output {
     pub stdout: String,
     pub stderr: String,
     pub status: NvmExitCode,
+    /// Shell code the generated `nvm` function must `eval`; empty for a
+    /// command that changes nothing in the calling shell.
+    pub script: Script,
 }
 
 impl Output {
@@ -43,6 +48,13 @@ impl Output {
     #[must_use]
     pub fn with_stderr(mut self, text: impl Into<String>) -> Self {
         self.stderr = text.into();
+        self
+    }
+
+    /// Shell code for the calling shell to evaluate.
+    #[must_use]
+    pub fn with_script(mut self, script: Script) -> Self {
+        self.script = script;
         self
     }
 
@@ -64,6 +76,14 @@ mod tests {
         assert_eq!(Output::stdout("x").status, NvmExitCode::Success);
         let output = Output::stdout("x").with_status(NvmExitCode::InvalidVersion);
         assert_eq!(output.status, NvmExitCode::InvalidVersion);
+    }
+
+    #[test]
+    fn the_default_script_is_empty_and_can_be_set() {
+        assert!(Output::default().script.is_empty());
+        let script = Script::new().unset("NVM_BIN").unwrap();
+        let output = Output::stdout("x").with_script(script);
+        assert_eq!(output.script.render(), "unset NVM_BIN\n");
     }
 
     #[test]
