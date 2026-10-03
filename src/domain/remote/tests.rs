@@ -1,51 +1,6 @@
 use super::*;
+use crate::domain::fixtures::{index_text, iojs_releases, node_releases};
 use crate::domain::index::parse_index;
-
-fn index(rows: &[(&str, &str)]) -> String {
-    let header = "version\tdate\tfiles\tnpm\tv8\tuv\tzlib\topenssl\tmodules\tlts\tsecurity";
-    let body: Vec<String> = rows
-        .iter()
-        .map(|(version, lts)| {
-            format!(
-                "{version}\t2023-01-01\tlinux-x64\t10.0.0\t11.0.0\t1.0.0\t1.3\t3.0\t100\t{lts}\t-"
-            )
-        })
-        .collect();
-    format!("{header}\n{}\n", body.join("\n"))
-}
-
-/// The fixture mirrors the real nvm.sh was run against.
-fn node() -> Vec<Release> {
-    parse_index(
-        &index(&[
-            ("v21.2.0", "-"),
-            ("v21.1.0", "-"),
-            ("v20.10.0", "Iron"),
-            ("v20.9.0", "Iron"),
-            ("v18.19.0", "Hydrogen"),
-            ("v18.18.0", "Hydrogen"),
-            ("v16.20.2", "Gallium"),
-            ("v14.21.3", "Fermium"),
-            ("v4.9.1", "Argon"),
-            ("v4.0.0", "-"),
-            ("v0.12.18", "-"),
-            ("v0.10.48", "-"),
-        ]),
-        Flavor::Node,
-    )
-}
-
-fn iojs() -> Vec<Release> {
-    parse_index(
-        &index(&[
-            ("v3.3.1", "-"),
-            ("v3.0.0", "-"),
-            ("v2.5.0", "-"),
-            ("v1.0.0", "-"),
-        ]),
-        Flavor::IoJs,
-    )
-}
 
 fn query(pattern: Option<&str>, lts: Option<&str>) -> Query {
     Query {
@@ -55,7 +10,7 @@ fn query(pattern: Option<&str>, lts: Option<&str>) -> Query {
 }
 
 fn listing(pattern: Option<&str>, lts: Option<&str>) -> (Vec<String>, bool) {
-    let (node, iojs) = (node(), iojs());
+    let (node, iojs) = (node_releases(), iojs_releases());
     let result = list(Some(&node), Some(&iojs), &query(pattern, lts)).unwrap();
     let lines = result.rows.iter().map(RemoteRow::line).collect();
     (lines, result.missing)
@@ -179,7 +134,7 @@ fn an_iojs_flavor_with_an_lts_filter_finds_nothing() {
 
 #[test]
 fn stable_and_unstable_are_not_supported_remotely() {
-    let (node, iojs) = (node(), iojs());
+    let (node, iojs) = (node_releases(), iojs_releases());
     for word in ["stable", "unstable"] {
         let result = list(Some(&node), Some(&iojs), &query(Some(word), None));
         assert_eq!(result, Err(RemoteError::ImplicitAlias), "{word}");
@@ -188,7 +143,7 @@ fn stable_and_unstable_are_not_supported_remotely() {
 
 #[test]
 fn an_unreachable_index_is_missing_and_the_other_one_still_lists() {
-    let iojs = iojs();
+    let iojs = iojs_releases();
     let result = list(None, Some(&iojs), &query(None, None)).unwrap();
     assert_eq!(result.rows.len(), 4);
     assert!(result.missing);
@@ -204,8 +159,11 @@ fn an_unreachable_index_is_missing_and_the_other_one_still_lists() {
 
 #[test]
 fn without_a_v4_row_io_js_comes_after_all_node_rows() {
-    let node = parse_index(&index(&[("v20.0.0", "-"), ("v18.0.0", "-")]), Flavor::Node);
-    let iojs = iojs();
+    let node = parse_index(
+        &index_text(&[("v20.0.0", "-"), ("v18.0.0", "-")]),
+        Flavor::Node,
+    );
+    let iojs = iojs_releases();
     let result = list(Some(&node), Some(&iojs), &query(None, None)).unwrap();
     let lines: Vec<String> = result.rows.iter().map(RemoteRow::line).collect();
     assert_eq!(lines[..2], ["v18.0.0", "v20.0.0"]);
