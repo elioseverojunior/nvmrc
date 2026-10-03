@@ -3,6 +3,9 @@
 //! Output is always plain, as `nvm.sh` prints when stdout is not a terminal.
 //! Unlike `nvm.sh` it does not print a blank row when only a system node
 //! exists, and it keeps both io.js and Node versions that share a number.
+//! For an alias that resolves to nothing (`ls lts/gallium`, `ls unstable`,
+//! `ls sys` with `sys -> system` and no system node) `nvm.sh` prints two
+//! `N/A` rows; this prints one.
 
 use crate::commands::Output;
 use crate::commands::aliases;

@@ -1,8 +1,8 @@
 //! `nvm alias <name> <target>`: create an alias file.
 //!
-//! Listing aliases (`nvm alias` without arguments) arrives with `nvm ls`, which
-//! shares its formatting. Output is always plain, as `nvm.sh` prints when
-//! stdout is not a terminal.
+//! Listing aliases (`nvm alias` without a target) lives in
+//! [`crate::commands::aliases`], which shares its formatting. Output is always
+//! plain, as `nvm.sh` prints when stdout is not a terminal.
 
 use crate::commands::resolve::{Shown, shown};
 use crate::commands::{Output, unalias};
@@ -13,7 +13,10 @@ use crate::error::CliError;
 /// # Errors
 /// - [`CliError::InvalidArgument`] for a name that is empty, `.`, `..`, or
 ///   contains `#` or `/`.
-/// - [`CliError::Io`] when the alias file cannot be written.
+/// - [`CliError::Io`] when the alias directory cannot be created or the alias
+///   file cannot be written.
+/// - An empty target deletes the alias instead, with the errors of
+///   [`unalias::run`].
 ///
 /// A target that is not installed is only a warning on stderr.
 pub fn run(context: &Context<'_>, name: &str, target: &str) -> Result<Output, CliError> {

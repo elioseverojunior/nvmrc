@@ -84,6 +84,8 @@ pub enum CliError {
 }
 
 impl CliError {
+    /// A [`CliError::Io`] for a failed operation on `path`, keeping the
+    /// underlying error as its source.
     #[must_use]
     pub fn io(path: &Path, source: std::io::Error) -> Self {
         Self::Io {
