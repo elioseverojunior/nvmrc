@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::adapters::fs_alias_store::FsAliasStore;
 use crate::adapters::no_archive::NoArchive;
+use crate::adapters::no_cpu::NoCpu;
 use crate::adapters::no_digest::NoDigest;
 use crate::adapters::no_http::NoHttp;
 use crate::adapters::no_process::NoProcess;
@@ -12,7 +13,7 @@ use crate::domain::alias::AliasStore;
 use crate::domain::platform::{Os, Platform};
 use crate::domain::version::Version;
 use crate::error::CliError;
-use crate::ports::{Archive, Digest, Env, FileSystem, Http, Process, Sleeper};
+use crate::ports::{Archive, Cpu, Digest, Env, FileSystem, Http, Process, Sleeper};
 
 pub struct Context<'a> {
     pub fs: &'a dyn FileSystem,
@@ -22,6 +23,7 @@ pub struct Context<'a> {
     digest: &'a dyn Digest,
     archive: &'a dyn Archive,
     sleeper: &'a dyn Sleeper,
+    cpu: &'a dyn Cpu,
     platform: Option<Platform>,
 }
 
@@ -38,6 +40,7 @@ impl<'a> Context<'a> {
             digest: &NoDigest,
             archive: &NoArchive,
             sleeper: &NoSleeper,
+            cpu: &NoCpu,
             platform: Some(Platform {
                 os: Os::Linux,
                 arch: "x64".to_owned(),
@@ -54,6 +57,17 @@ impl<'a> Context<'a> {
     #[must_use]
     pub fn process(&self) -> &dyn Process {
         self.process
+    }
+
+    #[must_use]
+    pub fn with_cpu(mut self, cpu: &'a dyn Cpu) -> Self {
+        self.cpu = cpu;
+        self
+    }
+
+    #[must_use]
+    pub fn cpu(&self) -> &dyn Cpu {
+        self.cpu
     }
 
     /// The machine the binaries are for; `None` when it has no official ones.

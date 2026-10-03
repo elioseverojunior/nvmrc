@@ -1,6 +1,8 @@
 use super::*;
 use crate::domain::platform::Platform;
-use crate::fakes::{FakeArchive, FakeDigest, FakeEnv, FakeFileSystem, FakeHttp, FakeSleeper};
+use crate::fakes::{
+    FakeArchive, FakeCpu, FakeDigest, FakeEnv, FakeFileSystem, FakeHttp, FakeSleeper,
+};
 
 fn nvm_dir_for(env: &FakeEnv) -> Result<PathBuf, CliError> {
     let fs = FakeFileSystem::default();
@@ -119,6 +121,17 @@ fn a_context_uses_the_sleeper_it_is_given() {
     let context = Context::new(&fs, &env).with_sleeper(&sleeper);
     context.sleeper().sleep(std::time::Duration::from_secs(1));
     assert_eq!(sleeper.slept().len(), 1);
+}
+
+#[test]
+fn a_context_does_not_know_its_processors_until_it_is_given_a_cpu() {
+    let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
+    assert_eq!(Context::new(&fs, &env).cpu().cores(), None);
+    let cpu = FakeCpu::with_cores(8);
+    assert_eq!(
+        Context::new(&fs, &env).with_cpu(&cpu).cpu().cores(),
+        Some(8)
+    );
 }
 
 #[test]

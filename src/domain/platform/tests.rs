@@ -26,7 +26,7 @@ fn rust_names_become_the_names_nodejs_org_uses() {
 
 #[test]
 fn an_unsupported_operating_system_has_no_platform() {
-    assert_eq!(Platform::from_host("freebsd", "x86_64", false), None);
+    assert_eq!(Platform::from_host("solaris", "x86_64", false), None);
     assert_eq!(Platform::from_host("windows", "x86_64", false), None);
 }
 
@@ -103,4 +103,14 @@ fn binaries_start_at_node_0_8_6() {
     assert!(!binary_available(&version("v0.8.5")));
     assert!(binary_available(&version("v0.8.6")));
     assert!(binary_available(&version("iojs-v1.0.0")));
+}
+
+#[test]
+fn the_bsds_are_built_from_source_because_they_have_no_binaries() {
+    for (host, os) in [("freebsd", Os::FreeBsd), ("openbsd", Os::OpenBsd)] {
+        let platform = Platform::from_host(host, "x86_64", false).unwrap();
+        assert_eq!(platform.os, os);
+        assert!(!os.has_binaries());
+    }
+    assert!(Os::Linux.has_binaries() && Os::Darwin.has_binaries() && Os::Aix.has_binaries());
 }

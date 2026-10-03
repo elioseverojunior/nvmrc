@@ -211,6 +211,11 @@ pub trait Archive {
     fn extract(&self, archive: &Path, destination: &Path) -> io::Result<()>;
 }
 
+pub trait Cpu {
+    /// How many processors this machine has for a build to use, when known.
+    fn cores(&self) -> Option<usize>;
+}
+
 pub trait Sleeper {
     /// Waits for `duration` (between retries).
     fn sleep(&self, duration: Duration);

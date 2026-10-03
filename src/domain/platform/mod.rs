@@ -8,6 +8,10 @@ pub enum Os {
     Linux,
     Darwin,
     Aix,
+    /// No official binaries: it is built from source.
+    FreeBsd,
+    /// No official binaries: it is built from source.
+    OpenBsd,
 }
 
 impl Os {
@@ -18,7 +22,15 @@ impl Os {
             Self::Linux => "linux",
             Self::Darwin => "darwin",
             Self::Aix => "aix",
+            Self::FreeBsd => "freebsd",
+            Self::OpenBsd => "openbsd",
         }
+    }
+
+    /// Whether nodejs.org publishes binaries for it.
+    #[must_use]
+    pub fn has_binaries(self) -> bool {
+        !matches!(self, Self::FreeBsd | Self::OpenBsd)
     }
 }
 
@@ -39,6 +51,8 @@ impl Platform {
             "linux" => Os::Linux,
             "macos" => Os::Darwin,
             "aix" => Os::Aix,
+            "freebsd" => Os::FreeBsd,
+            "openbsd" => Os::OpenBsd,
             _ => return None,
         };
         let mut arch = match arch {

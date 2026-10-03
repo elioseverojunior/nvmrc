@@ -1,11 +1,13 @@
 pub mod fs_alias_store;
 pub mod no_archive;
+pub mod no_cpu;
 pub mod no_digest;
 pub mod no_http;
 pub mod no_process;
 pub mod no_sleeper;
 pub mod retrying_http;
 pub mod sha256_digest;
+pub mod std_cpu;
 pub mod std_env;
 pub mod std_fs;
 pub mod std_process;
