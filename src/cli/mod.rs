@@ -45,6 +45,13 @@ enum Command {
         #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
     },
+    /// Print the newest release a version, alias or `--lts[=name]` stands for
+    /// on the mirror (`N/A` when there is none).
+    #[command(name = "version-remote")]
+    VersionRemote {
+        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
     /// Print the path to the node binary of a version or alias.
     Which { version: Option<String> },
     /// List aliases, show those starting with a name, or create an alias for
@@ -65,6 +72,7 @@ fn dispatch(command: &Command, context: &Context<'_>) -> Result<Output, CliError
         Command::Current => commands::current::run(context),
         Command::Ls { args } => commands::ls::run_command(context, args),
         Command::LsRemote { args } => commands::ls_remote::run(context, args),
+        Command::VersionRemote { args } => commands::version_remote::run(context, args),
         Command::Which { version } => commands::which::run(context, version.as_deref()),
         Command::Alias { args } => commands::aliases::run(context, args),
         Command::Unalias { names } => commands::unalias::run(context, names),

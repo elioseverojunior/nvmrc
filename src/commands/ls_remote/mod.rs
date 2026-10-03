@@ -8,10 +8,10 @@ mod named_aliases;
 
 use crate::commands::Output;
 use crate::commands::current;
-use crate::commands::remote_index::{Fetched, fetch};
+use crate::commands::remote_index::{Fetched, fetch, lts_filter};
 use crate::context::Context;
 use crate::domain::listing::{RowKind, format_row};
-use crate::domain::remote::{Query, list, normalize_lts, scope};
+use crate::domain::remote::{Query, list, scope};
 use crate::domain::remote_format::{FormatInput, format_remote_rows};
 use crate::domain::version::Flavor;
 use crate::error::{CliError, NvmExitCode};
@@ -126,23 +126,6 @@ fn fetch_if(
     let Fetched { releases, warning } = fetch(context, flavor)?;
     warnings.extend(warning);
     Ok(releases)
-}
-
-/// The codename a `--lts` argument stands for, once the aliases are fresh.
-fn lts_filter(context: &Context<'_>, wanted: &str) -> Result<String, String> {
-    let directory = context
-        .alias_dir()
-        .map_err(|error| error.to_string())?
-        .join("lts");
-    let mut names: Vec<String> = context
-        .fs
-        .read_dir(&directory)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|entry| entry.name)
-        .collect();
-    names.sort();
-    normalize_lts(wanted, &names).map_err(|error| error.to_string())
 }
 
 fn format_rows(

@@ -6,6 +6,7 @@ use std::path::Path;
 use crate::context::Context;
 use crate::domain::index::{Release, lts_aliases, parse_index};
 use crate::domain::mirror;
+use crate::domain::remote::normalize_lts;
 use crate::domain::version::Flavor;
 use crate::error::CliError;
 
@@ -54,6 +55,27 @@ fn refresh_lts_aliases(context: &Context<'_>, directory: &Path, releases: &[Rele
         let file = directory.join(name.trim_start_matches("lts/"));
         let _ = context.fs.write_file(&file, &format!("{target}\n"));
     }
+}
+
+/// The codename a `--lts` argument stands for, once the aliases are fresh;
+/// the message `nvm.sh` prints when it stands for none.
+///
+/// # Errors
+/// The message to print.
+pub fn lts_filter(context: &Context<'_>, wanted: &str) -> Result<String, String> {
+    let directory = context
+        .alias_dir()
+        .map_err(|error| error.to_string())?
+        .join("lts");
+    let mut names: Vec<String> = context
+        .fs
+        .read_dir(&directory)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|entry| entry.name)
+        .collect();
+    names.sort();
+    normalize_lts(wanted, &names).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]

@@ -247,5 +247,7 @@ fn back_count(digits: &str) -> Option<usize> {
     valid.then(|| digits.parse().ok()).flatten()
 }
 
+pub mod resolve;
+
 #[cfg(test)]
 mod tests;
