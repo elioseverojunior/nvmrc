@@ -266,3 +266,24 @@ fn ls_remote_and_list_remote_print_the_releases_with_the_exit_status() {
         assert_eq!(code, 0);
     }
 }
+
+#[test]
+fn install_and_its_alias_i_without_a_version_are_a_usage_error_with_exit_127() {
+    for command in ["install", "i"] {
+        let (code, out, err) = run_cli(&["nvm", command]);
+        assert_eq!((code, out.as_str()), (127, ""));
+        assert!(
+            err.starts_with("No version provided and no .nvmrc file found\nUsage: nvm install")
+        );
+    }
+}
+
+#[test]
+fn uninstall_needs_one_word_and_a_missing_version_is_only_a_message() {
+    let (code, _, err) = run_cli(&["nvm", "uninstall"]);
+    assert_eq!(code, 127);
+    assert!(err.starts_with("Usage: nvm uninstall <version>"));
+    let (code, out, err) = run_cli(&["nvm", "uninstall", "99"]);
+    assert_eq!((code, out.as_str()), (0, ""));
+    assert_eq!(err, "Version '99' is not installed.\n");
+}

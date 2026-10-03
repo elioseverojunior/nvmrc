@@ -2,20 +2,24 @@
 
 use std::ffi::OsString;
 use std::io::Write;
+use std::path::Path;
 
 use clap::{Parser, Subcommand};
 
 use crate::adapters::retrying_http::RetryingHttp;
+use crate::adapters::sha256_digest::Sha256Digest;
 use crate::adapters::std_env::StdEnv;
 use crate::adapters::std_fs::StdFileSystem;
 use crate::adapters::std_process::StdProcess;
 use crate::adapters::std_sleeper::StdSleeper;
+use crate::adapters::targz_archive::TarGzArchive;
 use crate::adapters::ureq_http::UreqHttp;
 use crate::commands::{self, Output};
 use crate::context::Context;
 use crate::domain::http_header::sanitize_auth_header;
+use crate::domain::platform::Platform;
 use crate::error::{CliError, NvmExitCode};
-use crate::ports::Env;
+use crate::ports::{Env, FileSystem};
 
 #[derive(Parser)]
 #[command(name = "nvm", version, about = "Node Version Manager, in Rust")]
@@ -50,6 +54,19 @@ enum Command {
         #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
     },
+    /// Download and install a version (a partial version, an alias, `--lts`,
+    /// `lts/<name>`); `--default` or `--alias=<name>` also make an alias.
+    #[command(visible_alias = "i")]
+    Install {
+        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
+    /// Remove an installed version (`--lts` and `--lts=<name>` pick one by
+    /// its LTS alias) and the aliases that name it.
+    Uninstall {
+        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
     /// Print the newest release a version, alias or `--lts[=name]` stands for
     /// on the mirror (`N/A` when there is none).
     #[command(name = "version-remote")]
@@ -79,6 +96,8 @@ fn dispatch(command: &Command, context: &Context<'_>) -> Result<Output, CliError
         Command::LsRemote { args } => commands::ls_remote::run(context, args),
         Command::VersionRemote { args } => commands::version_remote::run(context, args),
         Command::Cache { args } => commands::cache::run(context, args),
+        Command::Install { args } => commands::install::run(context, args),
+        Command::Uninstall { args } => commands::uninstall::run(context, args),
         Command::Which { version } => commands::which::run(context, version.as_deref()),
         Command::Alias { args } => commands::aliases::run(context, args),
         Command::Unalias { names } => commands::unalias::run(context, names),
@@ -156,9 +175,15 @@ pub fn run_from_env() -> u8 {
         .map(|value| sanitize_auth_header(&value));
     let network = UreqHttp::new(auth_header);
     let http = RetryingHttp::new(&network, &StdSleeper);
+    let musl = StdFileSystem.is_file(Path::new("/etc/alpine-release"));
+    let platform = Platform::from_host(std::env::consts::OS, std::env::consts::ARCH, musl);
     let context = Context::new(&StdFileSystem, &StdEnv)
         .with_process(&process)
-        .with_http(&http);
+        .with_http(&http)
+        .with_digest(&Sha256Digest)
+        .with_archive(&TarGzArchive)
+        .with_sleeper(&StdSleeper)
+        .with_platform(platform);
     run(
         std::env::args_os(),
         &context,
