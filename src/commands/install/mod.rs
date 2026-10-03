@@ -8,7 +8,6 @@ pub mod fetch;
 mod flow;
 pub mod lock;
 mod npm_steps;
-mod nvmrc_file;
 mod offline;
 pub mod options;
 pub mod place;
@@ -17,6 +16,7 @@ mod source;
 
 use crate::commands::Output;
 use crate::commands::npm::packages::Source;
+use crate::commands::nvmrc_file;
 use crate::commands::resolve::{Resolved, resolve_installed};
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
@@ -80,7 +80,7 @@ fn already_installed(
     let mut status = npm_steps::run(context, options, target, transcript)?;
     defaults::ensure_default(context, &alias_target(options), transcript)?;
     if options.save {
-        status = nvmrc_file::write(context, &target.version, transcript);
+        status = nvmrc_file::write(context, &target.version.to_string(), false, transcript);
     }
     if status == NvmExitCode::Success {
         apply_alias(context, options, transcript)?;
@@ -109,7 +109,7 @@ fn fresh_install(
     defaults::ensure_default(context, &alias_target(options), transcript)?;
     let mut status = npm_steps::run(context, options, target, transcript)?;
     if options.save && status == NvmExitCode::Success {
-        status = nvmrc_file::write(context, &target.version, transcript);
+        status = nvmrc_file::write(context, &target.version.to_string(), false, transcript);
     }
     end_with(status)
 }

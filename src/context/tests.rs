@@ -186,3 +186,21 @@ fn an_empty_version_directory_still_counts_as_installed() {
     let fs = FakeFileSystem::default().with_dir("/n/versions/node/v18.0.0");
     assert_eq!(installed(&fs), ["v18.0.0"]);
 }
+
+#[test]
+fn installed_versions_include_the_legacy_layout_directly_in_nvm_dir() {
+    let fs = FakeFileSystem::default()
+        .with_file("/n/v0.10.48/bin/node", "")
+        .with_file("/n/versions/node/v18.0.0/bin/node", "")
+        .with_file("/n/alias/default", "18")
+        .with_file("/n/v0.11.0", "a plain file");
+    assert_eq!(installed(&fs), ["v0.10.48", "v18.0.0"]);
+}
+
+#[test]
+fn a_version_in_both_layouts_is_listed_once() {
+    let fs = FakeFileSystem::default()
+        .with_dir("/n/v0.10.48")
+        .with_dir("/n/versions/node/v0.10.48");
+    assert_eq!(installed(&fs), ["v0.10.48"]);
+}

@@ -4,19 +4,26 @@
 use std::path::{Path, PathBuf};
 
 use crate::context::Context;
-use crate::domain::version::Version;
+use crate::domain::version::{Flavor, Version};
 use crate::error::CliError;
 
-/// `$NVM_DIR/versions/node/v20.10.0`, or `.../io.js/v3.3.1`.
+/// `nvm_version_path`: `$NVM_DIR/versions/node/v20.10.0`, or
+/// `.../io.js/v3.3.1`; node below 0.12.0 keeps the old layout,
+/// `$NVM_DIR/v0.10.48`.
 ///
 /// # Errors
 /// [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
 pub fn version_path(context: &Context<'_>, version: &Version) -> Result<PathBuf, CliError> {
-    Ok(context
-        .nvm_dir()?
-        .join("versions")
-        .join(version.flavor.versions_directory())
-        .join(version.directory_name()))
+    let nvm_dir = context.nvm_dir()?;
+    let is_legacy = version.flavor == Flavor::Node && version.triple() < (0, 12, 0);
+    let parent = if is_legacy {
+        nvm_dir
+    } else {
+        nvm_dir
+            .join("versions")
+            .join(version.flavor.versions_directory())
+    };
+    Ok(parent.join(version.directory_name()))
 }
 
 /// The version's directory holds a `bin/node` that is not empty and can run.

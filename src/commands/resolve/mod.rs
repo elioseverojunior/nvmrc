@@ -93,6 +93,8 @@ fn find_installed(resolved: &str, installed: &[Version]) -> Option<Version> {
         "node" | "stable" => highest_in(installed, Flavor::Node, implicit.stable?),
         "unstable" => highest_in(installed, Flavor::Node, implicit.unstable?),
         "iojs" => highest_in(installed, Flavor::IoJs, implicit.iojs?),
+        // `nvm_ls v` matches every version, so the newest wins.
+        "v" => installed.iter().max().copied(),
         other => other
             .parse::<VersionPattern>()
             .ok()

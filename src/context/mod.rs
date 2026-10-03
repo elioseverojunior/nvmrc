@@ -170,7 +170,9 @@ impl Context<'_> {
         Ok(FsAliasStore::new(self.fs, &self.nvm_dir()?))
     }
 
-    /// Every version installed under `versions/node` and `versions/io.js`.
+    /// Every version installed under `versions/node` and `versions/io.js`,
+    /// plus the old layout directly in `$NVM_DIR` (`$NVM_DIR/v0.10.48`), as
+    /// `nvm_ls` searches all three; a version in two layouts counts once.
     /// Only directories with a canonical version name count: `v20.1.0`, never
     /// `20.1.0`, `v020.1.0` or a plain file.
     ///
@@ -178,9 +180,14 @@ impl Context<'_> {
     /// Returns [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
     pub fn installed_versions(&self) -> Result<Vec<Version>, CliError> {
         let versions_dir = self.nvm_dir()?.join("versions");
-        let node = self.list_versions(&versions_dir.join("node"), "");
-        let iojs = self.list_versions(&versions_dir.join("io.js"), "iojs-");
-        Ok(node.chain(iojs).collect())
+        let mut found: Vec<Version> = self.list_versions(&versions_dir.join("node"), "").collect();
+        let legacy = self
+            .list_versions(&self.nvm_dir()?, "")
+            .filter(|version| !found.contains(version))
+            .collect::<Vec<_>>();
+        found.extend(legacy);
+        found.extend(self.list_versions(&versions_dir.join("io.js"), "iojs-"));
+        Ok(found)
     }
 
     fn list_versions<'s>(

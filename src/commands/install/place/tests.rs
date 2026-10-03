@@ -32,6 +32,23 @@ fn the_version_path_is_per_flavor() {
 }
 
 #[test]
+fn node_below_0_12_lives_directly_in_nvm_dir_as_nvm_version_path_says() {
+    let (fs, env) = (FakeFileSystem::default(), env());
+    let context = Context::new(&fs, &env);
+    let path_of = |text: &str| version_path(&context, &text.parse().unwrap()).unwrap();
+    assert_eq!(path_of("v0.10.48"), PathBuf::from("/n/v0.10.48"));
+    assert_eq!(path_of("v0.11.16"), PathBuf::from("/n/v0.11.16"));
+    assert_eq!(
+        path_of("v0.12.0"),
+        PathBuf::from("/n/versions/node/v0.12.0")
+    );
+    assert_eq!(
+        path_of("iojs-v1.0.0"),
+        PathBuf::from("/n/versions/io.js/v1.0.0")
+    );
+}
+
+#[test]
 fn an_install_needs_a_runnable_node_that_is_not_empty() {
     let env = env();
     let check = |fs: &FakeFileSystem| is_valid_install(&Context::new(fs, &env), Path::new(TARGET));

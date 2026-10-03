@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use crate::commands::Output;
 use crate::commands::current;
+use crate::commands::install::place::version_path;
 use crate::commands::rc_version::{RcVersion, rc_version};
 use crate::commands::resolve::{Resolved, resolve_installed, system_node};
 use crate::commands::transcript::Transcript;
@@ -113,13 +114,7 @@ fn not_installed(name: &str, resolved: &str) -> CliError {
 }
 
 fn node_binary(context: &Context<'_>, version: &Version) -> Result<PathBuf, CliError> {
-    Ok(context
-        .nvm_dir()?
-        .join("versions")
-        .join(version.flavor.versions_directory())
-        .join(version.directory_name())
-        .join("bin")
-        .join("node"))
+    Ok(version_path(context, version)?.join("bin").join("node"))
 }
 
 fn not_installed_message(name: &str, resolved: &str) -> String {
