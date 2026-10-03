@@ -57,10 +57,12 @@ the work between Rust and a tiny generated shell snippet.
 - Three binaries share one library: `nvmrc`, `nvm` and `nvm-exec`. `nvm` and
   `nvmrc` accept the same subcommands; `nvm` exists for compatibility with
   scripts, CI and tools that invoke `nvm` as an executable.
-- `nvmrc init <shell>` prints a snippet defining a shell function `nvm`. For
-  `use`, `deactivate`, `install` and the automatic `use` at start, the
+- `nvmrc init <shell>` prints a snippet defining a shell function `nvm`, for
+  bash, zsh, sh, dash, ksh and fish (3.4 or newer; `nvm init fish | source`).
+  For `use`, `deactivate`, `install` and the automatic `use` at start, the
   function opens descriptor 3 on a pipe, names it in `NVMRC_SCRIPT_FD=3`, and
-  `eval`s what the binary writes there. Messages stay on their normal
+  `eval`s what the binary writes there (fish code when the fish function adds
+  `NVMRC_SHELL_KIND=fish`). Messages stay on their normal
   streams, as in `nvm.sh`. Every other command goes through the function's
   pass-through branch, which never opens descriptor 3 and only exports
   `MANPATH`, `NODE_PATH`, `NVM_SYMLINK_CURRENT` and `PREFIX` when they are

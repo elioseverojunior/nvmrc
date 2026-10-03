@@ -10,8 +10,16 @@ fn script_output(stdout: &str, stderr: &str) -> Output {
 }
 
 fn deliver(output: &Output, channel: Option<&FakeScriptChannel>) -> (u8, String, String) {
-    let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
-    let context = Context::new(&fs, &env);
+    deliver_in(&FakeEnv::default(), output, channel)
+}
+
+fn deliver_in(
+    env: &FakeEnv,
+    output: &Output,
+    channel: Option<&FakeScriptChannel>,
+) -> (u8, String, String) {
+    let fs = FakeFileSystem::default();
+    let context = Context::new(&fs, env);
     let context = match channel {
         Some(channel) => context.with_script_channel(channel),
         None => context,
@@ -37,6 +45,25 @@ fn with_a_channel_the_code_is_sent_to_it_and_the_streams_pass_through() {
 fn without_a_channel_the_code_goes_to_stdout_and_the_text_to_stderr() {
     let result = deliver(&script_output("o", "e"), None);
     assert_eq!(result, (0, "unset NVM_BIN\n".into(), "e\no\n".into()));
+}
+
+#[test]
+fn the_fish_function_gets_fish_code_on_its_channel() {
+    let channel = FakeScriptChannel::default();
+    let env = FakeEnv::default().with_var("NVMRC_SHELL_KIND", "fish");
+    let result = deliver_in(&env, &script_output("o", "e"), Some(&channel));
+    assert_eq!(result, (0, "o\n".into(), "e\n".into()));
+    assert_eq!(channel.sent(), "set -e NVM_BIN\n");
+}
+
+#[test]
+fn standalone_the_code_is_posix_unless_the_kind_says_fish() {
+    let fish = FakeEnv::default().with_var("NVMRC_SHELL_KIND", "fish");
+    let result = deliver_in(&fish, &script_output("o", ""), None);
+    assert_eq!(result, (0, "set -e NVM_BIN\n".into(), "o\n".into()));
+    let other = FakeEnv::default().with_var("NVMRC_SHELL_KIND", "zsh");
+    let result = deliver_in(&other, &script_output("o", ""), None);
+    assert_eq!(result.1, "unset NVM_BIN\n");
 }
 
 #[test]

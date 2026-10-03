@@ -1,26 +1,28 @@
-//! `nvm init <shell>`: the POSIX shell code that defines the `nvm` function
-//! around the binary, between two marker lines that tools can find again.
+//! `nvm init <shell>`: the shell code that defines the `nvm` function
+//! around the binary, between two marker lines that tools can find again:
+//! one POSIX function for bash, zsh, sh, dash and ksh (`posix.rs`), and one
+//! fish function for fish 3.4 or newer (`fish.rs`).
 //!
 //! The function runs `use`, `deactivate`, `install` (and `i`) and `__auto`
 //! with `NVMRC_SCRIPT_FD=3`: the binary writes the shell code for the
-//! calling shell to descriptor 3, which the function captures and `eval`s,
-//! while stdout and stderr pass straight through (so `nvm use 18 >/dev/null`
-//! silences only the messages). Every other command is the binary,
-//! untouched, without descriptor 3. Both run in a subshell that exports the
-//! unexported variables the binary reads (`MANPATH`, `NODE_PATH`,
-//! `NVM_SYMLINK_CURRENT`, `PREFIX`) when they are set, so `nvm exec` links
-//! `current` and checks the prefix as `use` does, and an unset one never
-//! reaches a program the binary starts as an empty variable (a `make` run by
-//! `nvm install` seeing `PREFIX=`). The binary is always `command \nvm`: a
-//! quoted name is never taken for an alias, even after ksh93's
-//! `alias command='command '`. The function keeps its status in `$1`
-//! (positional parameters are local to a function in every POSIX shell) so
-//! it can unset its temporaries, and a failure inside `$(...)` does not end
-//! a `set -e` shell before the code is applied.
+//! calling shell to descriptor 3, which the function captures and
+//! evaluates, while stdout and stderr pass straight through (so `nvm use 18
+//! >/dev/null` silences only the messages); the function returns the
+//! binary's status. Every other command is the binary, untouched, without
+//! descriptor 3. Both export the variables the binary reads that a shell
+//! may hold unexported (`MANPATH`, `NODE_PATH`, `NVM_SYMLINK_CURRENT`,
+//! `PREFIX`) only when they are set, so `nvm exec` links `current` and
+//! checks the prefix as `use` does, and an unset one never reaches a program
+//! the binary starts as an empty variable (a `make` run by `nvm install`
+//! seeing `PREFIX=`).
 //!
 //! As sourcing `nvm.sh` does, the snippet ends with the automatic `use` (or
 //! `install`), whose status is the status of the whole snippet: `eval
-//! "$(nvm init bash)"` is 3 when the `.nvmrc` names a missing version.
+//! "$(nvm init bash)"` (and `nvm init fish | source`) is 3 when the
+//! `.nvmrc` names a missing version.
+
+mod fish;
+mod posix;
 
 use std::str::FromStr;
 
@@ -41,9 +43,17 @@ pub enum Shell {
     Sh,
     Dash,
     Ksh,
+    Fish,
 }
 
-const SHELLS: [Shell; 5] = [Shell::Bash, Shell::Zsh, Shell::Sh, Shell::Dash, Shell::Ksh];
+const SHELLS: [Shell; 6] = [
+    Shell::Bash,
+    Shell::Zsh,
+    Shell::Sh,
+    Shell::Dash,
+    Shell::Ksh,
+    Shell::Fish,
+];
 
 impl Shell {
     /// The name `nvm init` takes for the shell.
@@ -55,16 +65,15 @@ impl Shell {
             Self::Sh => "sh",
             Self::Dash => "dash",
             Self::Ksh => "ksh",
+            Self::Fish => "fish",
         }
     }
 
-    /// How the function starts. zsh reads `function nvm {`, because it
-    /// expands an alias named `nvm` in `nvm() {` even after `unalias` in
-    /// the same `eval` string; the POSIX form everywhere else.
-    fn function_header(self) -> &'static str {
+    /// The line of the startup file that loads the snippet.
+    fn load_line(self) -> String {
         match self {
-            Self::Zsh => "function nvm {",
-            Self::Bash | Self::Sh | Self::Dash | Self::Ksh => "nvm() {",
+            Self::Fish => "nvm init fish | source".to_owned(),
+            _ => format!("eval \"$(nvm init {})\"", self.name()),
         }
     }
 }
@@ -97,61 +106,29 @@ pub struct InitOptions {
 }
 
 impl InitOptions {
-    /// The statement run at the end (`\nvm`: a quoted name is never taken
-    /// for an alias, and zsh expands the aliases of a whole `eval` string
-    /// before running its `unalias`), as `nvm_process_parameters` picks it.
-    fn auto_statement(self) -> &'static str {
+    /// The arguments of the `nvm` call run at the end, as
+    /// `nvm_process_parameters` picks it; `None` with `--no-use`.
+    fn auto_arguments(self) -> Option<&'static str> {
         match (self.no_use, self.install) {
-            (true, _) => "",
-            (false, true) => "\\nvm __auto install\n",
-            (false, false) => "\\nvm __auto use\n",
+            (true, _) => None,
+            (false, true) => Some("__auto install"),
+            (false, false) => Some("__auto use"),
         }
     }
 }
 
-const PREAMBLE: &str = r#"export NVMRC_SHELL=1
-export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-unalias nvm 2>/dev/null || true
-"#;
-
-const BODY: &str = r#"
-  case "${1-}" in
-    use | deactivate | install | i | __auto) ;;
-    *)
-      (
-        @EXPORTS@
-        command \nvm "$@"
-      )
-      return
-      ;;
-  esac
-  __nvmrc_status=0
-  {
-    __nvmrc_code=$(
-      @EXPORTS@
-      NVMRC_SCRIPT_FD=3 command \nvm "$@" 3>&1 1>&4 4>&-
-    ) || __nvmrc_status=$?
-  } 4>&1
-  eval "$__nvmrc_code"
-  set -- "$__nvmrc_status"
-  unset __nvmrc_code __nvmrc_status
-  return "$1"
-}
-"#;
-
 /// The variables the binary reads that a shell may hold unexported.
 const PASSED: [&str; 4] = ["MANPATH", "NODE_PATH", "NVM_SYMLINK_CURRENT", "PREFIX"];
 
-/// [`BODY`] with each `@EXPORTS@` line replaced by one line per [`PASSED`]
-/// variable, at the same indentation, exporting it only when it is set.
-fn body() -> String {
-    BODY.lines()
+/// `template` with each `@EXPORTS@` line replaced by `export(name)` for
+/// every [`PASSED`] variable, at the same indentation.
+fn with_exports(template: &str, export: fn(&str) -> String) -> String {
+    template
+        .lines()
         .map(|line| match line.strip_suffix("@EXPORTS@") {
             Some(indent) => PASSED
                 .iter()
-                .map(|name| {
-                    format!("{indent}if [ -n \"${{{name}+set}}\" ]; then export {name}; fi\n")
-                })
+                .map(|name| format!("{indent}{}\n", export(name)))
                 .collect(),
             None => format!("{line}\n"),
         })
@@ -161,14 +138,16 @@ fn body() -> String {
 /// The init snippet for `shell`, newline-terminated.
 #[must_use]
 pub fn snippet(shell: Shell, options: &InitOptions) -> String {
-    let name = shell.name();
+    let code = match shell {
+        Shell::Fish => fish::code(options),
+        _ => posix::code(shell, options),
+    };
     format!(
         "{BEGIN_MARKER}\n\
-# The nvm function of nvmrc, from `eval \"$(nvm init {name})\"` in the {name} startup file.\n\
-{PREAMBLE}{header}{body}{auto}{END_MARKER}\n",
-        header = shell.function_header(),
-        body = body(),
-        auto = options.auto_statement()
+# The nvm function of nvmrc, from `{load}` in the {name} startup file.\n\
+{code}{END_MARKER}\n",
+        load = shell.load_line(),
+        name = shell.name(),
     )
 }
 

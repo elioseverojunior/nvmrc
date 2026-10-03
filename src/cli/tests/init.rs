@@ -14,6 +14,18 @@ fn init_prints_the_snippet_on_stdout_with_exit_0() {
 }
 
 #[test]
+fn init_fish_prints_the_fish_snippet_ending_with_the_auto_use() {
+    let (code, out, err) = run_cli(&["nvm", "init", "fish"]);
+    assert_eq!((code, err.as_str()), (0, ""));
+    assert!(out.starts_with("# >>> nvmrc init >>>\n"), "{out}");
+    assert!(out.contains("\nfunction nvm "), "{out}");
+    assert!(
+        out.ends_with("\nend\nnvm __auto use\n# <<< nvmrc init <<<\n"),
+        "{out}"
+    );
+}
+
+#[test]
 fn init_options_pick_the_auto_step_and_the_last_one_wins() {
     let ends = |args: &[&str], tail: &str| {
         let (code, out, _) = run_cli(args);
@@ -37,10 +49,10 @@ fn init_options_pick_the_auto_step_and_the_last_one_wins() {
 
 #[test]
 fn init_of_an_unsupported_shell_names_the_supported_ones_with_exit_127() {
-    for shell in ["fish", "powershell"] {
+    for shell in ["tcsh", "powershell"] {
         let (code, out, err) = run_cli(&["nvm", "init", shell]);
         assert_eq!((code, out.as_str()), (127, ""));
-        assert!(err.contains("bash, zsh, sh, dash, ksh"), "{err}");
+        assert!(err.contains("bash, zsh, sh, dash, ksh, fish"), "{err}");
     }
 }
 

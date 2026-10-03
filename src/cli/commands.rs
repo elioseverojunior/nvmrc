@@ -111,7 +111,8 @@ pub(super) enum Command {
         args: Vec<String>,
     },
     /// Print the shell code that defines the `nvm` function, for
-    /// `eval "$(nvm init bash)"` in the shell's startup file (`--no-use`
+    /// `eval "$(nvm init bash)"` (bash, zsh, sh, dash, ksh) or
+    /// `nvm init fish | source` in the shell's startup file (`--no-use`
     /// skips switching to the default version; `--install` installs it).
     Init {
         #[arg(allow_hyphen_values = true, trailing_var_arg = true)]

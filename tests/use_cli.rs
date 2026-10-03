@@ -99,6 +99,26 @@ fn standalone_use_prints_the_code_on_stdout_and_the_message_on_stderr() {
 }
 
 #[test]
+fn standalone_use_prints_fish_code_when_the_kind_says_fish() {
+    let fixture = Fixture::new(false);
+    let output = fixture
+        .command(BINARY)
+        .args(["use", "18"])
+        .env("NVMRC_SHELL_KIND", "fish")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(text(&output.stderr), USING);
+    let bin = fixture.version_bin();
+    let expected = format!(
+        "set -gx PATH '{bin}:{path}'\nset -gx NVM_BIN '{bin}'\nset -gx NVM_INC '{inc}'\n",
+        path = fixture.path_dir().display(),
+        inc = bin.replace("/bin", "/include/node"),
+    );
+    assert_eq!(text(&output.stdout), expected);
+}
+
+#[test]
 fn standalone_use_also_exports_manpath_when_a_manpath_program_exists() {
     let fixture = Fixture::new(true);
     let output = fixture.nvm(&["use", "18"]);

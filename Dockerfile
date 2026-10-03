@@ -3,10 +3,13 @@ FROM docker.io/library/rust:1.99
 SHELL ["/bin/bash", "-c"]
 
 # .cargo/config.toml sets linkers per target: clang + mold on x86_64 Linux and
-# aarch64-linux-gnu-gcc on aarch64 Linux, so all of them are installed.
+# aarch64-linux-gnu-gcc on aarch64 Linux, so all of them are installed. The
+# end-to-end tests of `nvm init` run in every shell it supports and skip the
+# ones that are missing, so fish, zsh, ksh and dash are installed next to bash.
 # Package versions are not pinned (see DL3008 in .hadolint.yaml).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends clang gcc-aarch64-linux-gnu mold \
+        dash fish ksh zsh \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /work

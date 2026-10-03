@@ -5,10 +5,15 @@
 //! sent there and the streams are untouched. Without it (standalone use,
 //! scripts) the code is printed on stdout and the text the command meant for
 //! stdout moves to stderr, so `eval "$(nvm use 18)"` works by hand.
+//!
+//! The code is POSIX unless `NVMRC_SHELL_KIND=fish` asks for fish code, as
+//! the fish function does (and `NVMRC_SHELL_KIND=fish nvm use 18 |
+//! source` by hand).
 
 use crate::commands::Output;
 use crate::context::Context;
 use crate::error::NvmExitCode;
+use crate::shell::Dialect;
 
 /// The final text of each stream, newlines included, and the exit status.
 #[derive(Debug, PartialEq, Eq)]
@@ -35,7 +40,7 @@ pub(super) fn deliver(output: &Output, context: &Context<'_>) -> Delivery {
     if output.script.is_empty() {
         return delivery;
     }
-    let code = output.script.render();
+    let code = output.script.render_in(Dialect::from_env(context.env));
     match context.script_channel() {
         None => {
             delivery.stderr.push_str(&delivery.stdout);

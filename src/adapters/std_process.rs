@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::ports::{Completed, Invocation, Process, ProcessOutput};
-use crate::shell::DESCRIPTOR_VARIABLE;
+use crate::shell::{DESCRIPTOR_VARIABLE, DIALECT_VARIABLE};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
@@ -88,10 +88,13 @@ impl Process for StdProcess {
     }
 }
 
-/// `command` without the variable of the `nvm` function's channel, which is
-/// for this process only (its descriptor is close-on-exec already).
+/// `command` without the variables of the `nvm` function's channel (its
+/// descriptor and the dialect of its code), which are for this process only
+/// (the descriptor is close-on-exec already).
 pub(super) fn without_channel(command: &mut Command) -> &mut Command {
-    command.env_remove(DESCRIPTOR_VARIABLE)
+    command
+        .env_remove(DESCRIPTOR_VARIABLE)
+        .env_remove(DIALECT_VARIABLE)
 }
 
 /// `prefix` in front of the `PATH` this process has.

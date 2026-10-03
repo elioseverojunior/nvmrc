@@ -1,5 +1,7 @@
-//! POSIX shell code that the binary prints for the `nvm` function to `eval`.
+//! The shell code that the binary prints for the `nvm` function to
+//! evaluate: POSIX code, or fish code when the fish function asks for it.
 
+pub mod fish;
 pub mod init;
 
 use thiserror::Error;
@@ -9,6 +11,32 @@ use crate::ports::Env;
 /// The variable through which the `nvm` function asks for the shell code:
 /// the number of the descriptor to write it to.
 pub const DESCRIPTOR_VARIABLE: &str = "NVMRC_SCRIPT_FD";
+
+/// The variable through which the fish `nvm` function asks for fish code
+/// (`NVMRC_SHELL_KIND=fish`); the POSIX functions never set it.
+pub const DIALECT_VARIABLE: &str = "NVMRC_SHELL_KIND";
+
+/// The language a [`Script`] is rendered in.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum Dialect {
+    /// `export`, `unset` and `hash -r`, for every POSIX shell.
+    #[default]
+    Posix,
+    /// `set -gx` and `set -e`, for fish.
+    Fish,
+}
+
+impl Dialect {
+    /// Fish when [`DIALECT_VARIABLE`] is exactly `fish`, POSIX otherwise
+    /// (also when the binary runs on its own without it).
+    #[must_use]
+    pub fn from_env(env: &dyn Env) -> Self {
+        match env.var(DIALECT_VARIABLE).as_deref() {
+            Some("fish") => Self::Fish,
+            _ => Self::Posix,
+        }
+    }
+}
 
 /// The descriptor number the `nvm` function opened for the shell code; `None`
 /// when the binary runs on its own (the variable unset, or not a number).
@@ -59,7 +87,14 @@ fn validate(name: &str) -> Result<(), ShellError> {
 }
 
 impl Step {
-    fn render(&self) -> String {
+    fn render(&self, dialect: Dialect) -> String {
+        match dialect {
+            Dialect::Posix => self.render_posix(),
+            Dialect::Fish => fish::render(self),
+        }
+    }
+
+    fn render_posix(&self) -> String {
         match self {
             Step::Export(name, value) => format!("export {name}={}\n", quote(value)),
             Step::Unset(name) => format!("unset {name}\n"),
@@ -117,10 +152,16 @@ impl Script {
         self
     }
 
-    /// Renders the script, one statement per line.
+    /// Renders the script as POSIX code, one statement per line.
     #[must_use]
     pub fn render(&self) -> String {
-        self.steps.iter().map(Step::render).collect()
+        self.render_in(Dialect::Posix)
+    }
+
+    /// Renders the script in `dialect`, one statement per line.
+    #[must_use]
+    pub fn render_in(&self, dialect: Dialect) -> String {
+        self.steps.iter().map(|step| step.render(dialect)).collect()
     }
 }
 

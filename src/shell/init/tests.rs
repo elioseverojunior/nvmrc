@@ -1,12 +1,13 @@
 use super::*;
 use crate::error::NvmExitCode;
 
-const ALL: [(&str, Shell); 5] = [
+const ALL: [(&str, Shell); 6] = [
     ("bash", Shell::Bash),
     ("zsh", Shell::Zsh),
     ("sh", Shell::Sh),
     ("dash", Shell::Dash),
     ("ksh", Shell::Ksh),
+    ("fish", Shell::Fish),
 ];
 
 fn lines_of(shell: Shell, options: &InitOptions) -> Vec<String> {
@@ -14,8 +15,8 @@ fn lines_of(shell: Shell, options: &InitOptions) -> Vec<String> {
 }
 
 /// The last statement before the closing marker.
-fn last_statement(options: &InitOptions) -> String {
-    let lines = lines_of(Shell::Bash, options);
+fn last_statement(shell: Shell, options: &InitOptions) -> String {
+    let lines = lines_of(shell, options);
     lines[lines.len() - 2].clone()
 }
 
@@ -29,12 +30,15 @@ fn every_supported_name_parses_and_prints_back() {
 
 #[test]
 fn other_names_are_a_usage_error_naming_the_supported_shells() {
-    for name in ["fish", "powershell", "Bash", "ZSH", "", "tcsh"] {
+    for name in ["Fish", "powershell", "Bash", "ZSH", "", "tcsh"] {
         let error = name.parse::<Shell>().expect_err(name);
         assert!(matches!(error, CliError::Usage(_)), "{name}");
         assert_eq!(error.exit_code(), NvmExitCode::NotFound);
         let message = error.to_string();
-        assert!(message.contains("bash, zsh, sh, dash, ksh"), "{message}");
+        assert!(
+            message.contains("bash, zsh, sh, dash, ksh, fish)"),
+            "{message}"
+        );
         assert!(message.contains(USAGE), "{message}");
     }
 }
@@ -56,6 +60,8 @@ fn the_snippet_names_its_shell_and_is_plain_ascii() {
         assert!(text.is_ascii());
         assert!(text.contains(&format!("nvm init {name}")), "{text}");
     }
+    let fish = snippet(Shell::Fish, &InitOptions::default());
+    assert!(fish.contains("`nvm init fish | source`"), "{fish}");
 }
 
 #[test]
@@ -94,7 +100,14 @@ fn every_command_gets_the_passed_variables_exported_only_when_set() {
 
 #[test]
 fn the_snippet_ends_with_the_auto_use_by_default() {
-    assert_eq!(last_statement(&InitOptions::default()), "\\nvm __auto use");
+    assert_eq!(
+        last_statement(Shell::Bash, &InitOptions::default()),
+        "\\nvm __auto use"
+    );
+    assert_eq!(
+        last_statement(Shell::Fish, &InitOptions::default()),
+        "nvm __auto use"
+    );
 }
 
 #[test]
@@ -103,7 +116,11 @@ fn install_makes_the_auto_step_install() {
         install: true,
         ..InitOptions::default()
     };
-    assert_eq!(last_statement(&options), "\\nvm __auto install");
+    assert_eq!(
+        last_statement(Shell::Bash, &options),
+        "\\nvm __auto install"
+    );
+    assert_eq!(last_statement(Shell::Fish, &options), "nvm __auto install");
 }
 
 #[test]
@@ -113,7 +130,63 @@ fn no_use_leaves_the_auto_step_out() {
             no_use: true,
             install,
         };
-        let text = snippet(Shell::Bash, &options);
-        assert!(!text.contains("nvm __auto "), "{text}");
+        for shell in [Shell::Bash, Shell::Fish] {
+            let text = snippet(shell, &options);
+            assert!(!text.contains("nvm __auto "), "{text}");
+        }
     }
+}
+
+#[test]
+fn the_fish_snippet_sets_the_shell_marker_and_the_nvm_dir_default() {
+    let text = snippet(Shell::Fish, &InitOptions::default());
+    assert!(text.contains("\nset -gx NVMRC_SHELL 1\n"), "{text}");
+    assert!(
+        text.contains(
+            "\ntest -n \"$NVM_DIR\"; or set -g NVM_DIR $HOME/.nvm\nset -gx NVM_DIR $NVM_DIR\n"
+        ),
+        "{text}"
+    );
+    assert!(!text.contains("export "), "{text}");
+}
+
+#[test]
+fn the_fish_function_captures_descriptor_3_and_names_its_dialect() {
+    let text = snippet(Shell::Fish, &InitOptions::default());
+    assert!(text.contains("\nfunction nvm "), "{text}");
+    assert!(
+        text.contains("if not contains -- \"$argv[1]\" use deactivate install i __auto\n"),
+        "{text}"
+    );
+    let capture = "NVMRC_SCRIPT_FD=3 NVMRC_SHELL_KIND=fish command nvm $argv 3>&1 1>&4 4>&- \
+                   | read -z nvmrc_code\n";
+    assert!(text.contains(capture), "{text}");
+    assert!(text.contains("set nvmrc_status $pipestatus[1]\n"), "{text}");
+    assert!(
+        text.contains("    end 4>&1\n    eval $nvmrc_code\n"),
+        "{text}"
+    );
+    assert!(text.contains("return $nvmrc_status\n"), "{text}");
+    assert_eq!(text.matches("NVMRC_SHELL_KIND").count(), 1, "{text}");
+}
+
+#[test]
+fn other_fish_commands_run_the_binary_untouched() {
+    let text = snippet(Shell::Fish, &InitOptions::default());
+    assert!(
+        text.contains("            command nvm $argv\n        end\n        return $status\n"),
+        "{text}"
+    );
+    assert_eq!(text.matches("command nvm $argv").count(), 2, "{text}");
+}
+
+#[test]
+fn fish_passes_the_variables_to_the_binary_only_when_set() {
+    let text = snippet(Shell::Fish, &InitOptions::default());
+    for passed in ["MANPATH", "NODE_PATH", "NVM_SYMLINK_CURRENT", "PREFIX"] {
+        let export = format!("set -q {passed}; and set -lx {passed} ${passed}\n");
+        assert_eq!(text.matches(&export).count(), 2, "{passed}: {text}");
+        assert!(!text.contains(&format!("{passed}=")), "{passed}: {text}");
+    }
+    assert!(!text.contains("@EXPORTS@"), "{text}");
 }

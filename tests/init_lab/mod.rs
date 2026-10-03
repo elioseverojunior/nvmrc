@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub const BINARY: &str = env!("CARGO_BIN_EXE_nvm");
-pub const SHELLS: [&str; 5] = ["bash", "zsh", "sh", "dash", "ksh"];
+pub const SHELLS: [&str; 6] = ["bash", "zsh", "sh", "dash", "ksh", "fish"];
 pub const USING_18: &str = "Now using node v18.20.4 (npm v10.7.0)\n";
 
 /// The absolute path of `name` on the `PATH` of the tests, if installed.
@@ -61,6 +61,12 @@ impl Lab {
         self
     }
 
+    /// An executable script at `relative` running `body`.
+    pub fn program(self, relative: &str, body: &str) -> Self {
+        script(&self.root.path().join(relative), body);
+        self
+    }
+
     /// Replaces the `npm` of `version` with a script running `body`.
     pub fn npm(self, version: &str, body: &str) -> Self {
         script(
@@ -87,6 +93,9 @@ impl Lab {
         let mut command = Command::new(shell);
         if shell.ends_with("zsh") {
             command.arg("-f");
+        }
+        if shell.ends_with("fish") {
+            command.arg("--no-config");
         }
         let output = command
             .args(["-c", commands])
@@ -116,6 +125,20 @@ pub fn each_shell(body: impl Fn(&str, &Path)) {
     }
 }
 
+/// `posix` for the POSIX shells, `fish` for fish.
+pub fn in_dialect<'a>(name: &str, posix: &'a str, fish: &'a str) -> &'a str {
+    if name == "fish" { fish } else { posix }
+}
+
+/// How the startup file of `name` loads the function: `eval "$(nvm init
+/// <shell>)"`, or `nvm init fish | source`.
+pub fn init_line(name: &str, options: &str) -> String {
+    match name {
+        "fish" => format!("nvm init fish{options} | source"),
+        _ => format!("eval \"$(nvm init {name}{options})\""),
+    }
+}
+
 pub fn with_function(name: &str, commands: &str) -> String {
-    format!("eval \"$(nvm init {name} --no-use)\"\n{commands}")
+    format!("{}\n{commands}", init_line(name, " --no-use"))
 }
