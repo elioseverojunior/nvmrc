@@ -8,7 +8,7 @@ use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::checksum::{compare, expected_digest};
 use crate::domain::mirror::{self, MirrorUrl};
-use crate::domain::version::Version;
+use crate::domain::version::{Flavor, Version};
 
 /// A failure whose messages are in the transcript already.
 #[derive(Debug, PartialEq, Eq)]
@@ -32,6 +32,26 @@ impl Artifact {
     pub fn of(context: &Context<'_>, version: &Version) -> Option<Self> {
         let slug = context.platform()?.download_slug(version);
         let directory = context.cache_dir().ok()?.join("bin").join(&slug);
+        let file_name = format!("{slug}.tar.gz");
+        let tarball = directory.join(&file_name);
+        Some(Self {
+            slug,
+            file_name,
+            directory,
+            tarball,
+        })
+    }
+
+    /// The source archive of `version`: `node-v20.10.0` in `.cache/src`, the
+    /// same for every platform.
+    #[must_use]
+    pub fn source_of(context: &Context<'_>, version: &Version) -> Option<Self> {
+        let flavor = match version.flavor {
+            Flavor::Node => "node",
+            Flavor::IoJs => "iojs",
+        };
+        let slug = format!("{flavor}-{}", version.directory_name());
+        let directory = context.cache_dir().ok()?.join("src").join(&slug);
         let file_name = format!("{slug}.tar.gz");
         let tarball = directory.join(&file_name);
         Some(Self {
@@ -71,30 +91,30 @@ fn sanitize(context: &Context<'_>, path: &Path) -> String {
 /// [`Failed`], after the transcript says why.
 pub fn fetch(
     context: &Context<'_>,
+    artifact: &Artifact,
     version: &Version,
     offline: bool,
     transcript: &mut Transcript,
 ) -> Result<PathBuf, Failed> {
-    let artifact = Artifact::of(context, version).ok_or(Failed)?;
     if offline {
-        return cached_only(context, &artifact, transcript);
+        return cached_only(context, artifact, transcript);
     }
     let mirror = mirror::from_env(context.env, version.flavor).map_err(|error| {
         transcript.err(error.to_string());
         Failed
     })?;
-    let expected = expected_checksum(context, &mirror, version, &artifact);
+    let expected = expected_checksum(context, &mirror, version, artifact);
     let files = artifact.files();
     context.fs.create_dir_all(&files).map_err(|_| {
         transcript.err(format!("creating directory {} failed", files.display()));
         Failed
     })?;
-    if reuse_cache(context, &artifact, &expected, transcript) {
-        return Ok(artifact.tarball);
+    if reuse_cache(context, artifact, &expected, transcript) {
+        return Ok(artifact.tarball.clone());
     }
-    download(context, &mirror, version, &artifact, transcript)?;
-    verify(context, &artifact, &expected, transcript)?;
-    Ok(artifact.tarball)
+    download(context, &mirror, version, artifact, transcript)?;
+    verify(context, artifact, &expected, transcript)?;
+    Ok(artifact.tarball.clone())
 }
 
 /// `--offline`: the cached archive, taken without a checksum, or nothing.

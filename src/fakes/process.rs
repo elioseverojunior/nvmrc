@@ -10,6 +10,7 @@ use crate::ports::{Completed, Invocation, Process, ProcessOutput};
 pub struct FakeProcess {
     outputs: BTreeMap<PathBuf, ProcessOutput>,
     executions: BTreeMap<(PathBuf, String), Completed>,
+    effects: BTreeMap<(PathBuf, String), Box<dyn Fn()>>,
     executed: RefCell<Vec<Invocation>>,
 }
 
@@ -52,8 +53,18 @@ impl FakeProcess {
             success: true,
             stdout: stdout.to_owned(),
             stderr: String::new(),
+            ..Completed::default()
         };
         self.with_execution(program, args, done)
+    }
+
+    /// Something that happens when `execute` runs `program` with exactly
+    /// `args`: a build that leaves files behind, say.
+    #[must_use]
+    pub fn with_effect(mut self, program: &str, args: &str, effect: impl Fn() + 'static) -> Self {
+        self.effects
+            .insert((PathBuf::from(program), args.to_owned()), Box::new(effect));
+        self
     }
 
     /// Every invocation `execute` was given, in order.
@@ -67,6 +78,9 @@ impl Process for FakeProcess {
     fn execute(&self, invocation: &Invocation) -> io::Result<Completed> {
         self.executed.borrow_mut().push(invocation.clone());
         let key = (invocation.program.clone(), invocation.args.join(" "));
+        if let Some(effect) = self.effects.get(&key) {
+            effect();
+        }
         self.executions
             .get(&key)
             .cloned()
@@ -95,6 +109,21 @@ mod tests {
         let other = Invocation::new("/n/bin/npm").args(&["list"]);
         assert!(process.execute(&other).is_err());
         assert_eq!(process.executed(), [invocation, other]);
+    }
+
+    #[test]
+    fn fake_process_runs_the_effect_of_an_invocation() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        let ran = Rc::new(Cell::new(0));
+        let seen = Rc::clone(&ran);
+        let process = FakeProcess::default()
+            .with_success("make", "install", "")
+            .with_effect("make", "install", move || seen.set(seen.get() + 1));
+        process
+            .execute(&Invocation::new("make").args(&["install"]))
+            .unwrap();
+        assert_eq!(ran.get(), 1);
     }
 
     #[test]

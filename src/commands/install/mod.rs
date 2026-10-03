@@ -2,6 +2,7 @@
 //! `$NVM_DIR/versions`. Only prebuilt binaries (`.tar.gz`) are installed; the
 //! install is not activated, which is the shell's job (`nvm use`).
 
+mod acquire;
 mod defaults;
 pub mod fetch;
 mod flow;
@@ -12,20 +13,18 @@ mod offline;
 pub mod options;
 pub mod place;
 mod resolve;
-
-use std::time::SystemTime;
+mod source;
 
 use crate::commands::Output;
 use crate::commands::npm::packages::Source;
 use crate::commands::resolve::{Resolved, resolve_installed};
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
-use crate::domain::platform::binary_available;
-use crate::domain::version::{Flavor, Version};
+use crate::domain::source_build::natural_jobs;
+use crate::domain::version::Version;
 use crate::domain::version_prefix::with_v_prefix;
 use crate::error::{CliError, NvmExitCode};
 use flow::{Halt, Step, Target};
-use lock::{LockRequest, acquire};
 use options::Options;
 use resolve::{check_floor, resolve};
 
@@ -33,7 +32,6 @@ const USAGE: &str = "No version provided and no .nvmrc file found\n\
 Usage: nvm install [<version>]\n  \
 Provide a <version>, or run from a directory containing an .nvmrc file.\n  \
 Run `nvm --help` for full help.";
-const DEFAULT_LOCK_TIMEOUT_SECONDS: u64 = 600;
 
 /// # Errors
 /// As [`options::parse`], [`CliError::Usage`] without a version, and
@@ -48,7 +46,9 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
     }
 }
 
-fn install(context: &Context<'_>, options: &Options, transcript: &mut Transcript) -> Step<()> {
+fn install(context: &Context<'_>, given: &Options, transcript: &mut Transcript) -> Step<()> {
+    let make_jobs = requested_jobs(given, transcript);
+    let options = &no_source_fallback(context, given)?;
     announce(options, transcript)?;
     let version = resolve(context, options, transcript)?;
     check_floor(context, &version, transcript)?;
@@ -58,6 +58,7 @@ fn install(context: &Context<'_>, options: &Options, transcript: &mut Transcript
         version,
         path,
         source,
+        make_jobs,
     };
     if place::is_valid_install(context, &target.path) {
         already_installed(context, options, &target, transcript)
@@ -95,13 +96,7 @@ fn fresh_install(
     target: &Target,
     transcript: &mut Transcript,
 ) -> Step<()> {
-    install_binary(
-        context,
-        &target.version,
-        &target.path,
-        options.offline,
-        transcript,
-    )?;
+    acquire::acquire(context, options, target, transcript)?;
     apply_alias(context, options, transcript)?;
     if !place::is_valid_install(context, &target.path) {
         let message = format!(
@@ -148,6 +143,35 @@ fn reinstall_source(
     }
 }
 
+/// `-j`: what `nvm.sh` says when the option is read, and the number if it is
+/// a natural one.
+fn requested_jobs(options: &Options, transcript: &mut Transcript) -> Option<usize> {
+    let text = options.make_jobs.as_deref()?;
+    let jobs = natural_jobs(text);
+    match jobs {
+        Some(jobs) => transcript.out(format!("number of `make` jobs: {jobs}")),
+        None if !text.is_empty() => transcript.err(format!(
+            "{text} is invalid for number of `make` jobs, must be a natural number"
+        )),
+        None => {}
+    }
+    jobs
+}
+
+/// `NVM_NO_SOURCE_FALLBACK=1` is `-b` for every install, and is at odds with
+/// `-s`.
+fn no_source_fallback(context: &Context<'_>, given: &Options) -> Step<Options> {
+    let mut options = given.clone();
+    if context.env.var("NVM_NO_SOURCE_FALLBACK").as_deref() == Some("1") && !options.no_source {
+        if options.no_binary {
+            let message = "-s cannot be combined with NVM_NO_SOURCE_FALLBACK=1 since that would skip install from both binary and source";
+            return Err(Halt::Error(CliError::InvalidOptions(message.to_owned())));
+        }
+        options.no_source = true;
+    }
+    Ok(options)
+}
+
 /// The install ends with the status of its last step.
 fn end_with(status: NvmExitCode) -> Step<()> {
     match status {
@@ -186,74 +210,6 @@ fn announce(options: &Options, transcript: &mut Transcript) -> Step<()> {
         _ => {}
     }
     Ok(())
-}
-
-/// Everything from the lock to the unpacked directory.
-fn install_binary(
-    context: &Context<'_>,
-    version: &Version,
-    version_path: &std::path::Path,
-    offline: bool,
-    transcript: &mut Transcript,
-) -> Step<()> {
-    let unavailable = !binary_available(version)
-        || context.platform().is_none()
-        || (version.flavor == Flavor::Node && version.triple() < (0, 12, 0));
-    if unavailable {
-        transcript.err(format!("Binary download is not available for {version}"));
-        return Err(Halt::Exit(NvmExitCode::InvalidVersion));
-    }
-    let _lock = take_lock(context, version, transcript)?;
-    let name = match version.flavor {
-        Flavor::Node => "node",
-        Flavor::IoJs => "io.js",
-    };
-    transcript.out(format!(
-        "Downloading and installing {name} {}...",
-        version.directory_name()
-    ));
-    let tarball = fetch::fetch(context, version, offline, transcript)
-        .map_err(|_| binary_failed(transcript))?;
-    let artifact =
-        fetch::Artifact::of(context, version).ok_or_else(|| binary_failed(transcript))?;
-    place::place(context, &tarball, &artifact.files(), version_path).map_err(|message| {
-        transcript.err(message);
-        binary_failed(transcript)
-    })
-}
-
-fn binary_failed(transcript: &mut Transcript) -> Halt {
-    transcript.err("Binary download failed. Download from source aborted.");
-    Halt::Exit(NvmExitCode::MissingTarget)
-}
-
-fn take_lock<'a>(
-    context: &'a Context<'_>,
-    version: &Version,
-    transcript: &mut Transcript,
-) -> Step<Option<lock::InstallLock<'a>>> {
-    let number = |name: &str, default: u64| {
-        context
-            .env
-            .var(name)
-            .and_then(|text| text.trim().parse().ok())
-            .unwrap_or(default)
-    };
-    let root = context.cache_dir()?.join("locks");
-    let text = version.to_string();
-    let request = LockRequest {
-        root: &root,
-        version: &text,
-        timeout_seconds: number("NVM_INSTALL_LOCK_TIMEOUT", DEFAULT_LOCK_TIMEOUT_SECONDS),
-        stale_minutes: number("NVM_INSTALL_LOCK_STALE", 0),
-        now: SystemTime::now(),
-    };
-    let mut notes = Vec::new();
-    let lock = acquire(context.fs, context.sleeper(), &request, &mut notes);
-    for note in notes {
-        transcript.err(note);
-    }
-    Ok(lock?)
 }
 
 #[cfg(test)]

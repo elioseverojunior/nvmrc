@@ -8,6 +8,10 @@ const TARBALL: &str =
     "/home/me/.nvm/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.gz";
 const GOOD: &str = "aa11";
 
+fn artifact_of(context: &Context<'_>) -> Artifact {
+    Artifact::of(context, &version()).unwrap()
+}
+
 fn version() -> Version {
     "v20.10.0".parse().unwrap()
 }
@@ -31,7 +35,13 @@ fn run(
     let env = env();
     let context = Context::new(fs, &env).with_http(http).with_digest(digest);
     let mut transcript = Transcript::default();
-    let result = fetch(&context, &version(), false, &mut transcript);
+    let result = fetch(
+        &context,
+        &artifact_of(&context),
+        &version(),
+        false,
+        &mut transcript,
+    );
     (result, transcript)
 }
 
@@ -167,7 +177,13 @@ fn a_mirror_that_is_not_a_url_is_reported_and_nothing_is_requested() {
         .with_digest(&digest);
     let mut transcript = Transcript::default();
     assert_eq!(
-        fetch(&context, &version(), false, &mut transcript),
+        fetch(
+            &context,
+            &artifact_of(&context),
+            &version(),
+            false,
+            &mut transcript
+        ),
         Err(Failed)
     );
     assert!(stderr(transcript)[0].contains("may only contain a URL"));
@@ -194,7 +210,13 @@ fn offline(fs: &FakeFileSystem, http: &FakeHttp) -> (Result<PathBuf, Failed>, Tr
     let digest = FakeDigest::default();
     let context = Context::new(fs, &env).with_http(http).with_digest(&digest);
     let mut transcript = Transcript::default();
-    let result = fetch(&context, &version(), true, &mut transcript);
+    let result = fetch(
+        &context,
+        &artifact_of(&context),
+        &version(),
+        true,
+        &mut transcript,
+    );
     (result, transcript)
 }
 
@@ -221,5 +243,48 @@ fn offline_without_a_cached_archive_fails_naming_the_slug() {
     assert_eq!(
         stderr(transcript),
         ["Offline: no cached archive found for node-v20.10.0-linux-x64"]
+    );
+}
+
+#[test]
+fn a_source_archive_is_named_after_the_version_alone_and_lives_in_the_src_cache() {
+    let fs = FakeFileSystem::default();
+    let env = env();
+    let context = Context::new(&fs, &env);
+    let artifact = Artifact::source_of(&context, &version()).unwrap();
+    assert_eq!(artifact.slug, "node-v20.10.0");
+    assert_eq!(artifact.file_name, "node-v20.10.0.tar.gz");
+    assert_eq!(
+        artifact.tarball,
+        PathBuf::from("/home/me/.nvm/.cache/src/node-v20.10.0/node-v20.10.0.tar.gz")
+    );
+    let iojs = Artifact::source_of(&context, &"iojs-v3.3.1".parse().unwrap()).unwrap();
+    assert_eq!(iojs.slug, "iojs-v3.3.1");
+}
+
+#[test]
+fn a_source_archive_is_downloaded_and_checked_like_a_binary_one() {
+    let fs = FakeFileSystem::default();
+    let url = "http://127.0.0.1:1/v20.10.0/node-v20.10.0.tar.gz";
+    let sums_text = format!("{GOOD}  node-v20.10.0.tar.gz\n");
+    let http = FakeHttp::default()
+        .with_body(SUMS, &sums_text)
+        .with_bytes(url, b"source");
+    let tarball = "/home/me/.nvm/.cache/src/node-v20.10.0/node-v20.10.0.tar.gz";
+    let digest = FakeDigest::default().with_digest(tarball, GOOD);
+    let env = env();
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_digest(&digest);
+    let artifact = Artifact::source_of(&context, &version()).unwrap();
+    let mut transcript = Transcript::default();
+    let got = fetch(&context, &artifact, &version(), false, &mut transcript).unwrap();
+    assert_eq!(got, PathBuf::from(tarball));
+    assert_eq!(
+        stderr(transcript),
+        [
+            format!("Downloading {url}..."),
+            "Checksums matched!".to_owned()
+        ]
     );
 }

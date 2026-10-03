@@ -77,6 +77,7 @@ fn lines(text: &str) -> Vec<&str> {
 mod failures;
 mod npm;
 mod offline_and_save;
+mod source;
 
 #[test]
 fn a_fresh_install_downloads_unpacks_and_makes_the_default_alias() {

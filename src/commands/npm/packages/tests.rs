@@ -113,6 +113,7 @@ fn the_status_is_that_of_the_last_link() {
         success: false,
         stdout: String::new(),
         stderr: String::new(),
+        ..Completed::default()
     };
     let process = FakeProcess::default()
         .with_success(

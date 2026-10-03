@@ -67,6 +67,7 @@ fn run_passes_the_output_on_and_says_whether_it_worked() {
         success: false,
         stdout: "out1\nout2\n".to_owned(),
         stderr: "oops\n".to_owned(),
+        ..Completed::default()
     };
     let process = FakeProcess::default().with_execution(NPM, "install -g left-pad", done);
     let context = context(&fs, &env, &process);
@@ -107,6 +108,7 @@ fn output_returns_what_a_failing_run_printed_too() {
         success: false,
         stdout: "tree\n".to_owned(),
         stderr: String::new(),
+        ..Completed::default()
     };
     let process = FakeProcess::default().with_execution(NPM, "list -g --depth=0", done);
     let context = context(&fs, &env, &process);

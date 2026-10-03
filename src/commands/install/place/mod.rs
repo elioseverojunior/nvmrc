@@ -41,15 +41,7 @@ pub fn place(
     version_path: &Path,
 ) -> Result<(), String> {
     let fs = context.fs;
-    fs.remove_dir_all(files)
-        .map_err(|error| error.to_string())?;
-    fs.create_dir_all(files)
-        .map_err(|error| error.to_string())?;
-    context
-        .archive()
-        .extract(tarball, files)
-        .map_err(|error| error.to_string())?;
-    let top = single_directory(context, files)?;
+    let top = unpack(context, tarball, files)?;
     fs.remove_dir_all(version_path)
         .map_err(|error| error.to_string())?;
     if let Some(parent) = version_path.parent() {
@@ -60,6 +52,24 @@ pub fn place(
         .map_err(|error| error.to_string())?;
     let _ = fs.remove_dir_all(files);
     Ok(())
+}
+
+/// Unpacks `tarball` into an empty `files` and returns the one directory the
+/// archive holds.
+///
+/// # Errors
+/// What went wrong, as a message for stderr.
+pub fn unpack(context: &Context<'_>, tarball: &Path, files: &Path) -> Result<PathBuf, String> {
+    let fs = context.fs;
+    fs.remove_dir_all(files)
+        .map_err(|error| error.to_string())?;
+    fs.create_dir_all(files)
+        .map_err(|error| error.to_string())?;
+    context
+        .archive()
+        .extract(tarball, files)
+        .map_err(|error| error.to_string())?;
+    single_directory(context, files)
 }
 
 /// The only entry of `directory`, which must be a directory: the archive's

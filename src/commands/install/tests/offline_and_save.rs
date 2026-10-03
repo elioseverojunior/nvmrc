@@ -70,7 +70,7 @@ fn offline_lts_needs_the_local_alias_and_then_the_installed_or_cached_version() 
 #[test]
 fn offline_with_a_missing_archive_fails_like_a_failed_download() {
     let world = offline_world(FakeFileSystem::default().with_dir("/n/.cache/src/node-v20.10.0"));
-    let output = world.run("--offline 20").unwrap();
+    let output = world.run("--offline -b 20").unwrap();
     assert_eq!(output.status, NvmExitCode::MissingTarget);
     assert!(
         output

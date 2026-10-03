@@ -100,9 +100,10 @@ fn offline_and_save_are_read_before_the_version() {
 }
 
 #[test]
-fn save_after_the_version_is_ignored_like_nvm_sh_does() {
+fn save_after_the_version_is_not_an_option_like_in_nvm_sh() {
     let options = parsed("20 --save -w").unwrap();
     assert!(!options.save);
+    assert_eq!(options.extra, ["--save", "-w"]);
     assert_eq!(options.version, "20");
 }
 
@@ -164,7 +165,7 @@ fn default_and_alias_together_or_twice_are_status_6() {
 
 #[test]
 fn harmless_options_are_accepted() {
-    let options = parsed("-b --no-progress 20").unwrap();
+    let options = parsed("--no-progress 20").unwrap();
     assert_eq!(options.version, "20");
 }
 
@@ -179,15 +180,35 @@ fn three_dashes_are_a_typo_with_status_55() {
 }
 
 #[test]
-fn options_that_need_a_source_build_or_npm_are_not_supported_yet() {
-    for line in ["-s 20", "-j 4 20"] {
+fn s_b_and_j_choose_how_to_build() {
+    assert!(parsed("-s 20").unwrap().no_binary);
+    assert!(parsed("-b 20").unwrap().no_source);
+    let jobs = parsed("-j 4 20").unwrap();
+    assert_eq!(
+        (jobs.make_jobs.as_deref(), jobs.version.as_str()),
+        (Some("4"), "20")
+    );
+    assert_eq!(parsed("-j").unwrap().make_jobs.as_deref(), Some(""));
+}
+
+#[test]
+fn s_and_b_together_are_status_6() {
+    for line in ["-s -b 20", "-b -s 20"] {
         let error = parsed(line).unwrap_err();
-        assert_eq!(error.exit_code(), NvmExitCode::UnsupportedOption, "{line}");
-        assert!(
-            error.to_string().ends_with("is not supported yet."),
-            "{line}"
+        assert_eq!(error.exit_code(), NvmExitCode::InvalidOptions, "{line}");
+        assert_eq!(
+            error.to_string(),
+            "-s and -b cannot be set together since they would skip install from both binary and source"
         );
     }
+}
+
+#[test]
+fn the_words_after_the_version_that_no_option_takes_go_to_configure() {
+    let options = parsed("-s 20 --with-intl=full-icu --save --ninja").unwrap();
+    assert_eq!(options.extra, ["--with-intl=full-icu", "--save", "--ninja"]);
+    assert!(!options.save);
+    assert!(parsed("20").unwrap().extra.is_empty());
 }
 
 #[test]

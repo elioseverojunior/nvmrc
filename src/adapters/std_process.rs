@@ -52,6 +52,7 @@ impl Process for StdProcess {
         let status = child.wait()?;
         Ok(Completed {
             success: status.success(),
+            code: status.code(),
             stdout: stdout.join().unwrap_or_default(),
             stderr: stderr.join().unwrap_or_default(),
         })

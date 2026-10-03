@@ -14,7 +14,8 @@ pub struct Jobs {
 }
 
 /// `nvm_is_natural_num`: digits, and not zero.
-fn natural(text: &str) -> Option<usize> {
+#[must_use]
+pub fn natural_jobs(text: &str) -> Option<usize> {
     let number: usize = text.parse().ok()?;
     (number > 0 && text.bytes().all(|byte| byte.is_ascii_digit())).then_some(number)
 }
@@ -28,7 +29,7 @@ pub fn jobs(requested: Option<&str>, cores: Option<usize>) -> Jobs {
         stdout: Vec::new(),
         stderr: Vec::new(),
     };
-    if let Some(number) = requested.and_then(natural) {
+    if let Some(number) = requested.and_then(natural_jobs) {
         said.jobs = number;
         said.stdout.push(format!("number of `make` jobs: {number}"));
         return said;

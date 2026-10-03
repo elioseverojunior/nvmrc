@@ -1,17 +1,16 @@
 //! The command line of `nvm install`, as `nvm.sh` reads it: options first,
 //! then the version (or `lts/*`, `lts/<name>`). What follows the version is
 //! looked at only for `--skip-default-packages` and the two options that name
-//! a version to take packages from; `--save` there, like any other word, is
-//! ignored, as in `nvm.sh`.
+//! a version to take packages from; every other word there (and `--save` is
+//! one) is handed to `./configure` when the version is built from source, as
+//! in `nvm.sh`.
 
 use crate::error::CliError;
 
-/// Options that need a source build: not in this port yet.
-const NOT_YET: [&str; 2] = ["-s", "-j"];
 /// Both options mean the same; `nvm.sh` words its messages after the one used.
 const REINSTALL_OPTIONS: [&str; 2] = ["--reinstall-packages-from", "--copy-packages-from"];
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Options {
     /// The version, partial version or alias: what follows the options.
     pub version: String,
@@ -35,11 +34,19 @@ pub struct Options {
     pub offline: bool,
     /// `--save` or `-w`: write the version to `.nvmrc` in the current directory.
     pub save: bool,
+    /// `-s`: build from source, whatever there is a binary for.
+    pub no_binary: bool,
+    /// `-b`: never build from source, not even when the binary fails.
+    pub no_source: bool,
+    /// `-j <jobs>`: how many `make` jobs, as given.
+    pub make_jobs: Option<String>,
+    /// The words after the version that no option takes: arguments for
+    /// `./configure`.
+    pub extra: Vec<String>,
 }
 
-fn unsupported(option: &str) -> CliError {
-    CliError::Unsupported(format!("The option \"{option}\" is not supported yet."))
-}
+pub const BOTH_OFF: &str =
+    "-s and -b cannot be set together since they would skip install from both binary and source";
 
 fn already_given() -> CliError {
     let message =
@@ -88,7 +95,10 @@ pub fn parse(args: &[String]) -> Result<Options, CliError> {
     let mut rest = args.iter().peekable();
     while let Some(option) = rest.next_if(|arg| is_option(arg)) {
         match option.as_str() {
-            "-b" | "--no-progress" => {}
+            "--no-progress" => {}
+            "-s" => set_build_mode(&mut options, true)?,
+            "-b" => set_build_mode(&mut options, false)?,
+            "-j" => options.make_jobs = Some(rest.next().cloned().unwrap_or_default()),
             "--latest-npm" => options.latest_npm = true,
             "--offline" => options.offline = true,
             "--save" | "-w" => set_save(&mut options)?,
@@ -105,8 +115,9 @@ pub fn parse(args: &[String]) -> Result<Options, CliError> {
                 let message = "arguments with `---` are not supported - this is likely a typo";
                 return Err(CliError::Unsupported(message.to_owned()));
             }
-            other if read_reinstall(&mut options, other)? => {}
-            other => return Err(unsupported(other)),
+            other => {
+                read_reinstall(&mut options, other)?;
+            }
         }
     }
     if let Some(version) = rest.next() {
@@ -116,8 +127,8 @@ pub fn parse(args: &[String]) -> Result<Options, CliError> {
     for option in rest {
         if option == "--skip-default-packages" {
             options.skip_default_packages = true;
-        } else {
-            read_reinstall(&mut options, option)?;
+        } else if !read_reinstall(&mut options, option)? {
+            options.extra.push(option.clone());
         }
     }
     options.announce_lts = options.lts.is_some() && options.version.is_empty();
@@ -129,7 +140,9 @@ pub fn parse(args: &[String]) -> Result<Options, CliError> {
 fn is_option(arg: &str) -> bool {
     matches!(
         arg,
-        "-b" | "--no-progress"
+        "-b" | "-s"
+            | "-j"
+            | "--no-progress"
             | "--lts"
             | "--default"
             | "--latest-npm"
@@ -140,8 +153,19 @@ fn is_option(arg: &str) -> bool {
     ) || arg.starts_with("--lts=")
         || arg.starts_with("--alias=")
         || arg.starts_with("---")
-        || NOT_YET.contains(&arg)
         || reinstall_option(arg).is_some()
+}
+
+fn set_build_mode(options: &mut Options, binary_off: bool) -> Result<(), CliError> {
+    if (binary_off && options.no_source) || (!binary_off && options.no_binary) {
+        return Err(CliError::InvalidOptions(BOTH_OFF.to_owned()));
+    }
+    if binary_off {
+        options.no_binary = true;
+    } else {
+        options.no_source = true;
+    }
+    Ok(())
 }
 
 fn set_save(options: &mut Options) -> Result<(), CliError> {

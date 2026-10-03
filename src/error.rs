@@ -8,33 +8,62 @@ use thiserror::Error;
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum NvmExitCode {
     #[default]
-    Success = 0,
-    Failure = 1,
-    InvalidVersion = 3,
-    BelowVersionFloor = 7,
-    AliasLoop = 8,
+    Success,
+    Failure,
+    InvalidVersion,
+    BelowVersionFloor,
+    AliasLoop,
     /// Something that was asked for does not exist: an `lts/<name>` alias, or
     /// the archive of a version whose download failed.
-    MissingTarget = 2,
+    MissingTarget,
     /// `nvm install --reinstall-packages-from` the very version being
     /// installed.
-    SameVersion = 4,
+    SameVersion,
     /// `nvm install --reinstall-packages-from` a version that is not
     /// installed.
-    SourceNotInstalled = 5,
+    SourceNotInstalled,
     /// Options that cannot be combined, or given twice.
-    InvalidOptions = 6,
+    InvalidOptions,
+    /// `NVM_INSTALL_THIRD_PARTY_HOOK` succeeded and installed nothing.
+    HookClaimedSuccess,
     /// An option `nvm.sh` does not support, or one used in a combination it
     /// does not support.
-    UnsupportedOption = 55,
+    UnsupportedOption,
     /// A usage error, or a requested system version that does not exist.
-    NotFound = 127,
+    NotFound,
+    /// The status of a program that `nvm` ran and passes on, such as the
+    /// third-party install hook.
+    Passed(u8),
 }
 
 impl NvmExitCode {
     #[must_use]
     pub fn code(self) -> u8 {
-        self as u8
+        match self {
+            Self::Success => 0,
+            Self::Failure => 1,
+            Self::MissingTarget => 2,
+            Self::InvalidVersion => 3,
+            Self::SameVersion => 4,
+            Self::SourceNotInstalled => 5,
+            Self::InvalidOptions => 6,
+            Self::BelowVersionFloor => 7,
+            Self::AliasLoop => 8,
+            Self::HookClaimedSuccess => 33,
+            Self::UnsupportedOption => 55,
+            Self::NotFound => 127,
+            Self::Passed(code) => code,
+        }
+    }
+
+    /// The status of a program that ran: 1 when it has none (a signal).
+    #[must_use]
+    pub fn passing_on(code: Option<i32>) -> Self {
+        match code.and_then(|code| u8::try_from(code).ok()) {
+            Some(0) => Self::Success,
+            Some(code) => Self::Passed(code),
+            None => Self::Failure,
+        }
     }
 }
 
@@ -137,8 +166,19 @@ mod tests {
         assert_eq!(NvmExitCode::SameVersion.code(), 4);
         assert_eq!(NvmExitCode::SourceNotInstalled.code(), 5);
         assert_eq!(NvmExitCode::InvalidOptions.code(), 6);
+        assert_eq!(NvmExitCode::HookClaimedSuccess.code(), 33);
+        assert_eq!(NvmExitCode::Passed(7).code(), 7);
         assert_eq!(NvmExitCode::UnsupportedOption.code(), 55);
         assert_eq!(NvmExitCode::NotFound.code(), 127);
+    }
+
+    #[test]
+    fn a_program_that_ran_passes_its_status_on() {
+        assert_eq!(NvmExitCode::passing_on(Some(7)), NvmExitCode::Passed(7));
+        assert_eq!(NvmExitCode::passing_on(Some(0)), NvmExitCode::Success);
+        assert_eq!(NvmExitCode::passing_on(None), NvmExitCode::Failure);
+        assert_eq!(NvmExitCode::passing_on(Some(-1)), NvmExitCode::Failure);
+        assert_eq!(NvmExitCode::passing_on(Some(300)), NvmExitCode::Failure);
     }
 
     #[test]

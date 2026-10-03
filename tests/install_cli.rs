@@ -200,7 +200,7 @@ fn a_wrong_checksum_installs_nothing_and_exits_2() {
         return;
     };
     let home = tempfile::tempdir().unwrap();
-    let output = nvm(home.path(), &mirror, &["install", "20"]);
+    let output = nvm(home.path(), &mirror, &["install", "-b", "20"]);
     assert_eq!(output.status.code(), Some(2));
     assert!(stderr(&output).contains("Checksums do not match:"));
     assert!(stderr(&output).ends_with("Binary download failed. Download from source aborted.\n"));

@@ -30,4 +30,6 @@ pub struct Target {
     pub path: PathBuf,
     /// Where `--reinstall-packages-from` takes packages from.
     pub source: Option<Source>,
+    /// `make -j`, from `-j` when it is a natural number.
+    pub make_jobs: Option<usize>,
 }

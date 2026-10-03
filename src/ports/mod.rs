@@ -146,6 +146,8 @@ impl Invocation {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Completed {
     pub success: bool,
+    /// The exit status, when the program ended by itself.
+    pub code: Option<i32>,
     pub stdout: String,
     pub stderr: String,
 }

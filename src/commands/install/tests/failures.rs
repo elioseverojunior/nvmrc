@@ -57,7 +57,7 @@ fn a_failed_download_is_status_2_and_installs_nothing() {
         .with_body(NODE_INDEX, &index_text(&[("v20.10.0", "Iron")]))
         .with_body(IOJS_INDEX, &index_text(&[]))
         .with_status(TARBALL_URL, 404);
-    let output = world.run("20").unwrap();
+    let output = world.run("-b 20").unwrap();
     assert_eq!(output.status, NvmExitCode::MissingTarget);
     assert!(
         output
@@ -71,7 +71,7 @@ fn a_failed_download_is_status_2_and_installs_nothing() {
 fn a_wrong_checksum_is_status_2_and_installs_nothing() {
     let mut world = World::new();
     world.digest = FakeDigest::default().with_digest(TARBALL, "bad0");
-    let output = world.run("20").unwrap();
+    let output = world.run("-b 20").unwrap();
     assert_eq!(output.status, NvmExitCode::MissingTarget);
     assert!(
         output
@@ -89,7 +89,7 @@ fn a_machine_without_binaries_is_status_3() {
         .with_http(&world.http)
         .with_archive(&archive)
         .with_platform(None);
-    let output = super::run(&context, &["20".to_owned()]).unwrap();
+    let output = super::run(&context, &["-b".to_owned(), "20".to_owned()]).unwrap();
     assert_eq!(output.status, NvmExitCode::InvalidVersion);
     assert_eq!(
         output.stderr,

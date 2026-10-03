@@ -16,6 +16,7 @@ fn target(source: Option<Source>) -> Target {
         version: version(),
         path: Path::new(PATH).to_path_buf(),
         source,
+        make_jobs: None,
     }
 }
 
@@ -110,6 +111,7 @@ fn a_failed_package_install_is_status_1_with_the_hint() {
         success: false,
         stdout: String::new(),
         stderr: "E404\n".to_owned(),
+        ..Completed::default()
     };
     let process = FakeProcess::default().with_execution(NPM, "install -g --quiet yarn", failed);
     let (status, _, stderr) = run_steps(&world(Some("yarn\n")), &process, &options(false, false));

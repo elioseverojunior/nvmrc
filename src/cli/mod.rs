@@ -8,6 +8,7 @@ use clap::{Parser, Subcommand};
 
 use crate::adapters::retrying_http::RetryingHttp;
 use crate::adapters::sha256_digest::Sha256Digest;
+use crate::adapters::std_cpu::StdCpu;
 use crate::adapters::std_env::StdEnv;
 use crate::adapters::std_fs::StdFileSystem;
 use crate::adapters::std_process::StdProcess;
@@ -208,6 +209,7 @@ pub fn run_from_env() -> u8 {
         .with_digest(&Sha256Digest)
         .with_archive(&TarGzArchive)
         .with_sleeper(&StdSleeper)
+        .with_cpu(&StdCpu)
         .with_platform(platform);
     run(
         std::env::args_os(),
