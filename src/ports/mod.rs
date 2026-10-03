@@ -32,6 +32,13 @@ pub trait FileSystem {
     /// Propagates the underlying I/O error (for example when `path` is missing).
     fn remove_file(&self, path: &Path) -> io::Result<()>;
 
+    /// Removes `path` and everything under it, like `rm -rf`: a path that is
+    /// missing is fine.
+    ///
+    /// # Errors
+    /// Propagates the underlying I/O error.
+    fn remove_dir_all(&self, path: &Path) -> io::Result<()>;
+
     /// Creates or replaces the file at `path`.
     ///
     /// # Errors

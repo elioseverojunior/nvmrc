@@ -1,5 +1,6 @@
 pub mod alias;
 pub mod aliases;
+pub mod cache;
 pub mod current;
 pub mod ls;
 pub mod ls_remote;

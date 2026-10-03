@@ -77,6 +77,14 @@ impl FileSystem for FakeFileSystem {
             .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
     }
 
+    fn remove_dir_all(&self, path: &Path) -> io::Result<()> {
+        self.files
+            .borrow_mut()
+            .retain(|file, _| !file.starts_with(path));
+        self.dirs.borrow_mut().retain(|dir| !dir.starts_with(path));
+        Ok(())
+    }
+
     fn write_file(&self, path: &Path, contents: &str) -> io::Result<()> {
         self.files
             .borrow_mut()
@@ -111,6 +119,17 @@ mod tests {
         assert_eq!(root, [entry("a", true), entry("b", false)]);
         let nested = fs.read_dir(Path::new("/d/a")).unwrap();
         assert_eq!(nested, [entry("x", false), entry("y", false)]);
+    }
+
+    #[test]
+    fn fake_file_system_removes_a_whole_tree_and_not_its_siblings() {
+        let fs = FakeFileSystem::default()
+            .with_file("/d/a/x", "1")
+            .with_dir("/d/a/empty")
+            .with_file("/d/ab", "2");
+        fs.remove_dir_all(Path::new("/d/a")).unwrap();
+        assert_eq!(fs.read_dir(Path::new("/d")).unwrap(), [entry("ab", false)]);
+        fs.remove_dir_all(Path::new("/d/missing")).unwrap();
     }
 
     #[test]

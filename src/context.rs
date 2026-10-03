@@ -79,6 +79,14 @@ impl Context<'_> {
         Ok(self.nvm_dir()?.join("alias"))
     }
 
+    /// `$NVM_DIR/.cache`, where downloads are kept.
+    ///
+    /// # Errors
+    /// Returns [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
+    pub fn cache_dir(&self) -> Result<PathBuf, CliError> {
+        Ok(self.nvm_dir()?.join(".cache"))
+    }
+
     /// The alias files under `$NVM_DIR/alias`.
     ///
     /// # Errors
