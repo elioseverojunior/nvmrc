@@ -3,7 +3,7 @@
 use std::ffi::OsString;
 use std::io;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use thiserror::Error;
 
@@ -12,6 +12,16 @@ use thiserror::Error;
 pub struct DirEntry {
     pub name: String,
     pub is_dir: bool,
+}
+
+/// What a path is, following symlinks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FileInfo {
+    pub is_dir: bool,
+    pub len: u64,
+    /// Any execute permission bit is set (always true off Unix).
+    pub executable: bool,
+    pub modified: Option<SystemTime>,
 }
 
 pub trait FileSystem {
@@ -44,6 +54,30 @@ pub trait FileSystem {
     /// # Errors
     /// Propagates the underlying I/O error.
     fn write_file(&self, path: &Path, contents: &str) -> io::Result<()>;
+
+    /// Like [`Self::write_file`], for contents that are not text.
+    ///
+    /// # Errors
+    /// Propagates the underlying I/O error.
+    fn write_bytes(&self, path: &Path, contents: &[u8]) -> io::Result<()>;
+
+    /// # Errors
+    /// Propagates the underlying I/O error (for example when `path` is missing).
+    fn file_info(&self, path: &Path) -> io::Result<FileInfo>;
+
+    /// Moves a file or a directory (with everything in it) to `to`, which must
+    /// not exist.
+    ///
+    /// # Errors
+    /// Propagates the underlying I/O error.
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()>;
+
+    /// Creates one directory, failing with `AlreadyExists` when it is there:
+    /// the atomic step a lock is made of.
+    ///
+    /// # Errors
+    /// Propagates the underlying I/O error.
+    fn create_dir(&self, path: &Path) -> io::Result<()>;
 
     /// Creates `path` and any missing parents; fine if it already exists.
     ///

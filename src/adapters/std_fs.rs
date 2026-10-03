@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use crate::ports::{DirEntry, FileSystem};
+use crate::ports::{DirEntry, FileInfo, FileSystem};
 
 pub struct StdFileSystem;
 
@@ -44,9 +44,42 @@ impl FileSystem for StdFileSystem {
         fs::write(path, contents)
     }
 
+    fn write_bytes(&self, path: &Path, contents: &[u8]) -> io::Result<()> {
+        fs::write(path, contents)
+    }
+
+    fn file_info(&self, path: &Path) -> io::Result<FileInfo> {
+        let metadata = fs::metadata(path)?;
+        Ok(FileInfo {
+            is_dir: metadata.is_dir(),
+            len: metadata.len(),
+            executable: is_executable(&metadata),
+            modified: metadata.modified().ok(),
+        })
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        fs::rename(from, to)
+    }
+
+    fn create_dir(&self, path: &Path) -> io::Result<()> {
+        fs::create_dir(path)
+    }
+
     fn create_dir_all(&self, path: &Path) -> io::Result<()> {
         fs::create_dir_all(path)
     }
+}
+
+#[cfg(unix)]
+fn is_executable(metadata: &fs::Metadata) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    metadata.permissions().mode() & 0o111 != 0
+}
+
+#[cfg(not(unix))]
+fn is_executable(_metadata: &fs::Metadata) -> bool {
+    true
 }
 
 #[cfg(test)]
@@ -77,5 +110,54 @@ mod tests {
         std::os::unix::fs::symlink(&target, &link).unwrap();
         StdFileSystem.remove_dir_all(&link).unwrap();
         assert!(!link.exists() && target.exists());
+    }
+
+    #[test]
+    fn file_info_tells_size_kind_and_executability() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("tool");
+        fs::write(&file, "abc").unwrap();
+        let info = StdFileSystem.file_info(&file).unwrap();
+        assert_eq!((info.is_dir, info.len), (false, 3));
+        assert!(info.modified.is_some());
+        assert!(StdFileSystem.file_info(root.path()).unwrap().is_dir);
+        assert!(
+            StdFileSystem
+                .file_info(&root.path().join("missing"))
+                .is_err()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn file_info_sees_the_execute_bit() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("tool");
+        fs::write(&file, "x").unwrap();
+        assert!(!StdFileSystem.file_info(&file).unwrap().executable);
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(StdFileSystem.file_info(&file).unwrap().executable);
+    }
+
+    #[test]
+    fn create_dir_fails_when_the_directory_exists_and_rename_moves_a_tree() {
+        let root = tempfile::tempdir().unwrap();
+        let first = root.path().join("lock");
+        StdFileSystem.create_dir(&first).unwrap();
+        let again = StdFileSystem.create_dir(&first).unwrap_err();
+        assert_eq!(again.kind(), io::ErrorKind::AlreadyExists);
+        fs::write(first.join("f"), "x").unwrap();
+        let moved = root.path().join("moved");
+        StdFileSystem.rename(&first, &moved).unwrap();
+        assert!(moved.join("f").is_file() && !first.exists());
+    }
+
+    #[test]
+    fn write_bytes_stores_what_is_not_text() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("blob");
+        StdFileSystem.write_bytes(&file, &[0, 255, 1]).unwrap();
+        assert_eq!(fs::read(&file).unwrap(), [0, 255, 1]);
     }
 }
