@@ -2,6 +2,8 @@
 
 use std::time::Duration;
 
+use ureq::config::RedirectAuthHeaders;
+
 use crate::ports::{Http, HttpError};
 
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -31,7 +33,11 @@ impl UreqHttp {
         builder: ureq::config::ConfigBuilder<ureq::typestate::AgentScope>,
         auth_header: Option<String>,
     ) -> Self {
-        let config = builder.timeout_global(Some(TIMEOUT)).build();
+        // Like curl: the credentials follow a redirect to the same host only.
+        let config = builder
+            .timeout_global(Some(TIMEOUT))
+            .redirect_auth_headers(RedirectAuthHeaders::SameHost)
+            .build();
         Self {
             agent: config.into(),
             auth_header,
@@ -147,6 +153,22 @@ mod tests {
                 .contains("authorization: bearer token123"),
             "{}",
             requests[0]
+        );
+    }
+
+    #[test]
+    fn the_auth_header_follows_a_redirect_to_the_same_host() {
+        let location = "HTTP/1.1 302 Found\r\nLocation: /final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        let (base, server) = serve(vec![location.to_owned(), ok("kept")]);
+        let http = UreqHttp::unproxied(Some("Bearer token123".to_owned()));
+        assert_eq!(http.get_text(&format!("{base}/start")).unwrap(), "kept");
+        let requests = server.join().unwrap();
+        assert!(
+            requests[1]
+                .to_lowercase()
+                .contains("authorization: bearer token123"),
+            "{}",
+            requests[1]
         );
     }
 
