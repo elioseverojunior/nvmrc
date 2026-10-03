@@ -189,6 +189,20 @@ mod tests {
     }
 
     #[test]
+    fn codenames_that_would_leave_the_alias_directory_are_skipped() {
+        let aliases = lts_aliases(&parse_index(
+            &index(&[
+                ("v20.0.0", "../../x"),
+                ("v18.0.0", "a/b"),
+                ("v16.0.0", "Gallium"),
+            ]),
+            Flavor::Node,
+        ));
+        let names: Vec<&str> = aliases.iter().map(|(name, _)| name.as_str()).collect();
+        assert_eq!(names, ["lts/*", "lts/gallium"]);
+    }
+
+    #[test]
     fn without_any_lts_release_there_are_no_aliases() {
         let aliases = lts_aliases(&parse_index(&index(&[("v21.0.0", "-")]), Flavor::Node));
         assert!(aliases.is_empty());
