@@ -1,0 +1,11 @@
+# hadolint configuration, read from the project root.
+# https://github.com/hadolint/hadolint#configure
+failure-threshold: warning
+
+ignored:
+  # Package versions are not pinned: the base distro keeps moving and a pin
+  # would break the build on every point release.
+  - DL3008
+
+trustedRegistries:
+  - docker.io
