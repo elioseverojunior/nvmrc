@@ -3,18 +3,20 @@
 use std::path::{Path, PathBuf};
 
 use crate::adapters::fs_alias_store::FsAliasStore;
+use crate::adapters::no_digest::NoDigest;
 use crate::adapters::no_http::NoHttp;
 use crate::adapters::no_process::NoProcess;
 use crate::domain::alias::AliasStore;
 use crate::domain::version::Version;
 use crate::error::CliError;
-use crate::ports::{Env, FileSystem, Http, Process};
+use crate::ports::{Digest, Env, FileSystem, Http, Process};
 
 pub struct Context<'a> {
     pub fs: &'a dyn FileSystem,
     pub env: &'a dyn Env,
     process: &'a dyn Process,
     http: &'a dyn Http,
+    digest: &'a dyn Digest,
 }
 
 impl<'a> Context<'a> {
@@ -27,6 +29,7 @@ impl<'a> Context<'a> {
             env,
             process: &NoProcess,
             http: &NoHttp,
+            digest: &NoDigest,
         }
     }
 
@@ -39,6 +42,17 @@ impl<'a> Context<'a> {
     #[must_use]
     pub fn process(&self) -> &dyn Process {
         self.process
+    }
+
+    #[must_use]
+    pub fn with_digest(mut self, digest: &'a dyn Digest) -> Self {
+        self.digest = digest;
+        self
+    }
+
+    #[must_use]
+    pub fn digest(&self) -> &dyn Digest {
+        self.digest
     }
 
     #[must_use]
@@ -129,7 +143,7 @@ impl Context<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fakes::{FakeEnv, FakeFileSystem, FakeHttp};
+    use crate::fakes::{FakeDigest, FakeEnv, FakeFileSystem, FakeHttp};
 
     fn nvm_dir_for(env: &FakeEnv) -> Result<PathBuf, CliError> {
         let fs = FakeFileSystem::default();
@@ -206,6 +220,24 @@ mod tests {
         let http = FakeHttp::default().with_body("http://x/", "ok");
         let context = Context::new(&fs, &env).with_http(&http);
         assert_eq!(context.http().get_text("http://x/").unwrap(), "ok");
+    }
+
+    #[test]
+    fn a_context_hashes_nothing_until_it_is_given_a_digest() {
+        let fs = FakeFileSystem::default();
+        let env = FakeEnv::default();
+        assert!(
+            Context::new(&fs, &env)
+                .digest()
+                .sha256_file(Path::new("/f"))
+                .is_err()
+        );
+        let digest = FakeDigest::default().with_digest("/f", "abc");
+        let context = Context::new(&fs, &env).with_digest(&digest);
+        assert_eq!(
+            context.digest().sha256_file(Path::new("/f")).unwrap(),
+            "abc"
+        );
     }
 
     #[test]

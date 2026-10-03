@@ -123,6 +123,14 @@ pub trait Http {
     fn get_text(&self, url: &str) -> Result<String, HttpError>;
 }
 
+pub trait Digest {
+    /// The SHA-256 of the file at `path`, in lowercase hex.
+    ///
+    /// # Errors
+    /// Propagates the underlying I/O error.
+    fn sha256_file(&self, path: &Path) -> io::Result<String>;
+}
+
 pub trait Sleeper {
     /// Waits for `duration` (between retries).
     fn sleep(&self, duration: Duration);

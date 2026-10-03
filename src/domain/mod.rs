@@ -1,5 +1,6 @@
 pub mod alias;
 pub mod alias_format;
+pub mod checksum;
 pub mod current;
 #[cfg(test)]
 pub(crate) mod fixtures;
