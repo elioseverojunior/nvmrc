@@ -25,17 +25,25 @@ pub enum Resolved {
     },
 }
 
+/// Resolves `name` as `nvm.sh`'s `nvm_version` does (see
+/// [`alias::lookup_target`]).
+///
 /// # Errors
 /// - [`CliError::Alias`] when the alias chain loops.
 /// - [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
 pub fn resolve_installed(context: &Context<'_>, name: &str) -> Result<Resolved, CliError> {
-    let resolved = alias::resolve(&context.alias_store()?, name)?;
-    if resolved == "system" && system_node(context)?.is_some() {
+    let store = context.alias_store()?;
+    let target = alias::lookup_target(&store, name)?;
+    if target == "system" && system_node(context)?.is_some() {
         return Ok(Resolved::System);
     }
     let installed = context.installed_versions()?;
-    let found = find_installed(&resolved, &installed);
-    Ok(found.map_or(Resolved::Missing { resolved }, Resolved::Installed))
+    if let Some(version) = find_installed(&target, &installed) {
+        return Ok(Resolved::Installed(version));
+    }
+    // Messages name the plain chain end, as `nvm_resolve_alias` prints it.
+    let resolved = alias::resolve(&store, name).unwrap_or_else(|_| "∞".to_owned());
+    Ok(Resolved::Missing { resolved })
 }
 
 /// The first `node` on `PATH` that does not live under `$NVM_DIR`.

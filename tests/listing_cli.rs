@@ -232,3 +232,46 @@ fn both_binaries_list_the_same() {
     let from_nvmrc = run(env!("CARGO_BIN_EXE_nvmrc"), dir.path(), path, &["ls"]);
     assert_eq!(from_nvm.stdout, from_nvmrc.stdout);
 }
+
+/// `nvm.sh` never reads the alias files of the bare names `node` and `iojs`,
+/// but follows a `stable` file wherever `node` stands for `stable`.
+#[test]
+fn alias_files_named_like_built_ins_match_nvm_sh() {
+    let dir = golden_dir();
+    let binary = |version: &str| format!("{}/bin/node\n", dir.path().join(version).display());
+    alias(dir.path(), "node", "18");
+    assert_eq!(stdout(&nvm(dir.path(), &["version", "node"])), "v20.10.0\n");
+    let which = nvm(dir.path(), &["which", "node"]);
+    assert_eq!(stdout(&which), binary("versions/node/v20.10.0"));
+    let listed = nvm(dir.path(), &["alias", "default"]);
+    assert_eq!(stdout(&listed), "default -> node (-> v20.10.0 *)\n");
+    assert_eq!(
+        stdout(&nvm(dir.path(), &["version", "default"])),
+        "v18.9.0\n"
+    );
+
+    fs::remove_file(dir.path().join("alias/node")).unwrap();
+    alias(dir.path(), "stable", "18");
+    assert_eq!(stdout(&nvm(dir.path(), &["version", "node"])), "v18.9.0\n");
+    assert_eq!(
+        stdout(&nvm(dir.path(), &["version", "default"])),
+        "v18.9.0\n"
+    );
+    assert_eq!(
+        stdout(&nvm(dir.path(), &["ls", "default"])),
+        "        v18.9.0 *\n"
+    );
+    let which = nvm(dir.path(), &["which", "default"]);
+    assert_eq!(stdout(&which), binary("versions/node/v18.9.0"));
+    let listed = nvm(dir.path(), &["alias", "default"]);
+    assert_eq!(stdout(&listed), "default -> node (-> v18.9.0 *)\n");
+
+    alias(dir.path(), "iojs", "iojs");
+    let iojs = nvm(dir.path(), &["version", "iojs"]);
+    assert_eq!(
+        (stdout(&iojs), iojs.status.code()),
+        ("iojs-v3.0.0\n".into(), Some(0))
+    );
+    let listed = nvm(dir.path(), &["alias", "iojs"]);
+    assert_eq!(stdout(&listed), "iojs -> iojs (-> iojs-v3.0.0 *)\n");
+}

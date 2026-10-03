@@ -224,3 +224,49 @@ fn system_node_is_the_first_node_outside_nvm_dir() {
     let found = system_node(&Context::new(&fs, &env)).unwrap();
     assert_eq!(found, Some(PathBuf::from("/usr/bin/node")));
 }
+
+// nvm.sh never reads an alias file for the bare names `node` and `iojs`.
+#[test]
+fn node_ignores_its_own_alias_file_but_chains_through_it_follow_it() {
+    let fs = installed()
+        .with_file("/n/alias/node", "18")
+        .with_file("/n/alias/default", "node");
+    let node = resolve_with(&fs, "node").unwrap();
+    assert_eq!(node, Resolved::Installed(version("v20.10.0")));
+    let default = resolve_with(&fs, "default").unwrap();
+    assert_eq!(default, Resolved::Installed(version("v18.9.0")));
+}
+
+#[test]
+fn node_and_chains_ending_at_node_follow_a_stable_alias_file() {
+    let fs = installed()
+        .with_file("/n/alias/stable", "18")
+        .with_file("/n/alias/default", "node");
+    for name in ["node", "default", "stable"] {
+        let resolved = resolve_with(&fs, name).unwrap();
+        assert_eq!(resolved, Resolved::Installed(version("v18.9.0")), "{name}");
+    }
+}
+
+#[test]
+fn iojs_is_the_newest_iojs_whatever_its_alias_file_says() {
+    let iojs = || installed().with_file("/n/versions/io.js/v3.0.0/bin/node", "");
+    for target in ["iojs", "18"] {
+        let fs = iojs().with_file("/n/alias/iojs", target);
+        let resolved = resolve_with(&fs, "iojs").unwrap();
+        assert_eq!(resolved, Resolved::Installed(version("iojs-v3.0.0")));
+    }
+    let chained = iojs()
+        .with_file("/n/alias/iojs", "18")
+        .with_file("/n/alias/y", "iojs");
+    let resolved = resolve_with(&chained, "y").unwrap();
+    assert_eq!(resolved, Resolved::Installed(version("v18.9.0")));
+}
+
+#[test]
+fn a_missing_iojs_with_a_looping_alias_file_reports_the_loop() {
+    let fs = installed().with_file("/n/alias/iojs", "iojs");
+    let resolved = resolve_with(&fs, "iojs").unwrap();
+    let infinite = "∞".to_owned();
+    assert_eq!(resolved, Resolved::Missing { resolved: infinite });
+}
