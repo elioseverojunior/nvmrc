@@ -17,9 +17,21 @@ impl UreqHttp {
     /// (see `domain::http_header`).
     #[must_use]
     pub fn new(auth_header: Option<String>) -> Self {
-        let config = ureq::Agent::config_builder()
-            .timeout_global(Some(TIMEOUT))
-            .build();
+        Self::from_builder(ureq::Agent::config_builder(), auth_header)
+    }
+
+    /// Like [`Self::new`], but ignoring `HTTP_PROXY` and friends, so a test
+    /// reaches its local server whatever the environment says.
+    #[cfg(test)]
+    fn unproxied(auth_header: Option<String>) -> Self {
+        Self::from_builder(ureq::Agent::config_builder().proxy(None), auth_header)
+    }
+
+    fn from_builder(
+        builder: ureq::config::ConfigBuilder<ureq::typestate::AgentScope>,
+        auth_header: Option<String>,
+    ) -> Self {
+        let config = builder.timeout_global(Some(TIMEOUT)).build();
         Self {
             agent: config.into(),
             auth_header,
@@ -93,7 +105,7 @@ mod tests {
     #[test]
     fn fetches_the_body_as_text() {
         let (base, server) = serve(vec![ok("hello\nworld\n")]);
-        let text = UreqHttp::new(None).get_text(&format!("{base}/index.tab"));
+        let text = UreqHttp::unproxied(None).get_text(&format!("{base}/index.tab"));
         assert_eq!(text.unwrap(), "hello\nworld\n");
         let requests = server.join().unwrap();
         assert!(
@@ -108,7 +120,7 @@ mod tests {
         let response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
         let (base, server) = serve(vec![response.to_owned()]);
         let url = format!("{base}/missing");
-        let error = UreqHttp::new(None).get_text(&url).unwrap_err();
+        let error = UreqHttp::unproxied(None).get_text(&url).unwrap_err();
         assert_eq!(error, HttpError::Status { url, code: 404 });
         server.join().unwrap();
     }
@@ -117,7 +129,7 @@ mod tests {
     fn redirects_are_followed() {
         let location = "HTTP/1.1 302 Found\r\nLocation: /final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
         let (base, server) = serve(vec![location.to_owned(), ok("moved")]);
-        let text = UreqHttp::new(None).get_text(&format!("{base}/start"));
+        let text = UreqHttp::unproxied(None).get_text(&format!("{base}/start"));
         assert_eq!(text.unwrap(), "moved");
         let requests = server.join().unwrap();
         assert!(requests[1].starts_with("GET /final "), "{}", requests[1]);
@@ -126,7 +138,7 @@ mod tests {
     #[test]
     fn the_auth_header_is_sent_when_given() {
         let (base, server) = serve(vec![ok("secret")]);
-        let http = UreqHttp::new(Some("Bearer token123".to_owned()));
+        let http = UreqHttp::unproxied(Some("Bearer token123".to_owned()));
         assert_eq!(http.get_text(&format!("{base}/x")).unwrap(), "secret");
         let requests = server.join().unwrap();
         assert!(
@@ -143,7 +155,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = format!("http://{}/x", listener.local_addr().unwrap());
         drop(listener);
-        let error = UreqHttp::new(None).get_text(&url).unwrap_err();
+        let error = UreqHttp::unproxied(None).get_text(&url).unwrap_err();
         assert!(matches!(error, HttpError::Transport { .. }), "{error:?}");
     }
 }

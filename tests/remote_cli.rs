@@ -44,14 +44,31 @@ fn serve_mirror(index: &'static str) -> String {
 const IOJS_INDEX: &str =
     "version\tdate\tfiles\tnpm\tv8\tuv\tzlib\topenssl\tmodules\tlts\tsecurity\n";
 
+/// Left out of the child's environment, so that a proxy or a token set on the
+/// machine running the tests cannot change what they see.
+const INHERITED_NETWORK_SETTINGS: [&str; 7] = [
+    "ALL_PROXY",
+    "all_proxy",
+    "HTTPS_PROXY",
+    "https_proxy",
+    "HTTP_PROXY",
+    "http_proxy",
+    "NVM_AUTH_HEADER",
+];
+
 fn nvm(nvm_dir: &Path, mirror: &str, args: &[&str]) -> Output {
     let iojs_mirror = serve_mirror(IOJS_INDEX);
-    Command::new(env!("CARGO_BIN_EXE_nvm"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_nvm"));
+    for name in INHERITED_NETWORK_SETTINGS {
+        command.env_remove(name);
+    }
+    command
         .args(args)
         .env("NVM_DIR", nvm_dir)
         .env("PATH", "/nonexistent")
         .env("NVM_NODEJS_ORG_MIRROR", mirror)
         .env("NVM_IOJS_ORG_MIRROR", iojs_mirror)
+        .env("NO_PROXY", "127.0.0.1")
         .output()
         .expect("run the binary")
 }
