@@ -13,6 +13,7 @@ pub mod listing;
 pub mod mirror;
 pub mod npm;
 pub mod nvmrc;
+pub mod path_edit;
 pub mod path_search;
 pub mod platform;
 pub mod remote;
