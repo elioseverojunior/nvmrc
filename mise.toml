@@ -1,0 +1,32 @@
+[settings]
+color = true
+experimental = true
+idiomatic_version_file = true
+idiomatic_version_file_enable_tools = []
+legacy_version_file = false
+lockfile = true
+not_found_auto_install = true
+quiet = true
+
+[tools]
+
+[hooks]
+
+[tasks."docker:build"]
+alias = ["dkb", "dkrb", "dkr:build"]
+description = "Docker Build"
+depends = []
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+docker buildx build -f Dockerfile -t nvmrc:trixie .
+
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+'''
