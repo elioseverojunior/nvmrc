@@ -3,6 +3,7 @@ pub mod no_archive;
 pub mod no_digest;
 pub mod no_http;
 pub mod no_process;
+pub mod no_sleeper;
 pub mod retrying_http;
 pub mod sha256_digest;
 pub mod std_env;
