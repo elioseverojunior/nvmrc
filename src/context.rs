@@ -3,13 +3,14 @@
 use std::path::{Path, PathBuf};
 
 use crate::adapters::fs_alias_store::FsAliasStore;
+use crate::adapters::no_archive::NoArchive;
 use crate::adapters::no_digest::NoDigest;
 use crate::adapters::no_http::NoHttp;
 use crate::adapters::no_process::NoProcess;
 use crate::domain::alias::AliasStore;
 use crate::domain::version::Version;
 use crate::error::CliError;
-use crate::ports::{Digest, Env, FileSystem, Http, Process};
+use crate::ports::{Archive, Digest, Env, FileSystem, Http, Process};
 
 pub struct Context<'a> {
     pub fs: &'a dyn FileSystem,
@@ -17,6 +18,7 @@ pub struct Context<'a> {
     process: &'a dyn Process,
     http: &'a dyn Http,
     digest: &'a dyn Digest,
+    archive: &'a dyn Archive,
 }
 
 impl<'a> Context<'a> {
@@ -30,6 +32,7 @@ impl<'a> Context<'a> {
             process: &NoProcess,
             http: &NoHttp,
             digest: &NoDigest,
+            archive: &NoArchive,
         }
     }
 
@@ -42,6 +45,17 @@ impl<'a> Context<'a> {
     #[must_use]
     pub fn process(&self) -> &dyn Process {
         self.process
+    }
+
+    #[must_use]
+    pub fn with_archive(mut self, archive: &'a dyn Archive) -> Self {
+        self.archive = archive;
+        self
+    }
+
+    #[must_use]
+    pub fn archive(&self) -> &dyn Archive {
+        self.archive
     }
 
     #[must_use]
@@ -143,7 +157,7 @@ impl Context<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fakes::{FakeDigest, FakeEnv, FakeFileSystem, FakeHttp};
+    use crate::fakes::{FakeArchive, FakeDigest, FakeEnv, FakeFileSystem, FakeHttp};
 
     fn nvm_dir_for(env: &FakeEnv) -> Result<PathBuf, CliError> {
         let fs = FakeFileSystem::default();
@@ -238,6 +252,18 @@ mod tests {
             context.digest().sha256_file(Path::new("/f")).unwrap(),
             "abc"
         );
+    }
+
+    #[test]
+    fn a_context_unpacks_nothing_until_it_is_given_an_archive() {
+        let fs = FakeFileSystem::default();
+        let env = FakeEnv::default();
+        let (a, b) = (Path::new("/a.tgz"), Path::new("/out"));
+        assert!(Context::new(&fs, &env).archive().extract(a, b).is_err());
+        let archive = FakeArchive::new(&fs).with_archive("/a.tgz", &[("t/f", "x", false)]);
+        let context = Context::new(&fs, &env).with_archive(&archive);
+        context.archive().extract(a, b).unwrap();
+        assert!(fs.is_file(Path::new("/out/t/f")));
     }
 
     #[test]

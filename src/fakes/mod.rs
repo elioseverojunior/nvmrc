@@ -1,5 +1,6 @@
 //! In-memory implementations of the ports, for unit tests only.
 
+mod archive;
 mod digest;
 mod env;
 mod file_system;
@@ -7,6 +8,7 @@ mod http;
 mod process;
 mod sleeper;
 
+pub use archive::FakeArchive;
 pub use digest::FakeDigest;
 pub use env::FakeEnv;
 pub use file_system::FakeFileSystem;

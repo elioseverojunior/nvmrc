@@ -131,6 +131,16 @@ pub trait Digest {
     fn sha256_file(&self, path: &Path) -> io::Result<String>;
 }
 
+pub trait Archive {
+    /// Unpacks the `.tar.gz` at `archive` into the existing directory
+    /// `destination`, keeping every path inside it.
+    ///
+    /// # Errors
+    /// Propagates the underlying I/O error, and fails on a file that is not a
+    /// gzip-compressed tar.
+    fn extract(&self, archive: &Path, destination: &Path) -> io::Result<()>;
+}
+
 pub trait Sleeper {
     /// Waits for `duration` (between retries).
     fn sleep(&self, duration: Duration);

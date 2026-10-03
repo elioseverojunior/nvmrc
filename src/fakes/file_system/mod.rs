@@ -30,6 +30,11 @@ impl FakeFileSystem {
         self.with_file(path, contents)
     }
 
+    /// Gives an existing file the execute permission.
+    pub fn set_executable(&self, path: &Path) {
+        self.executables.borrow_mut().insert(path.to_path_buf());
+    }
+
     /// When the file or directory was last changed.
     #[must_use]
     pub fn with_modified(mut self, path: &str, time: SystemTime) -> Self {
