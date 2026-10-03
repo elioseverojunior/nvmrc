@@ -18,6 +18,15 @@ fn a_version_is_the_first_word_that_is_not_an_option() {
 }
 
 #[test]
+fn only_an_lts_option_without_a_version_is_announced() {
+    assert!(parsed("--lts").unwrap().announce_lts);
+    assert!(parsed("--lts=iron").unwrap().announce_lts);
+    assert!(!parsed("lts/iron").unwrap().announce_lts);
+    assert!(!parsed("--lts 20").unwrap().announce_lts);
+    assert!(!parsed("20").unwrap().announce_lts);
+}
+
+#[test]
 fn nothing_at_all_is_no_version() {
     let options = parsed("").unwrap();
     assert_eq!(

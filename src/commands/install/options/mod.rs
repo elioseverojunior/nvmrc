@@ -19,6 +19,9 @@ pub struct Options {
     pub alias: Option<String>,
     /// There was a version argument (even an empty one).
     pub version_given: bool,
+    /// The LTS filter came from `--lts` with no version, which `nvm.sh`
+    /// announces ("Installing latest LTS version.").
+    pub announce_lts: bool,
 }
 
 fn unsupported(option: &str) -> CliError {
@@ -72,6 +75,7 @@ pub fn parse(args: &[String]) -> Result<Options, CliError> {
             return Err(unsupported(option));
         }
     }
+    options.announce_lts = options.lts.is_some() && options.version.is_empty();
     take_lts_version(&mut options);
     Ok(options)
 }
