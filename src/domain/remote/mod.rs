@@ -56,16 +56,11 @@ pub fn list(
     iojs: Option<&[Release]>,
     query: &Query,
 ) -> Result<Listing, RemoteError> {
-    let mut flavor = query.lts.as_ref().map(|_| Flavor::Node);
-    let mut pattern = query.pattern.as_deref().filter(|text| !text.is_empty());
-    match pattern {
-        Some("iojs" | "io.js") => (flavor, pattern) = (Some(Flavor::IoJs), None),
-        Some("node") => (flavor, pattern) = (Some(Flavor::Node), None),
-        Some("stable" | "unstable") => return Err(RemoteError::ImplicitAlias),
-        _ => {}
-    }
-    let node_runs = flavor != Some(Flavor::IoJs);
-    let iojs_runs = query.lts.is_none() && flavor != Some(Flavor::Node);
+    let Scope {
+        pattern,
+        node_runs,
+        iojs_runs,
+    } = scope(query)?;
 
     let mut missing = false;
     let mut node_rows = Vec::new();
@@ -86,6 +81,33 @@ pub fn list(
     Ok(Listing {
         missing: missing || rows.is_empty(),
         rows,
+    })
+}
+
+/// Which indexes a query reads, and the pattern left once a flavor word
+/// (`node`, `iojs`) has been taken out of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Scope<'a> {
+    pub pattern: Option<&'a str>,
+    pub node_runs: bool,
+    pub iojs_runs: bool,
+}
+
+/// # Errors
+/// Returns [`RemoteError::ImplicitAlias`] for `stable` and `unstable`.
+pub fn scope(query: &Query) -> Result<Scope<'_>, RemoteError> {
+    let mut flavor = query.lts.as_ref().map(|_| Flavor::Node);
+    let mut pattern = query.pattern.as_deref().filter(|text| !text.is_empty());
+    match pattern {
+        Some("iojs" | "io.js") => (flavor, pattern) = (Some(Flavor::IoJs), None),
+        Some("node") => (flavor, pattern) = (Some(Flavor::Node), None),
+        Some("stable" | "unstable") => return Err(RemoteError::ImplicitAlias),
+        _ => {}
+    }
+    Ok(Scope {
+        pattern,
+        node_runs: flavor != Some(Flavor::IoJs),
+        iojs_runs: query.lts.is_none() && flavor != Some(Flavor::Node),
     })
 }
 

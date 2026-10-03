@@ -1,5 +1,6 @@
 use super::*;
-use crate::fakes::{FakeEnv, FakeFileSystem};
+use crate::domain::fixtures::index_text;
+use crate::fakes::{FakeEnv, FakeFileSystem, FakeHttp};
 use crate::ports::FileSystem;
 
 fn run_cli(args: &[&str]) -> (u8, String, String) {
@@ -245,5 +246,23 @@ fn help_and_version_go_to_stdout_with_exit_0() {
         let (code, out, err) = run_cli(&["nvm", flag]);
         assert_eq!(code, 0, "{flag}");
         assert!(!out.is_empty() && err.is_empty(), "{flag}");
+    }
+}
+
+#[test]
+fn ls_remote_and_list_remote_print_the_releases_with_the_exit_status() {
+    let index = index_text(&[("v20.10.0", "Iron"), ("v20.9.0", "Iron")]);
+    let http = FakeHttp::default()
+        .with_body("https://nodejs.org/dist/index.tab", &index)
+        .with_status("https://iojs.org/dist/index.tab", 404);
+    let fs = FakeFileSystem::default();
+    let env = FakeEnv::default().with_var("NVM_DIR", "/n");
+    for command in ["ls-remote", "list-remote"] {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let context = Context::new(&fs, &env).with_http(&http);
+        let code = run(["nvm", command, "--lts"], &context, &mut out, &mut err);
+        let expected = "        v20.9.0   (LTS: Iron)\n       v20.10.0   (Latest LTS: Iron)\n";
+        assert_eq!(String::from_utf8(out).unwrap(), expected);
+        assert_eq!(code, 0);
     }
 }

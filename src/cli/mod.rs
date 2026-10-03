@@ -5,12 +5,17 @@ use std::io::Write;
 
 use clap::{Parser, Subcommand};
 
+use crate::adapters::retrying_http::RetryingHttp;
 use crate::adapters::std_env::StdEnv;
 use crate::adapters::std_fs::StdFileSystem;
 use crate::adapters::std_process::StdProcess;
+use crate::adapters::std_sleeper::StdSleeper;
+use crate::adapters::ureq_http::UreqHttp;
 use crate::commands::{self, Output};
 use crate::context::Context;
+use crate::domain::http_header::sanitize_auth_header;
 use crate::error::{CliError, NvmExitCode};
+use crate::ports::Env;
 
 #[derive(Parser)]
 #[command(name = "nvm", version, about = "Node Version Manager, in Rust")]
@@ -33,6 +38,13 @@ enum Command {
         #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
     },
+    /// List the versions a mirror offers (`--lts[=name]` keeps the LTS
+    /// releases; a pattern keeps the versions matching it).
+    #[command(name = "ls-remote", visible_alias = "list-remote")]
+    LsRemote {
+        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
     /// Print the path to the node binary of a version or alias.
     Which { version: Option<String> },
     /// List aliases, show those starting with a name, or create an alias for
@@ -52,6 +64,7 @@ fn dispatch(command: &Command, context: &Context<'_>) -> Result<Output, CliError
         }
         Command::Current => commands::current::run(context),
         Command::Ls { args } => commands::ls::run_command(context, args),
+        Command::LsRemote { args } => commands::ls_remote::run(context, args),
         Command::Which { version } => commands::which::run(context, version.as_deref()),
         Command::Alias { args } => commands::aliases::run(context, args),
         Command::Unalias { names } => commands::unalias::run(context, names),
@@ -123,7 +136,15 @@ fn finish(output: &Output, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
 #[must_use]
 pub fn run_from_env() -> u8 {
     let process = StdProcess::default();
-    let context = Context::new(&StdFileSystem, &StdEnv).with_process(&process);
+    let auth_header = StdEnv
+        .var("NVM_AUTH_HEADER")
+        .filter(|value| !value.is_empty())
+        .map(|value| sanitize_auth_header(&value));
+    let network = UreqHttp::new(auth_header);
+    let http = RetryingHttp::new(&network, &StdSleeper);
+    let context = Context::new(&StdFileSystem, &StdEnv)
+        .with_process(&process)
+        .with_http(&http);
     run(
         std::env::args_os(),
         &context,
