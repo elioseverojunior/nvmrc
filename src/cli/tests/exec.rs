@@ -52,3 +52,22 @@ fn run_hands_its_arguments_to_node() {
     assert_eq!(run_with(&args, &process), (0, String::new(), String::new()));
     assert_eq!(process.spawned().len(), 1);
 }
+
+#[test]
+fn exec_sees_a_leading_double_dash_and_stops_its_options_there() {
+    let process = FakeProcess::default().with_spawn("18", "node a", 0);
+    let (code, out, err) = run_with(&["nvm", "exec", "--", "18", "node", "a"], &process);
+    assert_eq!((code, out.as_str()), (1, ""));
+    assert!(err.starts_with("No version provided and no .nvmrc file found\n"));
+    assert!(err.ends_with("You need to run `nvm install current` to install and use it.\n"));
+    assert!(process.spawned().is_empty());
+}
+
+#[test]
+fn run_takes_a_leading_double_dash_for_a_script_argument() {
+    let process = FakeProcess::default().with_spawn("node", "-- 18 x", 0);
+    let (code, _, err) = run_with(&["nvm", "run", "--", "18", "x"], &process);
+    assert_eq!(code, 1);
+    assert!(err.contains("`nvm run` was invoked without a version argument"));
+    assert!(process.spawned().is_empty());
+}

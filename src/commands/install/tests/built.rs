@@ -45,26 +45,24 @@ impl Built {
         Self { env, ..self }
     }
 
-    pub(super) fn run(&self, line: &str) -> Output {
+    /// What a successful build or install hook leaves: an executable `node`.
+    pub(super) fn node_maker(&self) -> impl Fn() + 'static {
         let fs = Rc::clone(&self.fs);
-        let make_node = move || {
+        move || {
             fs.write_file(Path::new(NODE), "binary").unwrap();
             fs.set_executable(Path::new(NODE));
-        };
+        }
+    }
+
+    pub(super) fn run(&self, line: &str) -> Output {
         let process = FakeProcess::default()
             .with_success(&format!("{TOP}/configure"), PREFIX, "configured\n")
             .with_success("make", "-j 7", "built\n")
             .with_success("make", "-j 7 install", "installed\n")
-            .with_effect("make", "-j 7 install", make_node)
+            .with_effect("make", "-j 7 install", self.node_maker())
             .with_success("make", "-j 4", "")
             .with_success("make", "-j 4 install", "")
-            .with_effect("make", "-j 4 install", {
-                let fs = Rc::clone(&self.fs);
-                move || {
-                    fs.write_file(Path::new(NODE), "binary").unwrap();
-                    fs.set_executable(Path::new(NODE));
-                }
-            })
+            .with_effect("make", "-j 4 install", self.node_maker())
             .with_success(
                 &format!("{TOP}/configure"),
                 &format!("{PREFIX} --with-intl=full-icu"),

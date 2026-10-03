@@ -238,12 +238,17 @@ fn both_binaries_list_the_same() {
     assert_eq!(from_nvm.stdout, from_nvmrc.stdout);
 }
 
+/// The path `nvm which` prints for the installed `version` directory.
+fn node_binary(dir: &Path, version: &str) -> String {
+    format!("{}/bin/node\n", dir.join(version).display())
+}
+
 /// `nvm.sh` never reads the alias files of the bare names `node` and `iojs`,
 /// but follows a `stable` file wherever `node` stands for `stable`.
 #[test]
-fn alias_files_named_like_built_ins_match_nvm_sh() {
+fn an_alias_file_named_node_is_never_read() {
     let dir = golden_dir();
-    let binary = |version: &str| format!("{}/bin/node\n", dir.path().join(version).display());
+    let binary = |version: &str| node_binary(dir.path(), version);
     alias(dir.path(), "node", "18");
     assert_eq!(stdout(&nvm(dir.path(), &["version", "node"])), "v20.10.0\n");
     let which = nvm(dir.path(), &["which", "node"]);
@@ -254,8 +259,12 @@ fn alias_files_named_like_built_ins_match_nvm_sh() {
         stdout(&nvm(dir.path(), &["version", "default"])),
         "v18.9.0\n"
     );
+}
 
-    fs::remove_file(dir.path().join("alias/node")).unwrap();
+#[test]
+fn an_alias_file_named_stable_is_followed_for_node() {
+    let dir = golden_dir();
+    let binary = |version: &str| node_binary(dir.path(), version);
     alias(dir.path(), "stable", "18");
     assert_eq!(stdout(&nvm(dir.path(), &["version", "node"])), "v18.9.0\n");
     assert_eq!(
@@ -270,7 +279,11 @@ fn alias_files_named_like_built_ins_match_nvm_sh() {
     assert_eq!(stdout(&which), binary("versions/node/v18.9.0"));
     let listed = nvm(dir.path(), &["alias", "default"]);
     assert_eq!(stdout(&listed), "default -> node (-> v18.9.0 *)\n");
+}
 
+#[test]
+fn an_alias_file_named_iojs_is_never_read() {
+    let dir = golden_dir();
     alias(dir.path(), "iojs", "iojs");
     let iojs = nvm(dir.path(), &["version", "iojs"]);
     assert_eq!(

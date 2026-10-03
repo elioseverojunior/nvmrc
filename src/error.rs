@@ -190,40 +190,53 @@ mod tests {
         assert_eq!(NvmExitCode::passing_on(Some(300)), NvmExitCode::Failure);
     }
 
+    fn assert_exit_codes<const N: usize>(cases: [(CliError, NvmExitCode); N]) {
+        for (error, code) in cases {
+            assert_eq!(error.exit_code(), code, "{error}");
+        }
+    }
+
     #[test]
-    fn errors_map_to_their_exit_codes() {
-        let floor = FloorError::Invalid("x".into());
-        assert_eq!(
-            CliError::from(floor).exit_code(),
-            NvmExitCode::BelowVersionFloor
-        );
-        let alias = AliasError::Loop("a".into());
-        assert_eq!(CliError::from(alias).exit_code(), NvmExitCode::AliasLoop);
-        let version = VersionError::Invalid("x".into());
-        assert_eq!(
-            CliError::from(version).exit_code(),
-            NvmExitCode::InvalidVersion
-        );
-        assert_eq!(
-            CliError::NotInstalled.exit_code(),
-            NvmExitCode::InvalidVersion
-        );
-        assert_eq!(CliError::NvmDirUnresolved.exit_code(), NvmExitCode::Failure);
-        let not_installed = CliError::VersionNotInstalled("x".into());
-        assert_eq!(not_installed.exit_code(), NvmExitCode::Failure);
-        let usage = CliError::Usage("x".into());
-        assert_eq!(usage.exit_code(), NvmExitCode::NotFound);
-        let no_system_node = CliError::SystemNodeNotFound;
-        assert_eq!(no_system_node.exit_code(), NvmExitCode::NotFound);
-        let unsupported = CliError::Unsupported("x".into());
-        assert_eq!(unsupported.exit_code(), NvmExitCode::UnsupportedOption);
-        let options = CliError::InvalidOptions("x".into());
-        assert_eq!(options.exit_code(), NvmExitCode::InvalidOptions);
-        let invalid = CliError::InvalidArgument("x".into());
-        assert_eq!(invalid.exit_code(), NvmExitCode::Failure);
+    fn wrapped_errors_map_to_their_exit_codes() {
         let source = std::io::Error::from(std::io::ErrorKind::NotFound);
-        let io_error = CliError::io(Path::new("/n/alias/work"), source);
-        assert_eq!(io_error.exit_code(), NvmExitCode::Failure);
+        assert_exit_codes([
+            (
+                FloorError::Invalid("x".into()).into(),
+                NvmExitCode::BelowVersionFloor,
+            ),
+            (AliasError::Loop("a".into()).into(), NvmExitCode::AliasLoop),
+            (
+                VersionError::Invalid("x".into()).into(),
+                NvmExitCode::InvalidVersion,
+            ),
+            (
+                CliError::io(Path::new("/n/alias/work"), source),
+                NvmExitCode::Failure,
+            ),
+        ]);
+    }
+
+    #[test]
+    fn errors_of_the_commands_map_to_their_exit_codes() {
+        assert_exit_codes([
+            (CliError::NotInstalled, NvmExitCode::InvalidVersion),
+            (CliError::NvmDirUnresolved, NvmExitCode::Failure),
+            (
+                CliError::VersionNotInstalled("x".into()),
+                NvmExitCode::Failure,
+            ),
+            (CliError::Usage("x".into()), NvmExitCode::NotFound),
+            (CliError::SystemNodeNotFound, NvmExitCode::NotFound),
+            (
+                CliError::Unsupported("x".into()),
+                NvmExitCode::UnsupportedOption,
+            ),
+            (
+                CliError::InvalidOptions("x".into()),
+                NvmExitCode::InvalidOptions,
+            ),
+            (CliError::InvalidArgument("x".into()), NvmExitCode::Failure),
+        ]);
     }
 
     #[test]

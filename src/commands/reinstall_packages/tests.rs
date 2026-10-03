@@ -122,6 +122,10 @@ fn system_needs_a_system_node() {
         output.stderr,
         "No system version of node or io.js detected."
     );
+}
+
+#[test]
+fn system_reinstalls_from_the_npm_of_the_system_node() {
     let with_system = fs()
         .with_executable("/usr/bin/node", "")
         .with_executable("/usr/bin/npm", "");

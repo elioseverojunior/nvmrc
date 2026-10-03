@@ -56,6 +56,26 @@ fn a_plain_listing_matches_nvm_sh() {
     );
 }
 
+/// Every release with its installed mark and its aliases.
+const INSTALLED_AND_ALIASED: &[&str] = &[
+    "       v0.10.48",
+    "       v0.12.18",
+    "    iojs-v1.0.0",
+    "    iojs-v2.5.0",
+    "    iojs-v3.0.0",
+    "    iojs-v3.3.1 *",
+    "         v4.0.0",
+    "         v4.9.1   (Latest LTS: Argon)",
+    "       v14.21.3   (Latest LTS: Fermium)",
+    "       v16.20.2   (Latest LTS: Gallium)",
+    "       v18.18.0   (LTS: Hydrogen)",
+    "       v18.19.0 * (Latest LTS: Hydrogen)                    (Aliases: work)",
+    "        v20.9.0   (LTS: Iron)",
+    "       v20.10.0 * (Latest LTS: Iron)                        (Aliases: prod)",
+    "        v21.1.0                                             (Aliases: pinned)",
+    "        v21.2.0                            (Latest: node)   (Aliases: default)",
+];
+
 #[test]
 fn installed_versions_and_aliases_match_nvm_sh() {
     let rows = rows(None);
@@ -74,28 +94,28 @@ fn installed_versions_and_aliases_match_nvm_sh() {
         latest_alias: Some("node"),
         named_aliases: &aliases,
     };
-    assert_eq!(
-        format_remote_rows(&input),
-        [
-            "       v0.10.48",
-            "       v0.12.18",
-            "    iojs-v1.0.0",
-            "    iojs-v2.5.0",
-            "    iojs-v3.0.0",
-            "    iojs-v3.3.1 *",
-            "         v4.0.0",
-            "         v4.9.1   (Latest LTS: Argon)",
-            "       v14.21.3   (Latest LTS: Fermium)",
-            "       v16.20.2   (Latest LTS: Gallium)",
-            "       v18.18.0   (LTS: Hydrogen)",
-            "       v18.19.0 * (Latest LTS: Hydrogen)                    (Aliases: work)",
-            "        v20.9.0   (LTS: Iron)",
-            "       v20.10.0 * (Latest LTS: Iron)                        (Aliases: prod)",
-            "        v21.1.0                                             (Aliases: pinned)",
-            "        v21.2.0                            (Latest: node)   (Aliases: default)",
-        ]
-    );
+    assert_eq!(format_remote_rows(&input), INSTALLED_AND_ALIASED);
 }
+
+/// The listing with `v18.19.0` current.
+const WITH_CURRENT_ARROW: &[&str] = &[
+    "       v0.10.48",
+    "       v0.12.18",
+    "    iojs-v1.0.0",
+    "    iojs-v2.5.0",
+    "    iojs-v3.0.0",
+    "    iojs-v3.3.1 *",
+    "         v4.0.0",
+    "         v4.9.1   (Latest LTS: Argon)",
+    "       v14.21.3   (Latest LTS: Fermium)",
+    "       v16.20.2   (Latest LTS: Gallium)",
+    "       v18.18.0   (LTS: Hydrogen)",
+    "->     v18.19.0 * (Latest LTS: Hydrogen)",
+    "        v20.9.0   (LTS: Iron)",
+    "       v20.10.0 * (Latest LTS: Iron)",
+    "        v21.1.0",
+    "        v21.2.0                            (Latest: node)   (Aliases: default)",
+];
 
 #[test]
 fn the_current_version_gets_an_arrow() {
@@ -109,28 +129,28 @@ fn the_current_version_gets_an_arrow() {
         latest_alias: Some("node"),
         named_aliases: &aliases,
     };
-    assert_eq!(
-        format_remote_rows(&input),
-        [
-            "       v0.10.48",
-            "       v0.12.18",
-            "    iojs-v1.0.0",
-            "    iojs-v2.5.0",
-            "    iojs-v3.0.0",
-            "    iojs-v3.3.1 *",
-            "         v4.0.0",
-            "         v4.9.1   (Latest LTS: Argon)",
-            "       v14.21.3   (Latest LTS: Fermium)",
-            "       v16.20.2   (Latest LTS: Gallium)",
-            "       v18.18.0   (LTS: Hydrogen)",
-            "->     v18.19.0 * (Latest LTS: Hydrogen)",
-            "        v20.9.0   (LTS: Iron)",
-            "       v20.10.0 * (Latest LTS: Iron)",
-            "        v21.1.0",
-            "        v21.2.0                            (Latest: node)   (Aliases: default)",
-        ]
-    );
+    assert_eq!(format_remote_rows(&input), WITH_CURRENT_ARROW);
 }
+
+/// The listing with two aliases on two releases.
+const SEVERAL_ALIASES: &[&str] = &[
+    "       v0.10.48",
+    "       v0.12.18",
+    "    iojs-v1.0.0",
+    "    iojs-v2.5.0",
+    "    iojs-v3.0.0",
+    "    iojs-v3.3.1",
+    "         v4.0.0",
+    "         v4.9.1   (Latest LTS: Argon)",
+    "       v14.21.3   (Latest LTS: Fermium)",
+    "       v16.20.2   (Latest LTS: Gallium)",
+    "       v18.18.0   (LTS: Hydrogen)",
+    "       v18.19.0   (Latest LTS: Hydrogen)",
+    "        v20.9.0   (LTS: Iron)",
+    "       v20.10.0   (Latest LTS: Iron)                        (Aliases: prod, twenty)",
+    "        v21.1.0",
+    "        v21.2.0                            (Latest: node)   (Aliases: default, latest)",
+];
 
 #[test]
 fn several_aliases_on_one_release_are_joined_in_order() {
@@ -148,27 +168,7 @@ fn several_aliases_on_one_release_are_joined_in_order() {
         latest_alias: Some("node"),
         named_aliases: &aliases,
     };
-    assert_eq!(
-        format_remote_rows(&input),
-        [
-            "       v0.10.48",
-            "       v0.12.18",
-            "    iojs-v1.0.0",
-            "    iojs-v2.5.0",
-            "    iojs-v3.0.0",
-            "    iojs-v3.3.1",
-            "         v4.0.0",
-            "         v4.9.1   (Latest LTS: Argon)",
-            "       v14.21.3   (Latest LTS: Fermium)",
-            "       v16.20.2   (Latest LTS: Gallium)",
-            "       v18.18.0   (LTS: Hydrogen)",
-            "       v18.19.0   (Latest LTS: Hydrogen)",
-            "        v20.9.0   (LTS: Iron)",
-            "       v20.10.0   (Latest LTS: Iron)                        (Aliases: prod, twenty)",
-            "        v21.1.0",
-            "        v21.2.0                            (Latest: node)   (Aliases: default, latest)",
-        ]
-    );
+    assert_eq!(format_remote_rows(&input), SEVERAL_ALIASES);
 }
 
 #[test]

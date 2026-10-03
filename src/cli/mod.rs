@@ -55,6 +55,7 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
+    let args = keep_leading_double_dash(args.into_iter().map(Into::into).collect());
     let cli = match Cli::try_parse_from(args) {
         Ok(cli) => cli,
         Err(error) if error.use_stderr() => {
@@ -69,6 +70,19 @@ where
     };
     let output = dispatch(&cli.command, context).unwrap_or_else(|error| failure(&error));
     finish("nvm", &output, context, out, err)
+}
+
+/// clap takes a `--` right after a subcommand for the end of the options
+/// and drops it, but nvm.sh's `exec` stops its own options there and `run`
+/// hands it to the script; doubling it makes clap pass the user's one on.
+fn keep_leading_double_dash(mut args: Vec<OsString>) -> Vec<OsString> {
+    let passes_it_on = args
+        .get(1)
+        .is_some_and(|command| command == "exec" || command == "run");
+    if passes_it_on && args.get(2).is_some_and(|argument| argument == "--") {
+        args.insert(2, OsString::from("--"));
+    }
+    args
 }
 
 /// What a failed command prints: its message, on stderr except for `N/A`,

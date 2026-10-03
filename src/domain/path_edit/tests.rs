@@ -20,47 +20,47 @@ fn assert_change_rows(suffix: &str, rows: &[(&str, &str)]) {
     }
 }
 
+/// The PATH table of the digest (2.2): (before, after `nvm use 18`).
+const DIGEST_PATH_TABLE: &[(&str, &str)] = &[
+    ("/a:V20/bin:/usr/bin:/bin", "/a:N18/bin:/usr/bin:/bin"),
+    (
+        "/opt/bin:V20/bin:/usr/bin:/bin",
+        "/opt/bin:N18/bin:/usr/bin:/bin",
+    ),
+    (
+        "/x/bin:V20/bin:/usr/bin:/bin",
+        "/x/bin:N18/bin:/usr/bin:/bin",
+    ),
+    (
+        "/usr/bin:/bin:V20/bin:/b",
+        "N18/bin:/usr/bin:/bin:V20/bin:/b",
+    ),
+    (
+        "/usr/local/bin:V20/bin:/usr/bin:/bin",
+        "N18/bin:/usr/local/bin:V20/bin:/usr/bin:/bin",
+    ),
+    (
+        "V20/bin:/usr/bin:/bin:/b:V1819/bin",
+        "N18/bin:V20/bin:/usr/bin:/bin:/b:V1819/bin",
+    ),
+    ("/a:OLD/bin:/usr/bin:/bin", "/a:N18/bin:/usr/bin:/bin"),
+    ("/a:V20/bin/sub:/usr/bin:/bin", "/a:N18/bin:/usr/bin:/bin"),
+    ("/a:V20/binx:/usr/bin:/bin", "/a:N18/bin:/usr/bin:/bin"),
+    (
+        "/a:$NVM_DIR/foo/bin:/usr/bin:/bin",
+        "/a:N18/bin:/usr/bin:/bin",
+    ),
+    (
+        "/a:V20/bin:/b:V1819/bin:OLD/bin:/usr/bin:/bin",
+        "/a:N18/bin:/b:V1819/bin:N18/bin:/usr/bin:/bin",
+    ),
+    ("/usr/bin:/bin:", "N18/bin:/usr/bin:/bin:"),
+    ("", "N18/bin"),
+];
+
 #[test]
 fn the_digest_path_table_is_reproduced_row_by_row() {
-    assert_change_rows(
-        "/bin",
-        &[
-            ("/a:V20/bin:/usr/bin:/bin", "/a:N18/bin:/usr/bin:/bin"),
-            (
-                "/opt/bin:V20/bin:/usr/bin:/bin",
-                "/opt/bin:N18/bin:/usr/bin:/bin",
-            ),
-            (
-                "/x/bin:V20/bin:/usr/bin:/bin",
-                "/x/bin:N18/bin:/usr/bin:/bin",
-            ),
-            (
-                "/usr/bin:/bin:V20/bin:/b",
-                "N18/bin:/usr/bin:/bin:V20/bin:/b",
-            ),
-            (
-                "/usr/local/bin:V20/bin:/usr/bin:/bin",
-                "N18/bin:/usr/local/bin:V20/bin:/usr/bin:/bin",
-            ),
-            (
-                "V20/bin:/usr/bin:/bin:/b:V1819/bin",
-                "N18/bin:V20/bin:/usr/bin:/bin:/b:V1819/bin",
-            ),
-            ("/a:OLD/bin:/usr/bin:/bin", "/a:N18/bin:/usr/bin:/bin"),
-            ("/a:V20/bin/sub:/usr/bin:/bin", "/a:N18/bin:/usr/bin:/bin"),
-            ("/a:V20/binx:/usr/bin:/bin", "/a:N18/bin:/usr/bin:/bin"),
-            (
-                "/a:$NVM_DIR/foo/bin:/usr/bin:/bin",
-                "/a:N18/bin:/usr/bin:/bin",
-            ),
-            (
-                "/a:V20/bin:/b:V1819/bin:OLD/bin:/usr/bin:/bin",
-                "/a:N18/bin:/b:V1819/bin:N18/bin:/usr/bin:/bin",
-            ),
-            ("/usr/bin:/bin:", "N18/bin:/usr/bin:/bin:"),
-            ("", "N18/bin"),
-        ],
-    );
+    assert_change_rows("/bin", DIGEST_PATH_TABLE);
 }
 
 #[test]
@@ -78,52 +78,52 @@ fn the_digest_manpath_table_is_reproduced_row_by_row() {
     }
 }
 
+/// PATH values probed against the real `nvm_change_path`: (before, after).
+const REAL_CHANGE_PATH_PROBES: &[(&str, &str)] = &[
+    ("$NVM_DIR/foo:/bin", "N18/bin"),
+    (
+        "/a:$NVM_DIR/foo:/x/bin:/c",
+        "N18/bin:/a:$NVM_DIR/foo:/x/bin:/c",
+    ),
+    (
+        "/a:$NVM_DIR/v1/bin:$NVM_DIR/v2/bin",
+        "/a:N18/bin:$NVM_DIR/v2/bin",
+    ),
+    ("/a:OLD/bin:V20/bin", "/a:N18/bin:V20/bin"),
+    ("/a:V20/bin:V20/bin", "/a:N18/bin:V20/bin"),
+    ("$NVM_DIR/v1/bin:V20/bin", "N18/bin:V20/bin"),
+    ("/bin", "N18/bin:/bin"),
+    ("/a:", "N18/bin:/a:"),
+    (":/a", "N18/bin::/a"),
+    ("/a:V20/bin:", "/a:N18/bin:"),
+    ("$NVM_DIR/versions/io.js/v3.3.1/bin:/a", "N18/bin:/a"),
+    ("/a:$NVM_DIR/versions/bin:/b", "/a:N18/bin:/b"),
+    ("/sbin:V20/bin", "/sbin:N18/bin"),
+    ("/opt/bin:/usr/bin/x:V20/bin", "/opt/bin:/usr/bin/x:N18/bin"),
+    (
+        "/a:/usr/local/bin:V20/bin",
+        "N18/bin:/a:/usr/local/bin:V20/bin",
+    ),
+    ("/a:/bin/:V20/bin", "/a:/bin/:N18/bin"),
+    ("/a/usr/bin:$NVM_DIR/v1/bin", "/a/usr/bin:N18/bin"),
+    (
+        "/usr/bin:$NVM_DIR/foo/bin",
+        "N18/bin:/usr/bin:$NVM_DIR/foo/bin",
+    ),
+    ("$NVM_DIR/a/b/bin:/c", "N18/bin:$NVM_DIR/a/b/bin:/c"),
+    ("V20/binary/bin", "N18/bin"),
+    ("$NVM_DIR/versions/node/a:b/bin:/c", "N18/bin:/c"),
+    ("/a:$NVM_DIR/v1/sbin:/b", "N18/bin:/a:$NVM_DIR/v1/sbin:/b"),
+    (
+        "/a:$NVM_DIR/v1/sbin/bin:/b",
+        "N18/bin:/a:$NVM_DIR/v1/sbin/bin:/b",
+    ),
+    ("/a:$NVM_DIR/:/bin:/b", "/a:N18/bin:/b"),
+];
+
 #[test]
 fn probes_of_the_real_change_path_agree() {
-    assert_change_rows(
-        "/bin",
-        &[
-            ("$NVM_DIR/foo:/bin", "N18/bin"),
-            (
-                "/a:$NVM_DIR/foo:/x/bin:/c",
-                "N18/bin:/a:$NVM_DIR/foo:/x/bin:/c",
-            ),
-            (
-                "/a:$NVM_DIR/v1/bin:$NVM_DIR/v2/bin",
-                "/a:N18/bin:$NVM_DIR/v2/bin",
-            ),
-            ("/a:OLD/bin:V20/bin", "/a:N18/bin:V20/bin"),
-            ("/a:V20/bin:V20/bin", "/a:N18/bin:V20/bin"),
-            ("$NVM_DIR/v1/bin:V20/bin", "N18/bin:V20/bin"),
-            ("/bin", "N18/bin:/bin"),
-            ("/a:", "N18/bin:/a:"),
-            (":/a", "N18/bin::/a"),
-            ("/a:V20/bin:", "/a:N18/bin:"),
-            ("$NVM_DIR/versions/io.js/v3.3.1/bin:/a", "N18/bin:/a"),
-            ("/a:$NVM_DIR/versions/bin:/b", "/a:N18/bin:/b"),
-            ("/sbin:V20/bin", "/sbin:N18/bin"),
-            ("/opt/bin:/usr/bin/x:V20/bin", "/opt/bin:/usr/bin/x:N18/bin"),
-            (
-                "/a:/usr/local/bin:V20/bin",
-                "N18/bin:/a:/usr/local/bin:V20/bin",
-            ),
-            ("/a:/bin/:V20/bin", "/a:/bin/:N18/bin"),
-            ("/a/usr/bin:$NVM_DIR/v1/bin", "/a/usr/bin:N18/bin"),
-            (
-                "/usr/bin:$NVM_DIR/foo/bin",
-                "N18/bin:/usr/bin:$NVM_DIR/foo/bin",
-            ),
-            ("$NVM_DIR/a/b/bin:/c", "N18/bin:$NVM_DIR/a/b/bin:/c"),
-            ("V20/binary/bin", "N18/bin"),
-            ("$NVM_DIR/versions/node/a:b/bin:/c", "N18/bin:/c"),
-            ("/a:$NVM_DIR/v1/sbin:/b", "N18/bin:/a:$NVM_DIR/v1/sbin:/b"),
-            (
-                "/a:$NVM_DIR/v1/sbin/bin:/b",
-                "N18/bin:/a:$NVM_DIR/v1/sbin/bin:/b",
-            ),
-            ("/a:$NVM_DIR/:/bin:/b", "/a:N18/bin:/b"),
-        ],
-    );
+    assert_change_rows("/bin", REAL_CHANGE_PATH_PROBES);
 }
 
 #[test]

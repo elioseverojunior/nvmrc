@@ -133,27 +133,23 @@ fn a_version_from_nvmrc_is_named_after_the_found_line() {
     );
 }
 
+/// The `npm config` calls that clean the user's npmrc file.
+const DELETE_FROM_USER_NPMRC: [&str; 2] = [
+    "config --loglevel=warn delete prefix --userconfig=/h/.npmrc",
+    "config --loglevel=warn delete globalconfig --userconfig=/h/.npmrc",
+];
+
 #[test]
 fn delete_prefix_runs_npm_config_then_says_now_using() {
     let npm = format!("{N18}/bin/npm");
-    let process = npm_versions()
-        .with_success(
-            &npm,
-            "config --loglevel=warn delete prefix --userconfig=/h/.npmrc",
-            "",
-        )
-        .with_success(
-            &npm,
-            "config --loglevel=warn delete globalconfig --userconfig=/h/.npmrc",
-            "",
-        );
+    let process = DELETE_FROM_USER_NPMRC
+        .iter()
+        .fold(npm_versions(), |process, args| {
+            process.with_success(&npm, args, "")
+        });
     let env = env_on(BASE_PATH).with_var("HOME", "/h");
-    let output = use_in(
-        &bad_user_npmrc(),
-        &env,
-        &process,
-        &["--delete-prefix", "18"],
-    );
+    let arguments = ["--delete-prefix", "18"];
+    let output = use_in(&bad_user_npmrc(), &env, &process, &arguments);
     assert_eq!(output.status, NvmExitCode::Success);
     assert_eq!(
         (output.stdout.as_str(), output.stderr.as_str()),
@@ -165,14 +161,10 @@ fn delete_prefix_runs_npm_config_then_says_now_using() {
         .iter()
         .map(|run| run.args.join(" "))
         .collect();
-    assert_eq!(
-        calls,
-        [
-            "--version",
-            "config --loglevel=warn delete prefix --userconfig=/h/.npmrc",
-            "config --loglevel=warn delete globalconfig --userconfig=/h/.npmrc",
-        ]
-    );
+    let expected: Vec<&str> = std::iter::once("--version")
+        .chain(DELETE_FROM_USER_NPMRC)
+        .collect();
+    assert_eq!(calls, expected);
 }
 
 #[test]

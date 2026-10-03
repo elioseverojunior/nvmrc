@@ -40,40 +40,42 @@ fn reinstall_and_copy_packages_from_name_the_version_to_take_packages_from() {
     }
 }
 
-/// Every message is what the real `nvm.sh` printed.
+/// The reinstall options nvm.sh refuses, with the message the real
+/// `nvm.sh` printed for each.
+const REFUSED_REINSTALL_OPTIONS: &[(&str, &str)] = &[
+    (
+        "--reinstall-packages-from=18 --reinstall-packages-from=18 20",
+        "--reinstall-packages-from may not be provided more than once",
+    ),
+    (
+        "--copy-packages-from=18 --reinstall-packages-from=18 20",
+        "--reinstall-packages-from may not be provided more than once",
+    ),
+    (
+        "--reinstall-packages-from=18 --copy-packages-from=18 20",
+        "--reinstall-packages-from may not be provided more than once, or combined with `--copy-packages-from`",
+    ),
+    (
+        "--reinstall-packages-from= 20",
+        "If --reinstall-packages-from is provided, it must point to an installed version of node.",
+    ),
+    (
+        "--copy-packages-from= 20",
+        "If --copy-packages-from is provided, it must point to an installed version of node.",
+    ),
+    (
+        "--reinstall-packages-from 20",
+        "If --reinstall-packages-from is provided, it must point to an installed version of node using `=`.",
+    ),
+    (
+        "20 --copy-packages-from",
+        "If --copy-packages-from is provided, it must point to an installed version of node using `=`.",
+    ),
+];
+
 #[test]
 fn a_reinstall_option_given_twice_or_without_a_version_is_status_6() {
-    let cases = [
-        (
-            "--reinstall-packages-from=18 --reinstall-packages-from=18 20",
-            "--reinstall-packages-from may not be provided more than once",
-        ),
-        (
-            "--copy-packages-from=18 --reinstall-packages-from=18 20",
-            "--reinstall-packages-from may not be provided more than once",
-        ),
-        (
-            "--reinstall-packages-from=18 --copy-packages-from=18 20",
-            "--reinstall-packages-from may not be provided more than once, or combined with `--copy-packages-from`",
-        ),
-        (
-            "--reinstall-packages-from= 20",
-            "If --reinstall-packages-from is provided, it must point to an installed version of node.",
-        ),
-        (
-            "--copy-packages-from= 20",
-            "If --copy-packages-from is provided, it must point to an installed version of node.",
-        ),
-        (
-            "--reinstall-packages-from 20",
-            "If --reinstall-packages-from is provided, it must point to an installed version of node using `=`.",
-        ),
-        (
-            "20 --copy-packages-from",
-            "If --copy-packages-from is provided, it must point to an installed version of node using `=`.",
-        ),
-    ];
-    for (line, message) in cases {
+    for &(line, message) in REFUSED_REINSTALL_OPTIONS {
         let error = parsed(line).unwrap_err();
         assert_eq!(error.exit_code(), NvmExitCode::InvalidOptions, "{line}");
         assert_eq!(error.to_string(), message, "{line}");

@@ -1,26 +1,13 @@
-use std::rc::Rc;
-
 use super::built::*;
 use super::*;
 
 #[test]
 fn a_hook_installs_in_place_of_nvm_and_is_told_how() {
     let world = Built::new().with_env("NVM_INSTALL_THIRD_PARTY_HOOK", "/opt/hook");
-    let fs = Rc::clone(&world.fs);
+    let hook_args = "v20.10.0 node std binary /n/versions/node/v20.10.0";
     let process = FakeProcess::default()
-        .with_success(
-            "/opt/hook",
-            "v20.10.0 node std binary /n/versions/node/v20.10.0",
-            "",
-        )
-        .with_effect(
-            "/opt/hook",
-            "v20.10.0 node std binary /n/versions/node/v20.10.0",
-            move || {
-                fs.write_file(Path::new(NODE), "binary").unwrap();
-                fs.set_executable(Path::new(NODE));
-            },
-        );
+        .with_success("/opt/hook", hook_args, "")
+        .with_effect("/opt/hook", hook_args, world.node_maker());
     let context = Context::new(world.fs.as_ref(), &world.env)
         .with_http(&world.http)
         .with_process(&process);
