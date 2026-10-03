@@ -51,8 +51,9 @@ contract and CI.
 **Not in this plan, on purpose:**
 
 - Colors (Plan 7), `doctor` and `migrate` (Plan 8).
-- `fish` and PowerShell: `nvm init` supports `bash`, `zsh`, `sh`, `dash` and
-  `ksh`; any other shell is a usage error that names them.
+- PowerShell, nushell and other shells: `nvm init` supports `bash`, `zsh`, `sh`,
+  `dash`, `ksh` and (Task 17) `fish`; any other shell is a usage error that
+  names them.
 - `nvm unload` and the bash completion script.
 - The "help hijack" of `nvm.sh` (any `-h`, `help` or `--help` argument before a
   `--` prints the help): arguments after a subcommand are ordinary arguments.
@@ -85,8 +86,9 @@ contract and CI.
   non-empty stream, hands over the shell code (`script`), runs the deferred child
   (`spawn`) and finishes with the status. Only `use`, `deactivate` and an
   activating `install` produce shell code.
-- The shell code is POSIX `sh` (bash, zsh, dash and ksh evaluate it): one
-  statement per line, values single-quoted (`'` becomes `'\''`).
+- The shell code is POSIX `sh` (bash, zsh, dash and ksh evaluate it) or, for
+  `fish` (Task 17), `set -gx`/`set -e` statements: one statement per line,
+  values single-quoted (`'` becomes `'\''` in POSIX, `\'` in fish).
 - The binary never writes outside `$NVM_DIR`, except `.nvmrc` (`--save`, in the
   directory named by `PWD`) and the `current` symlink under `$NVM_DIR`.
 - The logical working directory is `$PWD` when it is absolute and names the same
@@ -16462,7 +16464,7 @@ and a child of `nvm install` sees an empty `PREFIX`.
 
 - [ ] **Step 4: Write the implementation**
 
-Apply to `docs/superpowers/specs/2026-10-02-nvmrc-design.md` (above the test module):
+Apply to `docs/superpowers/specs/2026-10-02-nvmrc-design.md` (a document):
 
 ```diff
 --- a/docs/superpowers/specs/2026-10-02-nvmrc-design.md
@@ -17600,6 +17602,1415 @@ git commit -S -m "fix: keep the shell channel private, validate PWD and refuse n
 
 ---
 
+### Task 17: `nvm init fish`
+
+**Files:**
+
+- Create: `src/shell/fish.rs`, `src/shell/init/fish.rs`,
+  `src/shell/init/posix.rs`
+- Modify: `Dockerfile`, `docs/superpowers/specs/2026-10-02-nvmrc-design.md`,
+  `src/adapters/std_process.rs`, `src/cli/channel.rs`, `src/cli/commands.rs`,
+  `src/cli/tests/init.rs`, `src/cli/tests/script.rs`, `src/shell/init/mod.rs`,
+  `src/shell/init/tests.rs`, `src/shell/mod.rs`, `src/shell/tests.rs`,
+  `tests/init_cli.rs`, `tests/init_isolation_cli.rs`, `tests/init_lab/mod.rs`,
+  `tests/use_cli.rs`
+
+**Interfaces:**
+
+- Produces: `shell::init::Shell::Fish` (`FromStr` `fish`; the usage error names
+  it), the fish snippet (`src/shell/init/fish.rs`; the POSIX one moves to
+  `posix.rs`), the fish rendering of a `Script` (`src/shell/fish.rs`) and the
+  variable `NVMRC_SHELL_KIND`: the fish function sets it to `fish` for the
+  one call so that `cli/channel.rs` writes the code in fish syntax (absent
+  means POSIX, which keeps the standalone mode and every other shell as they
+  were); `StdProcess` never lets a child inherit it.
+- Behaviour: fish 3.4 or later. The code is `set -gx NAME 'value'` (fish single
+  quotes escape `\'` and `\\`), `PATH`, `MANPATH` and `NODE_PATH` are fish
+  path variables (a colon-joined value is split as fish does, so the shell ends
+  with the same `PATH` as with `nvm.sh`), `unset` is `set -e`, and there is no
+  command hash to reset. The function follows the protocol of Task 13 in fish
+  idioms: fish does not pass a block's redirections into a command substitution,
+  so the code on descriptor 3 is piped into `read -z` inside a
+  `begin ... end 4>&1` block and the binary's status is kept from
+  `$pipestatus[1]`; `use`, `deactivate`, `install`, `i` and `__auto` take that
+  path, every other command is `command nvm $argv`, and `MANPATH`, `NODE_PATH`,
+  `NVM_SYMLINK_CURRENT` and `PREFIX` reach the binary only when set. `NVM_DIR`
+  is defaulted and exported as in the POSIX snippet. The auto-use at the end is
+  `nvm __auto use` (omitted with `--no-use`).
+- Tests: every real-shell scenario of Tasks 10, 13, 14 and 16 runs in bash, zsh,
+  sh, dash, ksh and fish; a shell that is not installed is skipped. fish is not
+  installed on the development Mac (Homebrew is not touched): the repository
+  `Dockerfile` now installs `fish`, `zsh`, `ksh` and `dash`, so `docker run`
+  covers all six, and fish 3.4.1 (the lowest supported version) was run once
+  on Alpine 3.16.
+- The design spec names the supported shells in section 2.
+- [ ] **Step 1: Write the failing tests**
+
+Apply to `src/cli/tests/init.rs`:
+
+```diff
+--- a/src/cli/tests/init.rs
++++ b/src/cli/tests/init.rs
+@@ -11,6 +11,18 @@
+             "{out}"
+         );
+     }
++}
++
++#[test]
++fn init_fish_prints_the_fish_snippet_ending_with_the_auto_use() {
++    let (code, out, err) = run_cli(&["nvm", "init", "fish"]);
++    assert_eq!((code, err.as_str()), (0, ""));
++    assert!(out.starts_with("# >>> nvmrc init >>>\n"), "{out}");
++    assert!(out.contains("\nfunction nvm "), "{out}");
++    assert!(
++        out.ends_with("\nend\nnvm __auto use\n# <<< nvmrc init <<<\n"),
++        "{out}"
++    );
+ }
+ 
+ #[test]
+@@ -37,10 +49,10 @@
+ 
+ #[test]
+ fn init_of_an_unsupported_shell_names_the_supported_ones_with_exit_127() {
+-    for shell in ["fish", "powershell"] {
++    for shell in ["tcsh", "powershell"] {
+         let (code, out, err) = run_cli(&["nvm", "init", shell]);
+         assert_eq!((code, out.as_str()), (127, ""));
+-        assert!(err.contains("bash, zsh, sh, dash, ksh"), "{err}");
++        assert!(err.contains("bash, zsh, sh, dash, ksh, fish"), "{err}");
+     }
+ }
+ 
+```
+
+Apply to `src/cli/tests/script.rs`:
+
+```diff
+--- a/src/cli/tests/script.rs
++++ b/src/cli/tests/script.rs
+@@ -10,8 +10,16 @@
+ }
+ 
+ fn deliver(output: &Output, channel: Option<&FakeScriptChannel>) -> (u8, String, String) {
+-    let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
+-    let context = Context::new(&fs, &env);
++    deliver_in(&FakeEnv::default(), output, channel)
++}
++
++fn deliver_in(
++    env: &FakeEnv,
++    output: &Output,
++    channel: Option<&FakeScriptChannel>,
++) -> (u8, String, String) {
++    let fs = FakeFileSystem::default();
++    let context = Context::new(&fs, env);
+     let context = match channel {
+         Some(channel) => context.with_script_channel(channel),
+         None => context,
+@@ -37,6 +45,25 @@
+ fn without_a_channel_the_code_goes_to_stdout_and_the_text_to_stderr() {
+     let result = deliver(&script_output("o", "e"), None);
+     assert_eq!(result, (0, "unset NVM_BIN\n".into(), "e\no\n".into()));
++}
++
++#[test]
++fn the_fish_function_gets_fish_code_on_its_channel() {
++    let channel = FakeScriptChannel::default();
++    let env = FakeEnv::default().with_var("NVMRC_SHELL_KIND", "fish");
++    let result = deliver_in(&env, &script_output("o", "e"), Some(&channel));
++    assert_eq!(result, (0, "o\n".into(), "e\n".into()));
++    assert_eq!(channel.sent(), "set -e NVM_BIN\n");
++}
++
++#[test]
++fn standalone_the_code_is_posix_unless_the_kind_says_fish() {
++    let fish = FakeEnv::default().with_var("NVMRC_SHELL_KIND", "fish");
++    let result = deliver_in(&fish, &script_output("o", ""), None);
++    assert_eq!(result, (0, "set -e NVM_BIN\n".into(), "o\n".into()));
++    let other = FakeEnv::default().with_var("NVMRC_SHELL_KIND", "zsh");
++    let result = deliver_in(&other, &script_output("o", ""), None);
++    assert_eq!(result.1, "unset NVM_BIN\n");
+ }
+ 
+ #[test]
+```
+
+Apply to `src/shell/init/tests.rs`:
+
+```diff
+--- a/src/shell/init/tests.rs
++++ b/src/shell/init/tests.rs
+@@ -1,12 +1,13 @@
+ use super::*;
+ use crate::error::NvmExitCode;
+ 
+-const ALL: [(&str, Shell); 5] = [
++const ALL: [(&str, Shell); 6] = [
+     ("bash", Shell::Bash),
+     ("zsh", Shell::Zsh),
+     ("sh", Shell::Sh),
+     ("dash", Shell::Dash),
+     ("ksh", Shell::Ksh),
++    ("fish", Shell::Fish),
+ ];
+ 
+ fn lines_of(shell: Shell, options: &InitOptions) -> Vec<String> {
+@@ -14,8 +15,8 @@
+ }
+ 
+ /// The last statement before the closing marker.
+-fn last_statement(options: &InitOptions) -> String {
+-    let lines = lines_of(Shell::Bash, options);
++fn last_statement(shell: Shell, options: &InitOptions) -> String {
++    let lines = lines_of(shell, options);
+     lines[lines.len() - 2].clone()
+ }
+ 
+@@ -29,12 +30,15 @@
+ 
+ #[test]
+ fn other_names_are_a_usage_error_naming_the_supported_shells() {
+-    for name in ["fish", "powershell", "Bash", "ZSH", "", "tcsh"] {
++    for name in ["Fish", "powershell", "Bash", "ZSH", "", "tcsh"] {
+         let error = name.parse::<Shell>().expect_err(name);
+         assert!(matches!(error, CliError::Usage(_)), "{name}");
+         assert_eq!(error.exit_code(), NvmExitCode::NotFound);
+         let message = error.to_string();
+-        assert!(message.contains("bash, zsh, sh, dash, ksh"), "{message}");
++        assert!(
++            message.contains("bash, zsh, sh, dash, ksh, fish)"),
++            "{message}"
++        );
+         assert!(message.contains(USAGE), "{message}");
+     }
+ }
+@@ -56,6 +60,8 @@
+         assert!(text.is_ascii());
+         assert!(text.contains(&format!("nvm init {name}")), "{text}");
+     }
++    let fish = snippet(Shell::Fish, &InitOptions::default());
++    assert!(fish.contains("`nvm init fish | source`"), "{fish}");
+ }
+ 
+ #[test]
+@@ -94,7 +100,14 @@
+ 
+ #[test]
+ fn the_snippet_ends_with_the_auto_use_by_default() {
+-    assert_eq!(last_statement(&InitOptions::default()), "\\nvm __auto use");
++    assert_eq!(
++        last_statement(Shell::Bash, &InitOptions::default()),
++        "\\nvm __auto use"
++    );
++    assert_eq!(
++        last_statement(Shell::Fish, &InitOptions::default()),
++        "nvm __auto use"
++    );
+ }
+ 
+ #[test]
+@@ -103,7 +116,11 @@
+         install: true,
+         ..InitOptions::default()
+     };
+-    assert_eq!(last_statement(&options), "\\nvm __auto install");
++    assert_eq!(
++        last_statement(Shell::Bash, &options),
++        "\\nvm __auto install"
++    );
++    assert_eq!(last_statement(Shell::Fish, &options), "nvm __auto install");
+ }
+ 
+ #[test]
+@@ -113,7 +130,63 @@
+             no_use: true,
+             install,
+         };
+-        let text = snippet(Shell::Bash, &options);
+-        assert!(!text.contains("nvm __auto "), "{text}");
++        for shell in [Shell::Bash, Shell::Fish] {
++            let text = snippet(shell, &options);
++            assert!(!text.contains("nvm __auto "), "{text}");
++        }
+     }
+ }
++
++#[test]
++fn the_fish_snippet_sets_the_shell_marker_and_the_nvm_dir_default() {
++    let text = snippet(Shell::Fish, &InitOptions::default());
++    assert!(text.contains("\nset -gx NVMRC_SHELL 1\n"), "{text}");
++    assert!(
++        text.contains(
++            "\ntest -n \"$NVM_DIR\"; or set -g NVM_DIR $HOME/.nvm\nset -gx NVM_DIR $NVM_DIR\n"
++        ),
++        "{text}"
++    );
++    assert!(!text.contains("export "), "{text}");
++}
++
++#[test]
++fn the_fish_function_captures_descriptor_3_and_names_its_dialect() {
++    let text = snippet(Shell::Fish, &InitOptions::default());
++    assert!(text.contains("\nfunction nvm "), "{text}");
++    assert!(
++        text.contains("if not contains -- \"$argv[1]\" use deactivate install i __auto\n"),
++        "{text}"
++    );
++    let capture = "NVMRC_SCRIPT_FD=3 NVMRC_SHELL_KIND=fish command nvm $argv 3>&1 1>&4 4>&- \
++                   | read -z nvmrc_code\n";
++    assert!(text.contains(capture), "{text}");
++    assert!(text.contains("set nvmrc_status $pipestatus[1]\n"), "{text}");
++    assert!(
++        text.contains("    end 4>&1\n    eval $nvmrc_code\n"),
++        "{text}"
++    );
++    assert!(text.contains("return $nvmrc_status\n"), "{text}");
++    assert_eq!(text.matches("NVMRC_SHELL_KIND").count(), 1, "{text}");
++}
++
++#[test]
++fn other_fish_commands_run_the_binary_untouched() {
++    let text = snippet(Shell::Fish, &InitOptions::default());
++    assert!(
++        text.contains("            command nvm $argv\n        end\n        return $status\n"),
++        "{text}"
++    );
++    assert_eq!(text.matches("command nvm $argv").count(), 2, "{text}");
++}
++
++#[test]
++fn fish_passes_the_variables_to_the_binary_only_when_set() {
++    let text = snippet(Shell::Fish, &InitOptions::default());
++    for passed in ["MANPATH", "NODE_PATH", "NVM_SYMLINK_CURRENT", "PREFIX"] {
++        let export = format!("set -q {passed}; and set -lx {passed} ${passed}\n");
++        assert_eq!(text.matches(&export).count(), 2, "{passed}: {text}");
++        assert!(!text.contains(&format!("{passed}=")), "{passed}: {text}");
++    }
++    assert!(!text.contains("@EXPORTS@"), "{text}");
++}
+```
+
+Apply to `src/shell/tests.rs`:
+
+```diff
+--- a/src/shell/tests.rs
++++ b/src/shell/tests.rs
+@@ -1,4 +1,5 @@
+ use super::*;
++use crate::fakes::FakeEnv;
+ use std::process::Command;
+ 
+ #[test]
+@@ -121,3 +122,113 @@
+     assert_eq!(output.stdout, b"gone");
+     Ok(())
+ }
++
++#[test]
++fn fish_quote_table() {
++    let cases = [
++        ("", "''"),
++        ("a b", "'a b'"),
++        ("it's", r"'it\'s'"),
++        ("'", r"'\''"),
++        (r"a\b", r"'a\\b'"),
++        (r"\'", r"'\\\''"),
++        ("$HOME", "'$HOME'"),
++        ("(echo x)", "'(echo x)'"),
++        ("say \"hi\"", "'say \"hi\"'"),
++        ("a\nb", "'a\nb'"),
++        ("caf\u{e9} \u{1f600}", "'caf\u{e9} \u{1f600}'"),
++    ];
++    for (input, expected) in cases {
++        assert_eq!(fish::quote(input), expected, "input {input:?}");
++    }
++}
++
++#[test]
++fn a_use_script_renders_as_fish() -> Result<(), ShellError> {
++    let script = Script::new()
++        .export("MANPATH", "/v/share/man:/m a:")?
++        .export("PATH", "/v/bin:/a b:/c")?
++        .hash_reset()
++        .export("NVM_BIN", "/v/bin")?;
++    assert_eq!(
++        script.render_in(Dialect::Fish),
++        "set -gx MANPATH '/v/share/man:/m a:'\nset -gx PATH '/v/bin:/a b:/c'\n\
++         set -gx NVM_BIN '/v/bin'\n"
++    );
++    assert_eq!(script.render_in(Dialect::Posix), script.render());
++    Ok(())
++}
++
++#[test]
++fn a_deactivate_script_renders_as_fish() -> Result<(), ShellError> {
++    let script = Script::new()
++        .export("PATH", "/usr/bin")?
++        .unset("NVM_BIN")?
++        .unset("NVM_INC")?;
++    assert_eq!(
++        script.render_in(Dialect::Fish),
++        "set -gx PATH '/usr/bin'\nset -e NVM_BIN\nset -e NVM_INC\n"
++    );
++    Ok(())
++}
++
++#[test]
++fn the_dialect_is_fish_only_when_the_function_says_so() {
++    let kind =
++        |value: &str| Dialect::from_env(&FakeEnv::default().with_var(DIALECT_VARIABLE, value));
++    assert_eq!(DIALECT_VARIABLE, "NVMRC_SHELL_KIND");
++    assert_eq!(kind("fish"), Dialect::Fish);
++    for other in ["", "bash", "FISH", "fish "] {
++        assert_eq!(kind(other), Dialect::Posix, "{other:?}");
++    }
++    assert_eq!(Dialect::from_env(&FakeEnv::default()), Dialect::Posix);
++}
++
++/// Runs `program` in a real fish (`None` when fish is not installed).
++fn in_fish(program: &str) -> Option<Vec<u8>> {
++    let output = Command::new("fish")
++        .args(["--no-config", "-c", program])
++        .output()
++        .ok()?;
++    assert!(output.status.success(), "fish failed on {program:?}");
++    Some(output.stdout)
++}
++
++#[test]
++fn round_trip_fish() -> Result<(), ShellError> {
++    let script = Script::new()
++        .export("NVMRC_TEST_VALUE", NASTY)?
++        .export("NVMRC_TEST_EMPTY", "")?;
++    let program = format!(
++        "{}printf '%s|%s' \"$NVMRC_TEST_VALUE\" \"$NVMRC_TEST_EMPTY\"",
++        script.render_in(Dialect::Fish)
++    );
++    match in_fish(&program) {
++        Some(stdout) => assert_eq!(stdout, format!("{NASTY}|").as_bytes()),
++        None => eprintln!("skipping: fish is not installed"),
++    }
++    Ok(())
++}
++
++#[test]
++fn fish_path_variables_keep_empty_entries_spaces_and_a_trailing_colon() -> Result<(), ShellError> {
++    let value = "/v/share/man:/m a::/n:";
++    let script = Script::new()
++        .export("MANPATH", value)?
++        .export("NVM_BIN", "x")?
++        .unset("NVM_BIN")?
++        .hash_reset();
++    let program = format!(
++        "{}printf '%s|%s|' \"$MANPATH\" (count $MANPATH); env | string match 'MANPATH=*'; \
++         set -q NVM_BIN; or echo gone",
++        script.render_in(Dialect::Fish)
++    );
++    match in_fish(&program) {
++        Some(stdout) => assert_eq!(
++            stdout,
++            format!("{value}|5|MANPATH={value}\ngone\n").as_bytes()
++        ),
++        None => eprintln!("skipping: fish is not installed"),
++    }
++    Ok(())
++}
+```
+
+Apply to `tests/init_cli.rs`:
+
+```diff
+--- a/tests/init_cli.rs
++++ b/tests/init_cli.rs
+@@ -5,7 +5,7 @@
+ 
+ mod init_lab;
+ 
+-use init_lab::{Lab, USING_18, each_shell, with_function};
++use init_lab::{Lab, USING_18, each_shell, find_shell, in_dialect, init_line, with_function};
+ 
+ #[test]
+ fn use_switches_the_shell_and_says_so_on_stdout() {
+@@ -51,13 +51,24 @@
+ fn a_failing_use_returns_its_status_and_changes_nothing() {
+     let lab = Lab::new();
+     each_shell(|name, shell| {
+-        let commands = "nvm use 99\necho \"status=$?\"\necho \"PATH=$PATH\"";
++        let commands = in_dialect(
++            name,
++            "nvm use 99\necho \"status=$?\"\necho \"PATH=$PATH\"",
++            "nvm use 99\necho \"status=$status\"\necho \"PATH=$PATH\"",
++        );
+         let run = lab.run(shell, &with_function(name, commands));
+         let tail = format!("status=3\nPATH={}\n", lab.base_path());
+         assert!(run.stdout.ends_with(&tail), "{name}: {}", run.stdout);
+         let quiet = lab.run(
+             shell,
+-            &with_function(name, "nvm use 99 2>/dev/null >/dev/null; echo $?"),
++            &with_function(
++                name,
++                in_dialect(
++                    name,
++                    "nvm use 99 2>/dev/null >/dev/null; echo $?",
++                    "nvm use 99 2>/dev/null >/dev/null; echo $status",
++                ),
++            ),
+         );
+         assert_eq!(
+             (quiet.stdout.as_str(), quiet.stderr.as_str()),
+@@ -67,15 +78,24 @@
+     });
+ }
+ 
++/// What `deactivate` leaves behind: `NVM_BIN` and the temporaries of the
++/// function, each printed as `gone` when it is not set.
++const LEFT_BEHIND: &str = "echo \"left: ${NVM_BIN-gone} ${__nvmrc_code-gone} \
++${__nvmrc_status-gone} ${NVMRC_SCRIPT_FD-gone} ${NVMRC_SHELL_KIND-gone}\"";
++const LEFT_BEHIND_FISH: &str = "echo left: (for name in NVM_BIN nvmrc_code nvmrc_status \
++NVMRC_SCRIPT_FD NVMRC_SHELL_KIND; set -q $name; and echo $name; or echo gone; end)";
++
+ #[test]
+ fn deactivate_undoes_use_and_leaves_no_temporaries() {
+     let lab = Lab::new();
+     each_shell(|name, shell| {
+-        let commands = "nvm use 18 >/dev/null\nnvm deactivate\n\
+-echo \"PATH=$PATH\"\necho \"BIN=${NVM_BIN-unset} ${__nvmrc_code-gone} ${__nvmrc_status-gone} ${NVMRC_SCRIPT_FD-none}\"";
+-        let run = lab.run(shell, &with_function(name, commands));
++        let commands = format!(
++            "nvm use 18 >/dev/null\nnvm deactivate\necho \"PATH=$PATH\"\n{}",
++            in_dialect(name, LEFT_BEHIND, LEFT_BEHIND_FISH)
++        );
++        let run = lab.run(shell, &with_function(name, &commands));
+         let removed = format!("{}/*/bin removed from ${{PATH}}\n", lab.at("nvm"));
+-        let tail = format!("PATH={}\nBIN=unset gone gone none\n", lab.base_path());
++        let tail = format!("PATH={}\nleft: gone gone gone gone gone\n", lab.base_path());
+         assert!(run.stdout.starts_with(&removed), "{name}: {}", run.stdout);
+         assert!(run.stdout.ends_with(&tail), "{name}: {}", run.stdout);
+     });
+@@ -103,16 +123,20 @@
+     });
+ }
+ 
++/// fish has no `set -eu`; its aliases are functions, and `command` skips them.
++const ALIASED_FISH: &str = "alias nvm false\ncommand nvm init fish --no-use | source\n\
++nvm use 18 >/dev/null\necho \"$NVM_BIN\"\nnvm bogus 2>/dev/null; or echo \"bogus=$status\"";
++
+ #[test]
+ fn the_function_survives_set_u_set_e_and_an_alias_named_nvm() {
+     let lab = Lab::new();
+     each_shell(|name, shell| {
+-        let commands = format!(
++        let posix = format!(
+             "set -eu\nshopt -s expand_aliases 2>/dev/null || true\nalias nvm=false\n\
+ eval \"$(\\nvm init {name} --no-use)\"\nnvm use 18 >/dev/null\necho \"$NVM_BIN\"\n\
+ nvm bogus 2>/dev/null || echo \"bogus=$?\""
+         );
+-        let run = lab.run(shell, &commands);
++        let run = lab.run(shell, in_dialect(name, &posix, ALIASED_FISH));
+         let expected = format!("{}\nbogus=127\n", lab.version_bin("v18.20.4"));
+         assert_eq!(
+             (run.status, run.stdout.as_str()),
+@@ -123,10 +147,12 @@
+     });
+ }
+ 
+-const AUTO: &str = "echo \"status=$?\"\nnvm current";
+-
+ fn init_with(name: &str, options: &str) -> String {
+-    format!("eval \"$(nvm init {name}{options})\"\n{AUTO}")
++    let status = in_dialect(name, "$?", "$status");
++    format!(
++        "{}\necho \"status={status}\"\nnvm current",
++        init_line(name, options)
++    )
+ }
+ 
+ #[test]
+@@ -157,3 +183,54 @@
+         assert_eq!(run.stdout, "status=3\nnone\n", "{name}: {}", run.stderr);
+     });
+ }
++
++#[test]
++fn install_activates_the_version_in_the_shell() {
++    let lab = Lab::new();
++    each_shell(|name, shell| {
++        let status = in_dialect(name, "$?", "$status");
++        let commands = format!(
++            "nvm install --offline 18 >/dev/null 2>&1\necho \"status={status}\"\necho \"BIN=$NVM_BIN\""
++        );
++        let run = lab.run(shell, &with_function(name, &commands));
++        let expected = format!("status=0\nBIN={}\n", lab.version_bin("v18.20.4"));
++        assert_eq!(run.stdout, expected, "{name}: {}", run.stderr);
++    });
++}
++
++const SPACED: &str = "PATH=\"$PATH:/sp ace\"\nMANPATH='/m a::/n:'\n";
++const SPACED_FISH: &str = "set PATH $PATH '/sp ace'\nset MANPATH '/m a::/n:'\n";
++
++#[test]
++fn path_and_manpath_keep_spaces_empty_entries_and_the_trailing_colon() {
++    let lab = Lab::new().program("path/manpath", "echo /usr/share/man");
++    let bin = lab.version_bin("v18.20.4");
++    let man = lab.at("nvm/versions/node/v18.20.4/share/man");
++    each_shell(|name, shell| {
++        let commands = format!(
++            "{}nvm use 18 >/dev/null\necho \"PATH=$PATH\"\necho \"MANPATH=$MANPATH\"",
++            in_dialect(name, SPACED, SPACED_FISH)
++        );
++        let run = lab.run(shell, &with_function(name, &commands));
++        let expected = format!(
++            "PATH={bin}:{}:/sp ace\nMANPATH={man}:/m a::/n:\n",
++            lab.base_path()
++        );
++        assert_eq!(run.stdout, expected, "{name}: {}", run.stderr);
++    });
++}
++
++#[test]
++fn standalone_code_for_fish_evaluates_in_fish() {
++    let Some(fish) = find_shell("fish") else {
++        eprintln!("skipped: fish is not installed");
++        return;
++    };
++    let lab = Lab::new();
++    let commands = "NVMRC_SHELL_KIND=fish nvm use 18 2>/dev/null | source\n\
++echo \"BIN=$NVM_BIN\"\necho \"PATH=$PATH\"";
++    let run = lab.run(&fish, commands);
++    let bin = lab.version_bin("v18.20.4");
++    let expected = format!("BIN={bin}\nPATH={bin}:{}\n", lab.base_path());
++    assert_eq!(run.stdout, expected, "{}", run.stderr);
++}
+```
+
+Apply to `tests/init_isolation_cli.rs`:
+
+```diff
+--- a/tests/init_isolation_cli.rs
++++ b/tests/init_isolation_cli.rs
+@@ -7,17 +7,19 @@
+ 
+ use std::time::{Duration, Instant};
+ 
+-use init_lab::{Lab, each_shell, find_shell, with_function};
++use init_lab::{Lab, each_shell, find_shell, in_dialect, with_function};
+ 
+ #[test]
+ fn a_program_nvm_starts_cannot_write_shell_code_for_the_caller() {
+     let npm = "echo 'echo INJECTED-FROM-CHILD' >&3 2>/dev/null\necho 10.7.0";
+     let lab = Lab::new().npm("v18.20.4", npm);
+     each_shell(|name, shell| {
+-        let run = lab.run(
+-            shell,
+-            &with_function(name, "nvm use 18\necho \"status=$?\""),
++        let commands = in_dialect(
++            name,
++            "nvm use 18\necho \"status=$?\"",
++            "nvm use 18\necho \"status=$status\"",
+         );
++        let run = lab.run(shell, &with_function(name, commands));
+         assert!(!run.stdout.contains("INJECTED"), "{name}: {}", run.stdout);
+         assert!(run.stdout.ends_with("status=0\n"), "{name}: {}", run.stdout);
+     });
+@@ -27,37 +29,54 @@
+ fn a_daemon_left_by_a_program_does_not_hold_use_up() {
+     let npm = "(/bin/sleep 4 >/dev/null 2>&1 &)\necho 10.7.0";
+     let lab = Lab::new().npm("v18.20.4", npm);
+-    let shell = find_shell("sh").expect("sh is installed");
+-    let started = Instant::now();
+-    let run = lab.run(
+-        &shell,
+-        &with_function("sh", "nvm use 18 >/dev/null\necho \"$NVM_BIN\""),
+-    );
+-    let elapsed = started.elapsed();
+-    assert_eq!(run.stdout, format!("{}\n", lab.version_bin("v18.20.4")));
+-    assert!(elapsed < Duration::from_secs(3), "use took {elapsed:?}");
++    for name in ["sh", "fish"] {
++        let Some(shell) = find_shell(name) else {
++            eprintln!("skipped: {name} is not installed");
++            continue;
++        };
++        let started = Instant::now();
++        let run = lab.run(
++            &shell,
++            &with_function(name, "nvm use 18 >/dev/null\necho \"$NVM_BIN\""),
++        );
++        let elapsed = started.elapsed();
++        assert_eq!(run.stdout, format!("{}\n", lab.version_bin("v18.20.4")));
++        assert!(
++            elapsed < Duration::from_secs(3),
++            "{name}: use took {elapsed:?}"
++        );
++    }
+ }
+ 
+ #[test]
+-fn exec_children_get_neither_the_descriptor_nor_its_variable() {
++fn exec_children_get_neither_the_descriptor_nor_its_variables() {
+     let lab = Lab::new();
+     let shell = find_shell("sh").expect("sh is installed");
+-    let child = "echo \"fd=${NVMRC_SCRIPT_FD-none}\"; echo leaked >&3";
++    let child =
++        "echo \"fd=${NVMRC_SCRIPT_FD-none} kind=${NVMRC_SHELL_KIND-none}\"; echo leaked >&3";
+     let commands = format!(
+-        "NVMRC_SCRIPT_FD=3 nvm exec --silent 18 /bin/sh -c '{child}' 3>channel 2>/dev/null \\\n\
++        "NVMRC_SCRIPT_FD=3 NVMRC_SHELL_KIND=fish nvm exec --silent 18 /bin/sh -c '{child}' 3>channel 2>/dev/null \\\n\
+ && echo \"write: ok\" || echo \"write: failed\"\nwhile IFS= read -r line; do echo \"channel: $line\"; done <channel"
+     );
+     let run = lab.run(&shell, &commands);
+     // Only that the write failed: dash says 2 for a failed redirection, bash 1.
+-    assert_eq!(run.stdout, "fd=none\nwrite: failed\n", "{}", run.stderr);
++    assert_eq!(
++        run.stdout, "fd=none kind=none\nwrite: failed\n",
++        "{}",
++        run.stderr
++    );
+ }
++
++const LINKED: &str = "NVM_SYMLINK_CURRENT=true\nnvm exec 18 /bin/sh -c : >/dev/null\n\
++[ -L \"$NVM_DIR/current\" ] && \"$NVM_DIR/current/bin/node\"";
++const LINKED_FISH: &str = "set NVM_SYMLINK_CURRENT true\nnvm exec 18 /bin/sh -c : >/dev/null\n\
++test -L \"$NVM_DIR/current\"; and \"$NVM_DIR/current/bin/node\"";
+ 
+ #[test]
+ fn exec_links_current_with_an_unexported_symlink_setting() {
+     let lab = Lab::new();
+     each_shell(|name, shell| {
+-        let commands = "NVM_SYMLINK_CURRENT=true\nnvm exec 18 /bin/sh -c : >/dev/null\n\
+-[ -L \"$NVM_DIR/current\" ] && \"$NVM_DIR/current/bin/node\"";
++        let commands = in_dialect(name, LINKED, LINKED_FISH);
+         let run = lab.run(shell, &with_function(name, commands));
+         assert_eq!(run.stdout, "v18.20.4\n", "{name}: {}", run.stderr);
+         std::fs::remove_file(lab.at("nvm/current")).ok();
+@@ -70,12 +89,17 @@
+     let lab = Lab::new().npm("v18.20.4", npm);
+     let install = "nvm install --offline 18 >/dev/null 2>&1";
+     let exported = format!("export PREFIX=\"$NVM_DIR/versions/node/v18.20.4\"\n{install}");
++    // Unexported: the function exports it for the binary.
++    let set_fish = format!("set PREFIX \"$NVM_DIR/versions/node/v18.20.4\"\n{install}");
+     let directory = lab.at("nvm/versions/node/v18.20.4");
+-    let cases = [
+-        (install.to_owned(), "prefix=unset\n".to_owned()),
+-        (exported, format!("prefix={directory}\n")),
+-    ];
+     each_shell(|name, shell| {
++        let cases = [
++            (install, "prefix=unset\n".to_owned()),
++            (
++                in_dialect(name, &exported, &set_fish),
++                format!("prefix={directory}\n"),
++            ),
++        ];
+         for (commands, expected) in &cases {
+             lab.run(shell, &with_function(name, commands));
+             let seen = std::fs::read_to_string(lab.at("home/env")).unwrap_or_default();
+```
+
+Apply to `tests/init_lab/mod.rs`:
+
+```diff
+--- a/tests/init_lab/mod.rs
++++ b/tests/init_lab/mod.rs
+@@ -12,7 +12,7 @@
+ use std::process::Command;
+ 
+ pub const BINARY: &str = env!("CARGO_BIN_EXE_nvm");
+-pub const SHELLS: [&str; 5] = ["bash", "zsh", "sh", "dash", "ksh"];
++pub const SHELLS: [&str; 6] = ["bash", "zsh", "sh", "dash", "ksh", "fish"];
+ pub const USING_18: &str = "Now using node v18.20.4 (npm v10.7.0)\n";
+ 
+ /// The absolute path of `name` on the `PATH` of the tests, if installed.
+@@ -61,6 +61,12 @@
+         self
+     }
+ 
++    /// An executable script at `relative` running `body`.
++    pub fn program(self, relative: &str, body: &str) -> Self {
++        script(&self.root.path().join(relative), body);
++        self
++    }
++
+     /// Replaces the `npm` of `version` with a script running `body`.
+     pub fn npm(self, version: &str, body: &str) -> Self {
+         script(
+@@ -87,6 +93,9 @@
+         let mut command = Command::new(shell);
+         if shell.ends_with("zsh") {
+             command.arg("-f");
++        }
++        if shell.ends_with("fish") {
++            command.arg("--no-config");
+         }
+         let output = command
+             .args(["-c", commands])
+@@ -116,6 +125,20 @@
+     }
+ }
+ 
++/// `posix` for the POSIX shells, `fish` for fish.
++pub fn in_dialect<'a>(name: &str, posix: &'a str, fish: &'a str) -> &'a str {
++    if name == "fish" { fish } else { posix }
++}
++
++/// How the startup file of `name` loads the function: `eval "$(nvm init
++/// <shell>)"`, or `nvm init fish | source`.
++pub fn init_line(name: &str, options: &str) -> String {
++    match name {
++        "fish" => format!("nvm init fish{options} | source"),
++        _ => format!("eval \"$(nvm init {name}{options})\""),
++    }
++}
++
+ pub fn with_function(name: &str, commands: &str) -> String {
+-    format!("eval \"$(nvm init {name} --no-use)\"\n{commands}")
++    format!("{}\n{commands}", init_line(name, " --no-use"))
+ }
+```
+
+Apply to `tests/use_cli.rs`:
+
+```diff
+--- a/tests/use_cli.rs
++++ b/tests/use_cli.rs
+@@ -99,6 +99,26 @@
+ }
+ 
+ #[test]
++fn standalone_use_prints_fish_code_when_the_kind_says_fish() {
++    let fixture = Fixture::new(false);
++    let output = fixture
++        .command(BINARY)
++        .args(["use", "18"])
++        .env("NVMRC_SHELL_KIND", "fish")
++        .output()
++        .unwrap();
++    assert_eq!(output.status.code(), Some(0));
++    assert_eq!(text(&output.stderr), USING);
++    let bin = fixture.version_bin();
++    let expected = format!(
++        "set -gx PATH '{bin}:{path}'\nset -gx NVM_BIN '{bin}'\nset -gx NVM_INC '{inc}'\n",
++        path = fixture.path_dir().display(),
++        inc = bin.replace("/bin", "/include/node"),
++    );
++    assert_eq!(text(&output.stdout), expected);
++}
++
++#[test]
+ fn standalone_use_also_exports_manpath_when_a_manpath_program_exists() {
+     let fixture = Fixture::new(true);
+     let output = fixture.nvm(&["use", "18"]);
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `cargo test`
+Expected: FAIL to compile with errors such as "no variant named `Fish` found
+for enum `Shell`", "cannot find module `fish`" and "no method named
+`render_fish` found".
+
+- [ ] **Step 3: Write the implementation**
+
+Apply to `Dockerfile`:
+
+```diff
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -3,10 +3,13 @@
+ SHELL ["/bin/bash", "-c"]
+ 
+ # .cargo/config.toml sets linkers per target: clang + mold on x86_64 Linux and
+-# aarch64-linux-gnu-gcc on aarch64 Linux, so all of them are installed.
++# aarch64-linux-gnu-gcc on aarch64 Linux, so all of them are installed. The
++# end-to-end tests of `nvm init` run in every shell it supports and skip the
++# ones that are missing, so fish, zsh, ksh and dash are installed next to bash.
+ # Package versions are not pinned (see DL3008 in .hadolint.yaml).
+ RUN apt-get update \
+     && apt-get install -y --no-install-recommends clang gcc-aarch64-linux-gnu mold \
++        dash fish ksh zsh \
+     && rm -rf /var/lib/apt/lists/*
+ 
+ WORKDIR /work
+```
+
+Apply to `docs/superpowers/specs/2026-10-02-nvmrc-design.md` (a document):
+
+```diff
+--- a/docs/superpowers/specs/2026-10-02-nvmrc-design.md
++++ b/docs/superpowers/specs/2026-10-02-nvmrc-design.md
+@@ -57,10 +57,12 @@
+ - Three binaries share one library: `nvmrc`, `nvm` and `nvm-exec`. `nvm` and
+   `nvmrc` accept the same subcommands; `nvm` exists for compatibility with
+   scripts, CI and tools that invoke `nvm` as an executable.
+-- `nvmrc init <shell>` prints a snippet defining a shell function `nvm`. For
+-  `use`, `deactivate`, `install` and the automatic `use` at start, the
++- `nvmrc init <shell>` prints a snippet defining a shell function `nvm`, for
++  bash, zsh, sh, dash, ksh and fish (3.4 or newer; `nvm init fish | source`).
++  For `use`, `deactivate`, `install` and the automatic `use` at start, the
+   function opens descriptor 3 on a pipe, names it in `NVMRC_SCRIPT_FD=3`, and
+-  `eval`s what the binary writes there. Messages stay on their normal
++  `eval`s what the binary writes there (fish code when the fish function adds
++  `NVMRC_SHELL_KIND=fish`). Messages stay on their normal
+   streams, as in `nvm.sh`. Every other command goes through the function's
+   pass-through branch, which never opens descriptor 3 and only exports
+   `MANPATH`, `NODE_PATH`, `NVM_SYMLINK_CURRENT` and `PREFIX` when they are
+```
+
+Apply to `src/adapters/std_process.rs` (above the test module):
+
+```diff
+--- a/src/adapters/std_process.rs
++++ b/src/adapters/std_process.rs
+@@ -6,7 +6,7 @@
+ use std::time::{Duration, Instant};
+ 
+ use crate::ports::{Completed, Invocation, Process, ProcessOutput};
+-use crate::shell::DESCRIPTOR_VARIABLE;
++use crate::shell::{DESCRIPTOR_VARIABLE, DIALECT_VARIABLE};
+ 
+ const POLL_INTERVAL: Duration = Duration::from_millis(10);
+ 
+@@ -88,10 +88,13 @@
+     }
+ }
+ 
+-/// `command` without the variable of the `nvm` function's channel, which is
+-/// for this process only (its descriptor is close-on-exec already).
++/// `command` without the variables of the `nvm` function's channel (its
++/// descriptor and the dialect of its code), which are for this process only
++/// (the descriptor is close-on-exec already).
+ pub(super) fn without_channel(command: &mut Command) -> &mut Command {
+-    command.env_remove(DESCRIPTOR_VARIABLE)
++    command
++        .env_remove(DESCRIPTOR_VARIABLE)
++        .env_remove(DIALECT_VARIABLE)
+ }
+ 
+ /// `prefix` in front of the `PATH` this process has.
+```
+
+Apply to `src/cli/channel.rs` (above the test module):
+
+```diff
+--- a/src/cli/channel.rs
++++ b/src/cli/channel.rs
+@@ -5,10 +5,15 @@
+ //! sent there and the streams are untouched. Without it (standalone use,
+ //! scripts) the code is printed on stdout and the text the command meant for
+ //! stdout moves to stderr, so `eval "$(nvm use 18)"` works by hand.
++//!
++//! The code is POSIX unless `NVMRC_SHELL_KIND=fish` asks for fish code, as
++//! the fish function does (and `NVMRC_SHELL_KIND=fish nvm use 18 |
++//! source` by hand).
+ 
+ use crate::commands::Output;
+ use crate::context::Context;
+ use crate::error::NvmExitCode;
++use crate::shell::Dialect;
+ 
+ /// The final text of each stream, newlines included, and the exit status.
+ #[derive(Debug, PartialEq, Eq)]
+@@ -35,7 +40,7 @@
+     if output.script.is_empty() {
+         return delivery;
+     }
+-    let code = output.script.render();
++    let code = output.script.render_in(Dialect::from_env(context.env));
+     match context.script_channel() {
+         None => {
+             delivery.stderr.push_str(&delivery.stdout);
+```
+
+Apply to `src/cli/commands.rs` (above the test module):
+
+```diff
+--- a/src/cli/commands.rs
++++ b/src/cli/commands.rs
+@@ -111,7 +111,8 @@
+         args: Vec<String>,
+     },
+     /// Print the shell code that defines the `nvm` function, for
+-    /// `eval "$(nvm init bash)"` in the shell's startup file (`--no-use`
++    /// `eval "$(nvm init bash)"` (bash, zsh, sh, dash, ksh) or
++    /// `nvm init fish | source` in the shell's startup file (`--no-use`
+     /// skips switching to the default version; `--install` installs it).
+     Init {
+         #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+```
+
+Create `src/shell/fish.rs`:
+
+```rust
+//! The fish rendering of a [`Script`](super::Script).
+//!
+//! `export NAME=value` becomes `set -gx NAME 'value'`, `unset NAME` becomes
+//! `set -e NAME`, and the command-hash reset is dropped: fish keeps no hash
+//! of command locations. A variable whose name ends in `PATH` (`PATH`,
+//! `MANPATH`, `NODE_PATH`) is a path variable in fish, which splits the one
+//! colon-joined value on `:` and joins it back when exporting it, keeping
+//! empty entries and a trailing colon: the programs fish starts see exactly
+//! the value nvm.sh would have exported.
+
+use super::Step;
+
+/// Single-quotes `value` for fish, where only `\` and `'` are special
+/// inside single quotes (`\` becomes `\\` and `'` becomes `\'`).
+#[must_use]
+pub fn quote(value: &str) -> String {
+    format!("'{}'", value.replace('\\', r"\\").replace('\'', r"\'"))
+}
+
+pub(super) fn render(step: &Step) -> String {
+    match step {
+        Step::Export(name, value) => format!("set -gx {name} {}\n", quote(value)),
+        Step::Unset(name) => format!("set -e {name}\n"),
+        Step::HashReset => String::new(),
+    }
+}
+```
+
+Create `src/shell/init/fish.rs`:
+
+```rust
+//! The fish `nvm` function, for fish 3.4 or newer.
+//!
+//! fish runs a command substitution with only its stdout captured: the
+//! redirections of an enclosing block do not reach it, so the POSIX
+//! `{ code=$(... 3>&1 1>&4) } 4>&1` cannot be written there. The function
+//! pipes instead: inside `begin ... end 4>&1` (descriptor 4 is the
+//! function's stdout, with the caller's redirections), the binary's
+//! descriptor 3 goes into the pipe, its stdout to descriptor 4, and
+//! `read -z` takes the whole pipe into a variable in this shell (fish runs
+//! builtins in a pipeline in-process). `$pipestatus[1]` is the binary's
+//! status. `NVMRC_SHELL_KIND=fish` makes the binary write fish code.
+//!
+//! The passed variables are exported to the binary with `set -lx` inside
+//! the block, so they disappear with it. Variables set with `set -l` are
+//! local to the function: nothing needs unsetting. `command nvm` skips the
+//! function (and any alias, which fish defines as a function).
+
+use super::{InitOptions, with_exports};
+
+const PREAMBLE: &str = r#"set -gx NVMRC_SHELL 1
+test -n "$NVM_DIR"; or set -g NVM_DIR $HOME/.nvm
+set -gx NVM_DIR $NVM_DIR
+"#;
+
+const FUNCTION: &str = r#"function nvm --description 'Node Version Manager (nvmrc)'
+    if not contains -- "$argv[1]" use deactivate install i __auto
+        begin
+            @EXPORTS@
+            command nvm $argv
+        end
+        return $status
+    end
+    set -l nvmrc_code
+    set -l nvmrc_status
+    begin
+        @EXPORTS@
+        NVMRC_SCRIPT_FD=3 NVMRC_SHELL_KIND=fish command nvm $argv 3>&1 1>&4 4>&- | read -z nvmrc_code
+        set nvmrc_status $pipestatus[1]
+    end 4>&1
+    eval $nvmrc_code
+    return $nvmrc_status
+end
+"#;
+
+fn export_when_set(name: &str) -> String {
+    format!("set -q {name}; and set -lx {name} ${name}")
+}
+
+/// The preamble, the function and the automatic step.
+pub(super) fn code(options: &InitOptions) -> String {
+    let auto = options
+        .auto_arguments()
+        .map(|arguments| format!("nvm {arguments}\n"))
+        .unwrap_or_default();
+    format!(
+        "{PREAMBLE}{}{auto}",
+        with_exports(FUNCTION, export_when_set)
+    )
+}
+```
+
+Apply to `src/shell/init/mod.rs` (above the test module):
+
+```diff
+--- a/src/shell/init/mod.rs
++++ b/src/shell/init/mod.rs
+@@ -1,26 +1,28 @@
+-//! `nvm init <shell>`: the POSIX shell code that defines the `nvm` function
+-//! around the binary, between two marker lines that tools can find again.
++//! `nvm init <shell>`: the shell code that defines the `nvm` function
++//! around the binary, between two marker lines that tools can find again:
++//! one POSIX function for bash, zsh, sh, dash and ksh (`posix.rs`), and one
++//! fish function for fish 3.4 or newer (`fish.rs`).
+ //!
+ //! The function runs `use`, `deactivate`, `install` (and `i`) and `__auto`
+ //! with `NVMRC_SCRIPT_FD=3`: the binary writes the shell code for the
+-//! calling shell to descriptor 3, which the function captures and `eval`s,
+-//! while stdout and stderr pass straight through (so `nvm use 18 >/dev/null`
+-//! silences only the messages). Every other command is the binary,
+-//! untouched, without descriptor 3. Both run in a subshell that exports the
+-//! unexported variables the binary reads (`MANPATH`, `NODE_PATH`,
+-//! `NVM_SYMLINK_CURRENT`, `PREFIX`) when they are set, so `nvm exec` links
+-//! `current` and checks the prefix as `use` does, and an unset one never
+-//! reaches a program the binary starts as an empty variable (a `make` run by
+-//! `nvm install` seeing `PREFIX=`). The binary is always `command \nvm`: a
+-//! quoted name is never taken for an alias, even after ksh93's
+-//! `alias command='command '`. The function keeps its status in `$1`
+-//! (positional parameters are local to a function in every POSIX shell) so
+-//! it can unset its temporaries, and a failure inside `$(...)` does not end
+-//! a `set -e` shell before the code is applied.
++//! calling shell to descriptor 3, which the function captures and
++//! evaluates, while stdout and stderr pass straight through (so `nvm use 18
++//! >/dev/null` silences only the messages); the function returns the
++//! binary's status. Every other command is the binary, untouched, without
++//! descriptor 3. Both export the variables the binary reads that a shell
++//! may hold unexported (`MANPATH`, `NODE_PATH`, `NVM_SYMLINK_CURRENT`,
++//! `PREFIX`) only when they are set, so `nvm exec` links `current` and
++//! checks the prefix as `use` does, and an unset one never reaches a program
++//! the binary starts as an empty variable (a `make` run by `nvm install`
++//! seeing `PREFIX=`).
+ //!
+ //! As sourcing `nvm.sh` does, the snippet ends with the automatic `use` (or
+ //! `install`), whose status is the status of the whole snippet: `eval
+-//! "$(nvm init bash)"` is 3 when the `.nvmrc` names a missing version.
++//! "$(nvm init bash)"` (and `nvm init fish | source`) is 3 when the
++//! `.nvmrc` names a missing version.
++
++mod fish;
++mod posix;
+ 
+ use std::str::FromStr;
+ 
+@@ -41,9 +43,17 @@
+     Sh,
+     Dash,
+     Ksh,
++    Fish,
+ }
+ 
+-const SHELLS: [Shell; 5] = [Shell::Bash, Shell::Zsh, Shell::Sh, Shell::Dash, Shell::Ksh];
++const SHELLS: [Shell; 6] = [
++    Shell::Bash,
++    Shell::Zsh,
++    Shell::Sh,
++    Shell::Dash,
++    Shell::Ksh,
++    Shell::Fish,
++];
+ 
+ impl Shell {
+     /// The name `nvm init` takes for the shell.
+@@ -55,16 +65,15 @@
+             Self::Sh => "sh",
+             Self::Dash => "dash",
+             Self::Ksh => "ksh",
++            Self::Fish => "fish",
+         }
+     }
+ 
+-    /// How the function starts. zsh reads `function nvm {`, because it
+-    /// expands an alias named `nvm` in `nvm() {` even after `unalias` in
+-    /// the same `eval` string; the POSIX form everywhere else.
+-    fn function_header(self) -> &'static str {
++    /// The line of the startup file that loads the snippet.
++    fn load_line(self) -> String {
+         match self {
+-            Self::Zsh => "function nvm {",
+-            Self::Bash | Self::Sh | Self::Dash | Self::Ksh => "nvm() {",
++            Self::Fish => "nvm init fish | source".to_owned(),
++            _ => format!("eval \"$(nvm init {})\"", self.name()),
+         }
+     }
+ }
+@@ -97,61 +106,29 @@
+ }
+ 
+ impl InitOptions {
+-    /// The statement run at the end (`\nvm`: a quoted name is never taken
+-    /// for an alias, and zsh expands the aliases of a whole `eval` string
+-    /// before running its `unalias`), as `nvm_process_parameters` picks it.
+-    fn auto_statement(self) -> &'static str {
++    /// The arguments of the `nvm` call run at the end, as
++    /// `nvm_process_parameters` picks it; `None` with `--no-use`.
++    fn auto_arguments(self) -> Option<&'static str> {
+         match (self.no_use, self.install) {
+-            (true, _) => "",
+-            (false, true) => "\\nvm __auto install\n",
+-            (false, false) => "\\nvm __auto use\n",
++            (true, _) => None,
++            (false, true) => Some("__auto install"),
++            (false, false) => Some("__auto use"),
+         }
+     }
+ }
+ 
+-const PREAMBLE: &str = r#"export NVMRC_SHELL=1
+-export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+-unalias nvm 2>/dev/null || true
+-"#;
+-
+-const BODY: &str = r#"
+-  case "${1-}" in
+-    use | deactivate | install | i | __auto) ;;
+-    *)
+-      (
+-        @EXPORTS@
+-        command \nvm "$@"
+-      )
+-      return
+-      ;;
+-  esac
+-  __nvmrc_status=0
+-  {
+-    __nvmrc_code=$(
+-      @EXPORTS@
+-      NVMRC_SCRIPT_FD=3 command \nvm "$@" 3>&1 1>&4 4>&-
+-    ) || __nvmrc_status=$?
+-  } 4>&1
+-  eval "$__nvmrc_code"
+-  set -- "$__nvmrc_status"
+-  unset __nvmrc_code __nvmrc_status
+-  return "$1"
+-}
+-"#;
+-
+ /// The variables the binary reads that a shell may hold unexported.
+ const PASSED: [&str; 4] = ["MANPATH", "NODE_PATH", "NVM_SYMLINK_CURRENT", "PREFIX"];
+ 
+-/// [`BODY`] with each `@EXPORTS@` line replaced by one line per [`PASSED`]
+-/// variable, at the same indentation, exporting it only when it is set.
+-fn body() -> String {
+-    BODY.lines()
++/// `template` with each `@EXPORTS@` line replaced by `export(name)` for
++/// every [`PASSED`] variable, at the same indentation.
++fn with_exports(template: &str, export: fn(&str) -> String) -> String {
++    template
++        .lines()
+         .map(|line| match line.strip_suffix("@EXPORTS@") {
+             Some(indent) => PASSED
+                 .iter()
+-                .map(|name| {
+-                    format!("{indent}if [ -n \"${{{name}+set}}\" ]; then export {name}; fi\n")
+-                })
++                .map(|name| format!("{indent}{}\n", export(name)))
+                 .collect(),
+             None => format!("{line}\n"),
+         })
+@@ -161,14 +138,16 @@
+ /// The init snippet for `shell`, newline-terminated.
+ #[must_use]
+ pub fn snippet(shell: Shell, options: &InitOptions) -> String {
+-    let name = shell.name();
++    let code = match shell {
++        Shell::Fish => fish::code(options),
++        _ => posix::code(shell, options),
++    };
+     format!(
+         "{BEGIN_MARKER}\n\
+-# The nvm function of nvmrc, from `eval \"$(nvm init {name})\"` in the {name} startup file.\n\
+-{PREAMBLE}{header}{body}{auto}{END_MARKER}\n",
+-        header = shell.function_header(),
+-        body = body(),
+-        auto = options.auto_statement()
++# The nvm function of nvmrc, from `{load}` in the {name} startup file.\n\
++{code}{END_MARKER}\n",
++        load = shell.load_line(),
++        name = shell.name(),
+     )
+ }
+ 
+```
+
+Create `src/shell/init/posix.rs`:
+
+```rust
+//! The POSIX `nvm` function, for bash, zsh, sh, dash and ksh.
+//!
+//! The binary is always `command \nvm`: a quoted name is never taken for an
+//! alias, even after ksh93's `alias command='command '`. The function keeps
+//! its status in `$1` (positional parameters are local to a function in
+//! every POSIX shell) so it can unset its temporaries, and a failure inside
+//! `$(...)` does not end a `set -e` shell before the code is applied.
+
+use super::{InitOptions, Shell, with_exports};
+
+const PREAMBLE: &str = r#"export NVMRC_SHELL=1
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+unalias nvm 2>/dev/null || true
+"#;
+
+const BODY: &str = r#"
+  case "${1-}" in
+    use | deactivate | install | i | __auto) ;;
+    *)
+      (
+        @EXPORTS@
+        command \nvm "$@"
+      )
+      return
+      ;;
+  esac
+  __nvmrc_status=0
+  {
+    __nvmrc_code=$(
+      @EXPORTS@
+      NVMRC_SCRIPT_FD=3 command \nvm "$@" 3>&1 1>&4 4>&-
+    ) || __nvmrc_status=$?
+  } 4>&1
+  eval "$__nvmrc_code"
+  set -- "$__nvmrc_status"
+  unset __nvmrc_code __nvmrc_status
+  return "$1"
+}
+"#;
+
+/// How the function starts. zsh reads `function nvm {`, because it expands
+/// an alias named `nvm` in `nvm() {` even after `unalias` in the same `eval`
+/// string; the POSIX form everywhere else.
+fn function_header(shell: Shell) -> &'static str {
+    match shell {
+        Shell::Zsh => "function nvm {",
+        _ => "nvm() {",
+    }
+}
+
+fn export_when_set(name: &str) -> String {
+    format!("if [ -n \"${{{name}+set}}\" ]; then export {name}; fi")
+}
+
+/// The preamble, the function and the automatic step (`\nvm`: a quoted
+/// name is never taken for an alias, and zsh expands the aliases of a whole
+/// `eval` string before running its `unalias`).
+pub(super) fn code(shell: Shell, options: &InitOptions) -> String {
+    let auto = options
+        .auto_arguments()
+        .map(|arguments| format!("\\nvm {arguments}\n"))
+        .unwrap_or_default();
+    format!(
+        "{PREAMBLE}{}{}{auto}",
+        function_header(shell),
+        with_exports(BODY, export_when_set)
+    )
+}
+```
+
+Apply to `src/shell/mod.rs` (above the test module):
+
+```diff
+--- a/src/shell/mod.rs
++++ b/src/shell/mod.rs
+@@ -1,5 +1,7 @@
+-//! POSIX shell code that the binary prints for the `nvm` function to `eval`.
++//! The shell code that the binary prints for the `nvm` function to
++//! evaluate: POSIX code, or fish code when the fish function asks for it.
+ 
++pub mod fish;
+ pub mod init;
+ 
+ use thiserror::Error;
+@@ -9,6 +11,32 @@
+ /// The variable through which the `nvm` function asks for the shell code:
+ /// the number of the descriptor to write it to.
+ pub const DESCRIPTOR_VARIABLE: &str = "NVMRC_SCRIPT_FD";
++
++/// The variable through which the fish `nvm` function asks for fish code
++/// (`NVMRC_SHELL_KIND=fish`); the POSIX functions never set it.
++pub const DIALECT_VARIABLE: &str = "NVMRC_SHELL_KIND";
++
++/// The language a [`Script`] is rendered in.
++#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
++pub enum Dialect {
++    /// `export`, `unset` and `hash -r`, for every POSIX shell.
++    #[default]
++    Posix,
++    /// `set -gx` and `set -e`, for fish.
++    Fish,
++}
++
++impl Dialect {
++    /// Fish when [`DIALECT_VARIABLE`] is exactly `fish`, POSIX otherwise
++    /// (also when the binary runs on its own without it).
++    #[must_use]
++    pub fn from_env(env: &dyn Env) -> Self {
++        match env.var(DIALECT_VARIABLE).as_deref() {
++            Some("fish") => Self::Fish,
++            _ => Self::Posix,
++        }
++    }
++}
+ 
+ /// The descriptor number the `nvm` function opened for the shell code; `None`
+ /// when the binary runs on its own (the variable unset, or not a number).
+@@ -59,7 +87,14 @@
+ }
+ 
+ impl Step {
+-    fn render(&self) -> String {
++    fn render(&self, dialect: Dialect) -> String {
++        match dialect {
++            Dialect::Posix => self.render_posix(),
++            Dialect::Fish => fish::render(self),
++        }
++    }
++
++    fn render_posix(&self) -> String {
+         match self {
+             Step::Export(name, value) => format!("export {name}={}\n", quote(value)),
+             Step::Unset(name) => format!("unset {name}\n"),
+@@ -117,10 +152,16 @@
+         self
+     }
+ 
+-    /// Renders the script, one statement per line.
++    /// Renders the script as POSIX code, one statement per line.
+     #[must_use]
+     pub fn render(&self) -> String {
+-        self.steps.iter().map(Step::render).collect()
++        self.render_in(Dialect::Posix)
++    }
++
++    /// Renders the script in `dialect`, one statement per line.
++    #[must_use]
++    pub fn render_in(&self, dialect: Dialect) -> String {
++        self.steps.iter().map(|step| step.render(dialect)).collect()
+     }
+ }
+ 
+```
+
+Then run `cargo fmt`.
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `cargo test`
+Expected: PASS: 1014 unit tests plus the end-to-end tests (the fish cases skip
+when `fish` is not installed).
+
+- [ ] **Step 5: Run the quality gate and commit**
+
+Run:
+
+```bash
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test
+rustup run 1.85 cargo check --all-targets
+```
+
+Expected: formatting clean, zero clippy warnings and the crate still builds on
+MSRV 1.85.
+
+```bash
+git add src tests
+git commit -S -m "feat(init): support fish in nvm init and the shell-code channel"
+```
+
+---
+
 ## Environment variables
 
 Every variable below was run against `nvm.sh`; "makes sense" is a verdict on
@@ -17610,6 +19021,10 @@ whether the port should honour it as the script does.
   `/dev/fd/<n>`. Only a decimal number counts. Makes sense: it is the channel
   between the binary and the shell (a file descriptor, because messages must keep
   stdout and stderr).
+- `NVMRC_SHELL_KIND`: set to `fish` by the fish function (and only for the
+  one call) so the binary writes the shell code in fish syntax; absent means
+  POSIX. Not inherited by the programs the binary starts. Makes sense: the
+  dialect must be told, the binary cannot see its parent's shell.
 - `NVMRC_SHELL`: exported by the snippet (`1`) so that Plan 8's checks know the
   function is in place. Not read by this plan.
 - `NVM_DIR`: as in Plan 5; the snippet defaults it to `$HOME/.nvm`.
@@ -17659,7 +19074,7 @@ Each is pinned by a test and is for the Plan 9 compatibility contract.
   empty `PATH` it cannot run, as nvm.sh cannot find `tr` or `sed` then.
 - **`install` activates only when the shell function is in use**
   (`NVMRC_SCRIPT_FD` set); standalone it is the install of Plan 5.
-- **Only the POSIX shells** (`bash`, `zsh`, `sh`, `dash`, `ksh`) have an `init`.
+- **Only `bash`, `zsh`, `sh`, `dash`, `ksh` and `fish`** have an `init`.
 - **`--delete-prefix` without an `npm`** prints `npm: command not found` and
   carries on.
 - **stderr is printed before stdout** by the binary, so in a terminal the
