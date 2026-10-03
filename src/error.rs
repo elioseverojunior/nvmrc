@@ -26,6 +26,8 @@ pub enum NvmExitCode {
     SourceNotInstalled,
     /// Options that cannot be combined, or given twice.
     InvalidOptions,
+    /// `nvm use` found an npm `prefix` setting that breaks nvm.
+    IncompatiblePrefix,
     /// `NVM_INSTALL_THIRD_PARTY_HOOK` succeeded and installed nothing.
     HookClaimedSuccess,
     /// An option `nvm.sh` does not support, or one used in a combination it
@@ -51,6 +53,7 @@ impl NvmExitCode {
             Self::InvalidOptions => 6,
             Self::BelowVersionFloor => 7,
             Self::AliasLoop => 8,
+            Self::IncompatiblePrefix => 11,
             Self::HookClaimedSuccess => 33,
             Self::UnsupportedOption => 55,
             Self::NotFound => 127,
@@ -167,6 +170,7 @@ mod tests {
         assert_eq!(NvmExitCode::InvalidVersion.code(), 3);
         assert_eq!(NvmExitCode::BelowVersionFloor.code(), 7);
         assert_eq!(NvmExitCode::AliasLoop.code(), 8);
+        assert_eq!(NvmExitCode::IncompatiblePrefix.code(), 11);
         assert_eq!(NvmExitCode::MissingTarget.code(), 2);
         assert_eq!(NvmExitCode::SameVersion.code(), 4);
         assert_eq!(NvmExitCode::SourceNotInstalled.code(), 5);

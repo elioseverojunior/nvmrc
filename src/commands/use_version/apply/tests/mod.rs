@@ -3,6 +3,7 @@
 //! digest with an `npm` next to each `node` but v22.3.0's.
 
 mod environment;
+mod prefix;
 mod system;
 
 use crate::commands::Output;

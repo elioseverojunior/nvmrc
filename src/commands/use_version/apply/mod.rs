@@ -1,6 +1,7 @@
 //! Steps 6 and 10 to 13 of nvm.sh's `use` (digest 4.2): the shell code that
 //! switches to the resolved version, the `NVM_SYMLINK_CURRENT` link, and the
-//! `Now using ...` line, whose npm suffix comes from the **new** `PATH`.
+//! `Now using ...` line, whose npm suffix comes from the **new** `PATH`, with
+//! the prefix checks of step 12 between them.
 
 #[cfg(test)]
 mod tests;
@@ -13,7 +14,8 @@ use crate::commands::Output;
 use crate::commands::deactivate::deactivate;
 use crate::commands::npm::Npm;
 use crate::commands::transcript::Transcript;
-use crate::commands::use_version::{Halt, Options, SystemFlavor, SystemNode, Target};
+use crate::commands::use_version::prefix::{self, Refusal};
+use crate::commands::use_version::{Options, SystemFlavor, SystemNode, Target};
 use crate::context::Context;
 use crate::domain::path_edit::{change_path, manpath_with_trailing_colon, strip_path};
 use crate::domain::path_search::find_in_path;
@@ -32,18 +34,23 @@ pub(super) fn apply(
     match target {
         Target::System(node) => system(context, options, node, transcript),
         Target::Installed {
-            version, directory, ..
-        } => installed(context, options, target, (version, directory), transcript),
+            version,
+            directory,
+            provided,
+            ..
+        } => {
+            let command = prefix::command(version, provided.is_some(), options.silent);
+            installed(context, options, (version, directory, &command), transcript)
+        }
     }
 }
 
-/// Steps 10 to 13: the switch is kept even when the prefix check stops
-/// `use`, as nvm.sh leaves it after a bad npmrc file.
+/// Steps 10 to 13: the switch, then the prefix checks, then the
+/// `Now using ...` line, which a refused prefix leaves out.
 fn installed(
     context: &Context<'_>,
     options: &Options,
-    target: &Target,
-    (version, directory): (&Version, &Path),
+    (version, directory, command): (&Version, &Path, &str),
     mut transcript: Transcript,
 ) -> Result<Output, CliError> {
     let nvm_dir = context.nvm_dir()?;
@@ -55,26 +62,33 @@ fn installed(
     let script = switch.script(context, &path)?;
     link_current(context, &nvm_dir, directory, &mut transcript);
     let message = (!options.silent).then(|| now_using(version, &npm_suffix(context, &path)));
-    if let Err(halt) = check_prefix(context, options, target, &mut transcript) {
-        return Ok(transcript.finish_with(halt.status, script));
+    let check = prefix::Check {
+        nvm_dir: &switch.nvm_dir,
+        directory: &switch.directory,
+        path: &path,
+        command,
+        delete: options.delete_prefix,
+    };
+    if let Err(refusal) = prefix::check(context, &check, &mut transcript) {
+        let script = after_refusal(context, refusal, script)?;
+        return Ok(transcript.finish_with(NvmExitCode::IncompatiblePrefix, script));
     }
     message.into_iter().for_each(|line| transcript.out(line));
     Ok(transcript.finish_with(NvmExitCode::Success, script))
 }
 
-/// Step 12, `nvm_die_on_prefix`: the `PREFIX`, `NPM_CONFIG_PREFIX` and
-/// npmrc checks, and `--delete-prefix`. A [`Halt`] (status 11) stops `use`
-/// before the `Now using ...` line.
-///
-/// A seam for now: the checks are filled in by the next task, and until
-/// then every prefix is accepted.
-fn check_prefix(
-    _context: &Context<'_>,
-    _options: &Options,
-    _target: &Target,
-    _transcript: &mut Transcript,
-) -> Result<(), Halt> {
-    Ok(())
+/// Step 12's failure: a refused variable makes nvm.sh run a silent
+/// `nvm deactivate` (its messages discarded), so the switch gives way to
+/// it; a refused npmrc file leaves the switch applied.
+fn after_refusal(
+    context: &Context<'_>,
+    refusal: Refusal,
+    switch: Script,
+) -> Result<Script, CliError> {
+    match refusal {
+        Refusal::KeepSwitch => Ok(switch),
+        Refusal::Deactivate => deactivate(context, true, &mut Transcript::default()),
+    }
 }
 
 /// The directories one switch rewrites `PATH` and `MANPATH` with.

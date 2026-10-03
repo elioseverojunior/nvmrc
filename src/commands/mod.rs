@@ -13,6 +13,7 @@ pub mod rc_version;
 pub mod reinstall_packages;
 pub mod remote_index;
 pub mod resolve;
+pub mod sanitize;
 pub mod transcript;
 pub mod unalias;
 pub mod uninstall;

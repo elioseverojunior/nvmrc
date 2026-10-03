@@ -5,6 +5,7 @@
 mod apply;
 pub mod messages;
 pub mod options;
+mod prefix;
 pub mod target;
 
 pub use options::Options;

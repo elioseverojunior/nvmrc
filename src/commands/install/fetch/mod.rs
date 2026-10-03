@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::commands::sanitize::sanitize_path;
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::checksum::{compare, expected_digest};
@@ -77,21 +78,6 @@ fn file_name(slug: &str, version: &Version, os: Os) -> String {
     format!("{slug}.{}", Compression::preferred(version, os).extension())
 }
 
-/// `$NVM_DIR` and `$HOME` in a path shown to the user become the variables.
-fn sanitize(context: &Context<'_>, path: &Path) -> String {
-    let mut text = path.display().to_string();
-    for (variable, name) in [("NVM_DIR", "${NVM_DIR}"), ("HOME", "${HOME}")] {
-        let value = match variable {
-            "NVM_DIR" => context.nvm_dir().ok().map(|dir| dir.display().to_string()),
-            _ => context.env.var("HOME"),
-        };
-        if let Some(value) = value.filter(|value| !value.is_empty()) {
-            text = text.replace(&value, name);
-        }
-    }
-    text
-}
-
 /// The archive of `version`, from the cache when its checksum matches and from
 /// the mirror otherwise.
 ///
@@ -132,7 +118,7 @@ fn cached_only(
     transcript: &mut Transcript,
 ) -> Result<PathBuf, Failed> {
     if context.fs.file_info(&artifact.tarball).is_ok() {
-        let shown = sanitize(context, &artifact.tarball);
+        let shown = sanitize_path(context, &artifact.tarball.to_string_lossy());
         transcript.err(format!("Offline: using cached archive {shown}"));
         return Ok(artifact.tarball.clone());
     }
@@ -174,7 +160,7 @@ fn reuse_cache(
     if context.fs.file_info(&artifact.tarball).is_err() {
         return false;
     }
-    let shown = sanitize(context, &artifact.tarball);
+    let shown = sanitize_path(context, &artifact.tarball.to_string_lossy());
     transcript.err(format!("Local cache found: {shown}"));
     match compare(&digest_of(context, &artifact.tarball), expected) {
         Ok(()) => {
