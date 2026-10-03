@@ -161,3 +161,25 @@ fn the_reusable_function_appends_to_the_callers_transcript() {
     assert_eq!(script.render(), UNSET_BINS);
     assert_eq!(transcript.finish(NvmExitCode::Success).stdout, "before");
 }
+
+#[test]
+fn the_changes_name_each_new_value_and_each_variable_to_unset() {
+    let fs = FakeFileSystem::default();
+    let env = FakeEnv::default()
+        .with_var("NVM_DIR", "/n")
+        .with_var("PATH", &active_path())
+        .with_var("MANPATH", &format!("{N18}/share/man:/m"));
+    let mut transcript = Transcript::default();
+    let found = changes(&Context::new(&fs, &env), true, &mut transcript).unwrap();
+    let change = |name, value: Option<&str>| Change {
+        name,
+        value: value.map(str::to_owned),
+    };
+    let expected = [
+        change("PATH", Some("/usr/bin")),
+        change("MANPATH", Some("/m")),
+        change("NVM_BIN", None),
+        change("NVM_INC", None),
+    ];
+    assert_eq!(found, expected);
+}

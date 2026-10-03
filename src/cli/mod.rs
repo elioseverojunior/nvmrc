@@ -1,6 +1,7 @@
 //! Argument parsing and the translation of results into streams and exit codes.
 
 mod channel;
+mod child;
 mod commands;
 
 use std::ffi::OsString;
@@ -66,26 +67,34 @@ where
             return exit_code_for_write(emit(out, &error.to_string()), NvmExitCode::Success);
         }
     };
-    match dispatch(&cli.command, context) {
-        Ok(output) => finish(&output, context, out, err),
-        // nvm.sh prints N/A on stdout, not stderr.
-        Err(error @ CliError::NotInstalled) => {
-            let output = Output::stdout(error.to_string()).with_status(error.exit_code());
-            finish(&output, context, out, err)
-        }
-        Err(error) => {
-            let output = Output::default()
-                .with_stderr(error.to_string())
-                .with_status(error.exit_code());
-            finish(&output, context, out, err)
-        }
+    let output = dispatch(&cli.command, context).unwrap_or_else(|error| failure(&error));
+    finish(&output, context, out, err)
+}
+
+/// What a failed command prints: its message, on stderr except for `N/A`,
+/// which nvm.sh prints on stdout.
+fn failure(error: &CliError) -> Output {
+    let output = match error {
+        CliError::NotInstalled => Output::stdout(error.to_string()),
+        _ => Output::default().with_stderr(error.to_string()),
+    };
+    output.with_status(error.exit_code())
+}
+
+/// Prints the streams, then runs the program the command left to run, if
+/// any, whose status wins.
+fn finish(output: &Output, context: &Context<'_>, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+    let printed = print(output, context, out, err);
+    match &output.spawn {
+        Some(invocation) => child::run_child(context, invocation, err),
+        None => printed,
     }
 }
 
 /// Prints diagnostics first, then the result, and finishes with the status the
 /// command asked for, unless writing the result failed. The shell code of the
 /// command travels as `channel` says.
-fn finish(output: &Output, context: &Context<'_>, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+fn print(output: &Output, context: &Context<'_>, out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     let delivery = channel::deliver(output, context);
     if !delivery.stderr.is_empty() {
         // Nowhere left to report a failed stderr write.

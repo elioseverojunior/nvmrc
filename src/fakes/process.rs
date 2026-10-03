@@ -12,7 +12,7 @@ pub struct FakeProcess {
     executions: BTreeMap<(PathBuf, String), Completed>,
     effects: BTreeMap<(PathBuf, String), Box<dyn Fn()>>,
     executed: RefCell<Vec<Invocation>>,
-    spawns: BTreeMap<(PathBuf, String), i32>,
+    spawns: BTreeMap<(PathBuf, String), Result<i32, io::ErrorKind>>,
     spawned: RefCell<Vec<Invocation>>,
 }
 
@@ -74,7 +74,15 @@ impl FakeProcess {
     #[must_use]
     pub fn with_spawn(mut self, program: &str, args: &str, exit_code: i32) -> Self {
         self.spawns
-            .insert((PathBuf::from(program), args.to_owned()), exit_code);
+            .insert((PathBuf::from(program), args.to_owned()), Ok(exit_code));
+        self
+    }
+
+    /// `spawn` of `program` with exactly `args` fails with `kind`.
+    #[must_use]
+    pub fn with_spawn_failure(mut self, program: &str, args: &str, kind: io::ErrorKind) -> Self {
+        self.spawns
+            .insert((PathBuf::from(program), args.to_owned()), Err(kind));
         self
     }
 
@@ -114,10 +122,10 @@ impl Process for FakeProcess {
     fn spawn(&self, invocation: &Invocation) -> io::Result<i32> {
         self.spawned.borrow_mut().push(invocation.clone());
         let key = (invocation.program.clone(), invocation.args.join(" "));
-        self.spawns
-            .get(&key)
-            .copied()
-            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
+        match self.spawns.get(&key) {
+            Some(answer) => answer.map_err(io::Error::from),
+            None => Err(io::Error::from(io::ErrorKind::NotFound)),
+        }
     }
 }
 

@@ -43,19 +43,53 @@ pub fn deactivate(
     silent: bool,
     transcript: &mut Transcript,
 ) -> Result<Script, CliError> {
+    let mut script = Script::new();
+    for change in changes(context, silent, transcript)? {
+        script = match change.value {
+            Some(value) => script.export(change.name, &value)?,
+            None => script.unset(change.name)?,
+        };
+        if change.name == "PATH" {
+            script = script.hash_reset();
+        }
+    }
+    Ok(script)
+}
+
+/// A variable deactivating changes: its new value, or `None` to unset it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Change {
+    pub name: &'static str,
+    pub value: Option<String>,
+}
+
+/// What deactivating does to the environment, in nvm.sh's order (`PATH`,
+/// `MANPATH`, `NODE_PATH`, then `NVM_BIN` and `NVM_INC` unset), with its
+/// messages appended to `transcript`; a variable it leaves alone is absent.
+///
+/// # Errors
+/// [`CliError::NvmDirUnresolved`] when `NVM_DIR` cannot be resolved, after
+/// `${NVM_DIR} not set!` went to `transcript`.
+pub fn changes(
+    context: &Context<'_>,
+    silent: bool,
+    transcript: &mut Transcript,
+) -> Result<Vec<Change>, CliError> {
     let nvm_dir = context
         .nvm_dir()
         .inspect_err(|_| transcript.err("${NVM_DIR} not set!"))?;
-    let nvm_dir = nvm_dir.to_string_lossy().into_owned();
     let stripper = Stripper {
         context,
-        nvm_dir,
+        nvm_dir: nvm_dir.to_string_lossy().into_owned(),
         silent,
     };
-    let script = stripper.path(Script::new(), transcript)?;
-    let script = stripper.manpath(script, transcript)?;
-    let script = stripper.node_path(script, transcript)?;
-    Ok(script.unset("NVM_BIN")?.unset("NVM_INC")?)
+    let stripped = [
+        stripper.path(transcript),
+        stripper.manpath(transcript),
+        stripper.node_path(transcript),
+    ];
+    let unset = ["NVM_BIN", "NVM_INC"].map(|name| Some(Change { name, value: None }));
+    Ok(stripped.into_iter().chain(unset).flatten().collect())
 }
 
 struct Stripper<'a, 'b> {
@@ -69,15 +103,11 @@ impl Stripper<'_, '_> {
         self.context.env.var(name).unwrap_or_default()
     }
 
-    fn shown_dir(&self) -> &str {
-        &self.nvm_dir
-    }
-
     fn removed(&self, suffix: &str, variable: &str, transcript: &mut Transcript) {
         if !self.silent {
             transcript.out(format!(
                 "{}/*{suffix} removed from ${{{variable}}}",
-                self.shown_dir()
+                self.nvm_dir
             ));
         }
     }
@@ -86,52 +116,58 @@ impl Stripper<'_, '_> {
         if !self.silent {
             transcript.err(format!(
                 "Could not find {}/*{suffix} in ${{{variable}}}",
-                self.shown_dir()
+                self.nvm_dir
             ));
         }
     }
 
-    fn path(&self, script: Script, transcript: &mut Transcript) -> Result<Script, CliError> {
-        let old = self.value("PATH");
-        let new = strip_path(&old, "/bin", &self.nvm_dir);
-        if new == old {
-            self.not_found("/bin", "PATH", transcript);
-            return Ok(script);
-        }
-        self.removed("/bin", "PATH", transcript);
-        Ok(script.export("PATH", &new)?.hash_reset())
+    /// The stripped value of `name`, or `None` when stripping changes
+    /// nothing.
+    fn strip(&self, name: &str, suffix: &str) -> Option<String> {
+        let old = self.value(name);
+        let new = strip_path(&old, suffix, &self.nvm_dir);
+        (new != old).then_some(new)
     }
 
-    fn manpath(&self, script: Script, transcript: &mut Transcript) -> Result<Script, CliError> {
-        let old = self.value("MANPATH");
-        if old.is_empty() {
-            return Ok(script);
+    fn path(&self, transcript: &mut Transcript) -> Option<Change> {
+        let Some(new) = self.strip("PATH", "/bin") else {
+            self.not_found("/bin", "PATH", transcript);
+            return None;
+        };
+        self.removed("/bin", "PATH", transcript);
+        Some(Change {
+            name: "PATH",
+            value: Some(new),
+        })
+    }
+
+    fn manpath(&self, transcript: &mut Transcript) -> Option<Change> {
+        if self.value("MANPATH").is_empty() {
+            return None;
         }
-        let new = strip_path(&old, "/share/man", &self.nvm_dir);
-        if new == old {
+        let Some(new) = self.strip("MANPATH", "/share/man") else {
             self.not_found("/share/man", "MANPATH", transcript);
-            return Ok(script);
-        }
+            return None;
+        };
         self.removed("/share/man", "MANPATH", transcript);
         // `man` treats both of these as unset anyway.
-        if new.is_empty() || new == ":" {
-            Ok(script.unset("MANPATH")?)
-        } else {
-            Ok(script.export("MANPATH", &new)?)
-        }
+        let value = (!new.is_empty() && new != ":").then_some(new);
+        Some(Change {
+            name: "MANPATH",
+            value,
+        })
     }
 
-    fn node_path(&self, script: Script, transcript: &mut Transcript) -> Result<Script, CliError> {
-        let old = self.value("NODE_PATH");
-        if old.is_empty() {
-            return Ok(script);
+    fn node_path(&self, transcript: &mut Transcript) -> Option<Change> {
+        if self.value("NODE_PATH").is_empty() {
+            return None;
         }
-        let new = strip_path(&old, "/lib/node_modules", &self.nvm_dir);
-        if new == old {
-            return Ok(script);
-        }
+        let new = self.strip("NODE_PATH", "/lib/node_modules")?;
         self.removed("/lib/node_modules", "NODE_PATH", transcript);
-        Ok(script.export("NODE_PATH", &new)?)
+        Some(Change {
+            name: "NODE_PATH",
+            value: Some(new),
+        })
     }
 }
 

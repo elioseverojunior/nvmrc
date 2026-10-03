@@ -118,6 +118,8 @@ pub struct Invocation {
     pub dir: Option<PathBuf>,
     /// Variables added to the environment it inherits.
     pub env: Vec<(String, String)>,
+    /// Variables taken out of the environment it inherits.
+    pub env_remove: Vec<String>,
     /// A directory put in front of `PATH`, so a `node` that `npm` starts is
     /// the one next to it.
     pub path_prefix: Option<PathBuf>,
@@ -147,6 +149,12 @@ impl Invocation {
     #[must_use]
     pub fn env(mut self, name: &str, value: &str) -> Self {
         self.env.push((name.to_owned(), value.to_owned()));
+        self
+    }
+
+    #[must_use]
+    pub fn env_remove(mut self, name: &str) -> Self {
+        self.env_remove.push(name.to_owned());
         self
     }
 
@@ -184,9 +192,11 @@ pub trait Process {
     /// process, waits for it, and returns its exit status; a child killed by
     /// a signal gives `128 + signal` (Unix).
     ///
-    /// `invocation.env` is added to the environment, and an entry named
+    /// `invocation.env_remove` is taken out of the inherited environment,
+    /// `invocation.env` is added to it, and an entry named
     /// `PATH` replaces the `PATH` the child would inherit. `path_prefix` is
-    /// then put in front of whichever `PATH` the child ends up with.
+    /// then put in front of whichever `PATH` the child ends up with. A
+    /// program named without a `/` is looked up on that final `PATH`.
     ///
     /// # Errors
     /// Fails when the program cannot be started (`NotFound` when it does not

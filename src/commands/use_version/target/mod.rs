@@ -1,7 +1,7 @@
 //! What `nvm use` switches to, or why it stops: steps 1 to 9 of nvm.sh's
 //! `use` (digest 4.2), with its messages in the same order per stream.
 
-mod lookup;
+pub mod lookup;
 
 use std::path::PathBuf;
 

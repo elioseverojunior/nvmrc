@@ -34,6 +34,9 @@ impl Process for StdProcess {
     /// Both streams are read at once, so a full pipe cannot stall the program.
     fn execute(&self, invocation: &Invocation) -> io::Result<Completed> {
         let mut command = Command::new(&invocation.program);
+        for name in &invocation.env_remove {
+            command.env_remove(name);
+        }
         command
             .args(&invocation.args)
             .envs(invocation.env.iter().map(|(name, value)| (name, value)))
@@ -150,6 +153,15 @@ mod tests {
 
     fn shell(process: &StdProcess, script: &str) -> io::Result<ProcessOutput> {
         process.run(Path::new("/bin/sh"), &["-c", script])
+    }
+
+    #[test]
+    fn execute_takes_the_removed_variables_out() {
+        let invocation = Invocation::new("/bin/sh")
+            .args(&["-c", "echo \"${HOME-unset}\""])
+            .env_remove("HOME");
+        let done = StdProcess::default().execute(&invocation).unwrap();
+        assert_eq!(done.stdout, "unset\n");
     }
 
     #[test]

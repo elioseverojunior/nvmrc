@@ -22,7 +22,7 @@ use crate::error::CliError;
 
 /// What `nvm_version` prints.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum Resolution {
+pub enum Resolution {
     Version(Version),
     /// `system`.
     System,
@@ -36,7 +36,8 @@ pub(super) enum Resolution {
 
 impl Resolution {
     /// The text nvm.sh holds in `VERSION`.
-    pub(super) fn text(&self) -> String {
+    #[must_use]
+    pub fn text(&self) -> String {
         match self {
             Self::Version(version) => version.to_string(),
             Self::System => "system".to_owned(),
@@ -49,7 +50,10 @@ impl Resolution {
 
 /// `nvm_match_version`: `system` stays `system` whether or not one exists,
 /// `io.js` is `iojs`, anything else is [`nvm_version`].
-pub(super) fn match_version(context: &Context<'_>, name: &str) -> Result<Resolution, CliError> {
+///
+/// # Errors
+/// [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
+pub fn match_version(context: &Context<'_>, name: &str) -> Result<Resolution, CliError> {
     match name {
         "system" => Ok(Resolution::System),
         "io.js" => nvm_version(context, "iojs"),
@@ -60,7 +64,10 @@ pub(super) fn match_version(context: &Context<'_>, name: &str) -> Result<Resolut
 /// `nvm_version`: `current` (or nothing) is the active version, an alias
 /// chain ending at `system` needs a system `node`, anything else must match
 /// an installed version.
-pub(super) fn nvm_version(context: &Context<'_>, name: &str) -> Result<Resolution, CliError> {
+///
+/// # Errors
+/// [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
+pub fn nvm_version(context: &Context<'_>, name: &str) -> Result<Resolution, CliError> {
     if name.is_empty() || name == "current" {
         return active(context);
     }
@@ -88,7 +95,10 @@ fn active(context: &Context<'_>) -> Result<Resolution, CliError> {
 
 /// The `node`, else the `iojs`, that `PATH` finds once `nvm deactivate` has
 /// stripped the nvm entries from it.
-pub(super) fn system_node(context: &Context<'_>) -> Result<Option<SystemNode>, CliError> {
+///
+/// # Errors
+/// [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
+pub fn system_node(context: &Context<'_>) -> Result<Option<SystemNode>, CliError> {
     let nvm_dir = context.nvm_dir()?;
     let path = context.env.var_os("PATH").unwrap_or_default();
     let stripped = strip_path(&path.to_string_lossy(), "/bin", &nvm_dir.to_string_lossy());
@@ -106,7 +116,10 @@ pub(super) fn system_node(context: &Context<'_>) -> Result<Option<SystemNode>, C
 }
 
 /// `nvm_is_version_installed`: the version's `bin/node` can run.
-pub(super) fn is_installed(context: &Context<'_>, version: &Version) -> Result<bool, CliError> {
+///
+/// # Errors
+/// [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
+pub fn is_installed(context: &Context<'_>, version: &Version) -> Result<bool, CliError> {
     let node = version_path(context, version)?.join("bin").join("node");
     Ok(context
         .fs
@@ -128,7 +141,10 @@ fn alias_end(context: &Context<'_>, name: &str) -> Result<Option<String>, CliErr
 /// `nvm_ensure_version_installed`: true when `provided` resolves to a
 /// version whose `node` can run (or, for `system`, when there is a system
 /// `node`); otherwise its messages go to stderr and the answer is false.
-pub(super) fn ensure_installed(
+///
+/// # Errors
+/// [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
+pub fn ensure_installed(
     context: &Context<'_>,
     provided: &str,
     from_nvmrc: bool,

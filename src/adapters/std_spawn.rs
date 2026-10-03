@@ -9,6 +9,9 @@ use std::process::{Command, ExitStatus};
 /// Runs `invocation` with inherited stdio and waits for it.
 pub(super) fn spawn_inherited(invocation: &Invocation) -> io::Result<i32> {
     let mut command = Command::new(&invocation.program);
+    for name in &invocation.env_remove {
+        command.env_remove(name);
+    }
     command
         .args(&invocation.args)
         .envs(invocation.env.iter().map(|(name, value)| (name, value)));
@@ -101,6 +104,30 @@ mod tests {
         // `echo` is a shell builtin, so the replaced PATH is enough to run.
         assert_eq!(StdProcess::default().spawn(&invocation).unwrap(), 0);
         assert_eq!(std::fs::read_to_string(out).unwrap(), "/only/here:/bin\n");
+    }
+
+    #[test]
+    fn a_bare_program_is_looked_up_on_the_env_path() {
+        let root = tempfile::tempdir().unwrap();
+        let bin = root.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        let program = bin.join("only-here-xyz");
+        std::fs::write(&program, "#!/bin/sh\nexit 9\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let path = format!("{}:/usr/bin:/bin", bin.display());
+        let invocation = Invocation::new("only-here-xyz").env("PATH", &path);
+        assert_eq!(StdProcess::default().spawn(&invocation).unwrap(), 9);
+    }
+
+    #[test]
+    fn removed_variables_are_not_inherited() {
+        let root = tempfile::tempdir().unwrap();
+        let out = root.path().join("out");
+        let script = format!("echo \"${{HOME-unset}}\" > {}", out.display());
+        let invocation = sh(&script).env_remove("HOME");
+        assert_eq!(StdProcess::default().spawn(&invocation).unwrap(), 0);
+        assert_eq!(std::fs::read_to_string(out).unwrap(), "unset\n");
     }
 
     #[test]

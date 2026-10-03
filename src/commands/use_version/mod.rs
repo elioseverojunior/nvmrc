@@ -2,10 +2,10 @@
 //! checked as nvm.sh does, with every failure message. The environment change
 //! itself is built from the [`Target`] by the caller.
 
-mod apply;
+pub mod apply;
 pub mod messages;
 pub mod options;
-mod prefix;
+pub mod prefix;
 pub mod target;
 
 pub use options::Options;

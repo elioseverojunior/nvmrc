@@ -54,11 +54,8 @@ fn installed(
     mut transcript: Transcript,
 ) -> Result<Output, CliError> {
     let nvm_dir = context.nvm_dir()?;
-    let switch = Switch {
-        nvm_dir: text(&nvm_dir),
-        directory: text(directory),
-    };
-    let path = switch.change(&context.env.var("PATH").unwrap_or_default(), "/bin");
+    let switch = Switch::new(&nvm_dir, directory);
+    let path = switch.path(context);
     let script = switch.script(context, &path)?;
     link_current(context, &nvm_dir, directory, &mut transcript);
     let message = (!options.silent).then(|| now_using(version, &npm_suffix(context, &path)));
@@ -91,15 +88,44 @@ fn after_refusal(
     }
 }
 
-/// The directories one switch rewrites `PATH` and `MANPATH` with.
-struct Switch {
+/// The directories one switch rewrites `PATH` and `MANPATH` with: the
+/// environment `nvm use` gives the shell, and `nvm exec` its child.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Switch {
     nvm_dir: String,
     directory: String,
 }
 
 impl Switch {
+    /// A switch to the version installed in `directory`.
+    #[must_use]
+    pub fn new(nvm_dir: &Path, directory: &Path) -> Self {
+        Self {
+            nvm_dir: text(nvm_dir),
+            directory: text(directory),
+        }
+    }
+
     fn change(&self, value: &str, suffix: &str) -> String {
         change_path(value, suffix, &self.directory, &self.nvm_dir)
+    }
+
+    /// `nvm_change_path` of the current `PATH`.
+    #[must_use]
+    pub fn path(&self, context: &Context<'_>) -> String {
+        self.change(&context.env.var("PATH").unwrap_or_default(), "/bin")
+    }
+
+    /// `NVM_BIN`.
+    #[must_use]
+    pub fn bin(&self) -> String {
+        format!("{}/bin", self.directory)
+    }
+
+    /// `NVM_INC`.
+    #[must_use]
+    pub fn include(&self) -> String {
+        format!("{}/include/node", self.directory)
     }
 
     /// `MANPATH` (only when a `manpath` program is on the new `PATH`), then
@@ -109,15 +135,18 @@ impl Switch {
             Some(manpath) => Script::new().export("MANPATH", &manpath)?,
             None => Script::new(),
         };
-        let directory = &self.directory;
         script
             .export("PATH", path)?
             .hash_reset()
-            .export("NVM_BIN", &format!("{directory}/bin"))?
-            .export("NVM_INC", &format!("{directory}/include/node"))
+            .export("NVM_BIN", &self.bin())?
+            .export("NVM_INC", &self.include())
     }
 
-    fn manpath(&self, context: &Context<'_>, path: &str) -> Option<String> {
+    /// The new `MANPATH`, only when a `manpath` program is on the new
+    /// `path`: `nvm_change_path` of the current one, with the trailing `:`
+    /// rule.
+    #[must_use]
+    pub fn manpath(&self, context: &Context<'_>, path: &str) -> Option<String> {
         find_in_path(context.fs, OsStr::new(path), "manpath")?;
         let old = context.env.var("MANPATH").unwrap_or_default();
         Some(manpath_with_trailing_colon(
@@ -128,7 +157,7 @@ impl Switch {
 
 /// `NVM_SYMLINK_CURRENT=true` (exactly): `rm -f $NVM_DIR/current && ln -s
 /// <directory> $NVM_DIR/current`. A failure is reported and `use` goes on.
-fn link_current(
+pub fn link_current(
     context: &Context<'_>,
     nvm_dir: &Path,
     directory: &Path,
@@ -193,7 +222,8 @@ fn now_using(version: &Version, npm: &str) -> String {
 
 /// `nvm_print_npm_version` with `path` as `PATH`: ` (npm v<version>)`, or
 /// nothing when there is no `npm` or it prints nothing.
-fn npm_suffix(context: &Context<'_>, path: &str) -> String {
+#[must_use]
+pub fn npm_suffix(context: &Context<'_>, path: &str) -> String {
     Npm::on_path_value(context, OsStr::new(path))
         .and_then(|npm| npm.version(context))
         .map_or_else(String::new, |version| format!(" (npm v{version})"))

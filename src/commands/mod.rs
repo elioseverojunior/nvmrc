@@ -3,6 +3,7 @@ pub mod aliases;
 pub mod cache;
 pub mod current;
 pub mod deactivate;
+pub mod exec;
 pub mod install;
 pub mod install_latest_npm;
 pub mod ls;
@@ -13,6 +14,7 @@ pub mod rc_version;
 pub mod reinstall_packages;
 pub mod remote_index;
 pub mod resolve;
+pub mod run;
 pub mod sanitize;
 pub mod transcript;
 pub mod unalias;
@@ -23,6 +25,7 @@ pub mod version_remote;
 pub mod which;
 
 use crate::error::NvmExitCode;
+use crate::ports::Invocation;
 use crate::shell::Script;
 
 /// What a command wants printed, and the exit status to finish with. Text
@@ -35,6 +38,9 @@ pub struct Output {
     /// Shell code the generated `nvm` function must `eval`; empty for a
     /// command that changes nothing in the calling shell.
     pub script: Script,
+    /// A program to run once the streams are printed (`nvm exec`, `nvm
+    /// run`): its exit status replaces [`Self::status`].
+    pub spawn: Option<Invocation>,
 }
 
 impl Output {
@@ -59,6 +65,14 @@ impl Output {
         self
     }
 
+    /// A program the CLI runs after printing the streams, whose status it
+    /// finishes with.
+    #[must_use]
+    pub fn with_spawn(mut self, invocation: Invocation) -> Self {
+        self.spawn = Some(invocation);
+        self
+    }
+
     /// For a result that is printed and still not a success, like `nvm ls`
     /// finding nothing.
     #[must_use]
@@ -71,6 +85,7 @@ impl Output {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ports::Invocation;
 
     #[test]
     fn the_default_status_is_success_and_can_be_changed() {
@@ -85,6 +100,15 @@ mod tests {
         let script = Script::new().unset("NVM_BIN").unwrap();
         let output = Output::stdout("x").with_script(script);
         assert_eq!(output.script.render(), "unset NVM_BIN\n");
+    }
+
+    #[test]
+    fn the_default_spawn_is_none_and_can_be_set() {
+        assert_eq!(Output::default().spawn, None);
+        let invocation = Invocation::new("node").args(&["a"]);
+        let output = Output::stdout("Running").with_spawn(invocation.clone());
+        assert_eq!(output.spawn, Some(invocation));
+        assert_eq!(output.stdout, "Running");
     }
 
     #[test]
