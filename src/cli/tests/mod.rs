@@ -44,10 +44,11 @@ fn which_of_a_missing_version_fails_on_stderr_with_exit_1() {
 }
 
 #[test]
-fn which_without_an_argument_is_a_usage_error_with_exit_127() {
+fn which_without_an_argument_and_without_an_nvmrc_says_so_then_the_usage_with_exit_127() {
     let (code, out, err) = run_cli(&["nvm", "which"]);
     assert_eq!(code, 127);
-    assert!(out.is_empty() && err.starts_with("Usage: nvm which"));
+    assert!(out.is_empty());
+    assert!(err.starts_with("No version provided and no .nvmrc file found\nUsage: nvm which"));
 }
 
 #[test]
@@ -233,7 +234,7 @@ fn a_failed_stderr_write_keeps_the_exit_code() {
 
 #[test]
 fn a_usage_error_exits_127_without_stdout() {
-    for args in [&["nvm", "bogus"][..], &["nvm", "which", "--silent", "20"]] {
+    for args in [&["nvm", "bogus"][..], &["nvm", "which", "--silent"]] {
         let (code, out, err) = run_cli(args);
         assert_eq!(code, 127, "{args:?}");
         assert!(out.is_empty() && !err.is_empty(), "{args:?}");

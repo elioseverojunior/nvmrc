@@ -93,8 +93,12 @@ enum Command {
         #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
     },
-    /// Print the path to the node binary of a version or alias.
-    Which { version: Option<String> },
+    /// Print the path to the node binary of a version or alias (or of the
+    /// `.nvmrc` version when none is given).
+    Which {
+        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
     /// List aliases, show those starting with a name, or create an alias for
     /// a version (an empty target deletes the alias).
     Alias {
@@ -124,7 +128,7 @@ fn dispatch(command: &Command, context: &Context<'_>) -> Result<Output, CliError
             commands::reinstall_packages::run(context, "copy-packages", args)
         }
         Command::Uninstall { args } => commands::uninstall::run(context, args),
-        Command::Which { version } => commands::which::run(context, version.as_deref()),
+        Command::Which { args } => commands::which::run_command(context, args),
         Command::Alias { args } => commands::aliases::run(context, args),
         Command::Unalias { names } => commands::unalias::run(context, names),
     }
