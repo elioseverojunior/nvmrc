@@ -153,6 +153,16 @@ impl FileSystem for FakeFileSystem {
                 files.insert(moved(&name), contents);
             }
         }
+        let mut executables = self.executables.borrow_mut();
+        let names: Vec<PathBuf> = executables
+            .iter()
+            .filter(|e| e.starts_with(from))
+            .cloned()
+            .collect();
+        for name in names {
+            executables.remove(&name);
+            executables.insert(moved(&name));
+        }
         let mut dirs = self.dirs.borrow_mut();
         let names: Vec<PathBuf> = dirs
             .iter()

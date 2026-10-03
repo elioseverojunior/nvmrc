@@ -60,10 +60,13 @@ fn fake_file_system_reports_when_a_path_was_changed() {
 fn fake_file_system_renames_a_tree_and_creates_a_directory_once() {
     let fs = FakeFileSystem::default()
         .with_file("/a/x/y", "1")
+        .with_executable("/a/bin/tool", "t")
         .with_dir("/a/empty");
     fs.rename(Path::new("/a"), Path::new("/b")).unwrap();
     assert_eq!(fs.read_to_string(Path::new("/b/x/y")).unwrap(), "1");
     assert!(fs.file_info(Path::new("/b/empty")).unwrap().is_dir);
+    assert!(!fs.file_info(Path::new("/b/x/y")).unwrap().executable);
+    assert!(fs.file_info(Path::new("/b/bin/tool")).unwrap().executable);
     assert!(fs.file_info(Path::new("/a")).is_err());
     assert!(fs.rename(Path::new("/a"), Path::new("/c")).is_err());
     fs.create_dir(Path::new("/lock")).unwrap();
