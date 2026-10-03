@@ -9,4 +9,5 @@ pub mod listing;
 pub mod mirror;
 pub mod nvmrc;
 pub mod path_search;
+pub mod remote;
 pub mod version;
