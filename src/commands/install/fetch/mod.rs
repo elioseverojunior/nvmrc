@@ -16,6 +16,8 @@ pub struct Failed;
 
 /// Where an archive lives in the cache.
 pub struct Artifact {
+    /// `node-v20.10.0-linux-x64`.
+    pub slug: String,
     /// `node-v20.10.0-linux-x64.tar.gz`.
     pub file_name: String,
     /// `$NVM_DIR/.cache/bin/<slug>`.
@@ -33,6 +35,7 @@ impl Artifact {
         let file_name = format!("{slug}.tar.gz");
         let tarball = directory.join(&file_name);
         Some(Self {
+            slug,
             file_name,
             directory,
             tarball,
@@ -69,9 +72,13 @@ fn sanitize(context: &Context<'_>, path: &Path) -> String {
 pub fn fetch(
     context: &Context<'_>,
     version: &Version,
+    offline: bool,
     transcript: &mut Transcript,
 ) -> Result<PathBuf, Failed> {
     let artifact = Artifact::of(context, version).ok_or(Failed)?;
+    if offline {
+        return cached_only(context, &artifact, transcript);
+    }
     let mirror = mirror::from_env(context.env, version.flavor).map_err(|error| {
         transcript.err(error.to_string());
         Failed
@@ -88,6 +95,24 @@ pub fn fetch(
     download(context, &mirror, version, &artifact, transcript)?;
     verify(context, &artifact, &expected, transcript)?;
     Ok(artifact.tarball)
+}
+
+/// `--offline`: the cached archive, taken without a checksum, or nothing.
+fn cached_only(
+    context: &Context<'_>,
+    artifact: &Artifact,
+    transcript: &mut Transcript,
+) -> Result<PathBuf, Failed> {
+    if context.fs.file_info(&artifact.tarball).is_ok() {
+        let shown = sanitize(context, &artifact.tarball);
+        transcript.err(format!("Offline: using cached archive {shown}"));
+        return Ok(artifact.tarball.clone());
+    }
+    transcript.err(format!(
+        "Offline: no cached archive found for {}",
+        artifact.slug
+    ));
+    Err(Failed)
 }
 
 /// What `SHASUMS256.txt` lists for the archive; empty when it cannot be had.

@@ -7,8 +7,11 @@ pub mod fetch;
 mod flow;
 pub mod lock;
 mod npm_steps;
+mod nvmrc_file;
+mod offline;
 pub mod options;
 pub mod place;
+mod resolve;
 
 use std::time::SystemTime;
 
@@ -16,17 +19,15 @@ use crate::commands::Output;
 use crate::commands::npm::packages::Source;
 use crate::commands::resolve::{Resolved, resolve_installed};
 use crate::commands::transcript::Transcript;
-use crate::commands::version_remote::lookup;
 use crate::context::Context;
-use crate::domain::floor::VersionFloor;
 use crate::domain::platform::binary_available;
-use crate::domain::remote::Query;
 use crate::domain::version::{Flavor, Version};
 use crate::domain::version_prefix::with_v_prefix;
 use crate::error::{CliError, NvmExitCode};
-use flow::{Halt, Step};
+use flow::{Halt, Step, Target};
 use lock::{LockRequest, acquire};
 use options::Options;
+use resolve::{check_floor, resolve};
 
 const USAGE: &str = "No version provided and no .nvmrc file found\n\
 Usage: nvm install [<version>]\n  \
@@ -51,42 +52,70 @@ fn install(context: &Context<'_>, options: &Options, transcript: &mut Transcript
     announce(options, transcript)?;
     let version = resolve(context, options, transcript)?;
     check_floor(context, &version, transcript)?;
-    let version_path = place::version_path(context, &version)?;
+    let path = place::version_path(context, &version)?;
     let source = reinstall_source(context, options, &version, transcript)?;
-    if place::is_valid_install(context, &version_path) {
-        transcript.err(format!("{version} is already installed."));
-        let status = npm_steps::run(
-            context,
-            options,
-            &version,
-            &version_path,
-            source.as_ref(),
-            transcript,
-        )?;
-        defaults::ensure_default(context, &alias_target(options), transcript)?;
-        if status == NvmExitCode::Success {
-            apply_alias(context, options, transcript)?;
-        }
-        return end_with(status);
+    let target = Target {
+        version,
+        path,
+        source,
+    };
+    if place::is_valid_install(context, &target.path) {
+        already_installed(context, options, &target, transcript)
+    } else {
+        fresh_install(context, options, &target, transcript)
     }
-    install_binary(context, &version, &version_path, transcript)?;
+}
+
+/// A valid install is left as it is; the steps after the install still run.
+/// The status of the last one is the status of the command: `--save`, which
+/// writes `.nvmrc`, replaces that of the `npm` steps, as in `nvm.sh`.
+fn already_installed(
+    context: &Context<'_>,
+    options: &Options,
+    target: &Target,
+    transcript: &mut Transcript,
+) -> Step<()> {
+    transcript.err(format!("{} is already installed.", target.version));
+    let mut status = npm_steps::run(context, options, target, transcript)?;
+    defaults::ensure_default(context, &alias_target(options), transcript)?;
+    if options.save {
+        status = nvmrc_file::write(context, &target.version, transcript);
+    }
+    if status == NvmExitCode::Success {
+        apply_alias(context, options, transcript)?;
+    }
+    end_with(status)
+}
+
+/// Unlike `nvm.sh`, which forgets `--save` on a fresh install, `.nvmrc` is
+/// written here too, after everything else.
+fn fresh_install(
+    context: &Context<'_>,
+    options: &Options,
+    target: &Target,
+    transcript: &mut Transcript,
+) -> Step<()> {
+    install_binary(
+        context,
+        &target.version,
+        &target.path,
+        options.offline,
+        transcript,
+    )?;
     apply_alias(context, options, transcript)?;
-    if !place::is_valid_install(context, &version_path) {
+    if !place::is_valid_install(context, &target.path) {
         let message = format!(
-            "The install of {version} reported success but failed verification; not activating it."
+            "The install of {} reported success but failed verification; not activating it.",
+            target.version
         );
         transcript.err(message);
         return Err(Halt::Exit(NvmExitCode::Failure));
     }
     defaults::ensure_default(context, &alias_target(options), transcript)?;
-    let status = npm_steps::run(
-        context,
-        options,
-        &version,
-        &version_path,
-        source.as_ref(),
-        transcript,
-    )?;
+    let mut status = npm_steps::run(context, options, target, transcript)?;
+    if options.save && status == NvmExitCode::Success {
+        status = nvmrc_file::write(context, &target.version, transcript);
+    }
     end_with(status)
 }
 
@@ -159,63 +188,12 @@ fn announce(options: &Options, transcript: &mut Transcript) -> Step<()> {
     Ok(())
 }
 
-fn resolve(context: &Context<'_>, options: &Options, transcript: &mut Transcript) -> Step<Version> {
-    let query = Query {
-        pattern: Some(options.version.clone()).filter(|text| !text.is_empty()),
-        lts: options.lts.clone(),
-    };
-    let found = lookup(context, query)?;
-    for warning in found.warnings {
-        transcript.err(warning);
-    }
-    found.version.ok_or_else(|| {
-        transcript.err(not_found_message(options));
-        Halt::Exit(NvmExitCode::InvalidVersion)
-    })
-}
-
-fn not_found_message(options: &Options) -> String {
-    let version = &options.version;
-    match options.lts.as_deref() {
-        Some("*") => format!(
-            "Version '{version}' (with LTS filter) not found - try `nvm ls-remote --lts` to browse available versions."
-        ),
-        Some(lts) if version.is_empty() => format!(
-            "Version with LTS filter '{lts}' not found - try `nvm ls-remote --lts={lts}` to browse available versions."
-        ),
-        Some(lts) => format!(
-            "Version '{version}' (with LTS filter '{lts}') not found - try `nvm ls-remote --lts={lts}` to browse available versions."
-        ),
-        None => format!(
-            "Version '{version}' not found - try `nvm ls-remote` to browse available versions."
-        ),
-    }
-}
-
-fn check_floor(context: &Context<'_>, version: &Version, transcript: &mut Transcript) -> Step<()> {
-    let from_file = context
-        .fs
-        .read_to_string(&context.nvm_dir()?.join("min-version"))
-        .ok();
-    let from_env = context.env.var("NVM_MIN_VERSION");
-    let floor = VersionFloor::from_sources(from_env.as_deref(), from_file.as_deref())
-        .and_then(|floor| floor.map_or(Ok(()), |floor| floor.check(version)));
-    let Err(error) = floor else {
-        return Ok(());
-    };
-    transcript.err(error.to_string());
-    if matches!(error, crate::error::FloorError::Below { .. }) {
-        transcript
-            .err("Lower or unset NVM_MIN_VERSION (or edit $NVM_DIR/min-version) to install it.");
-    }
-    Err(Halt::Exit(NvmExitCode::BelowVersionFloor))
-}
-
 /// Everything from the lock to the unpacked directory.
 fn install_binary(
     context: &Context<'_>,
     version: &Version,
     version_path: &std::path::Path,
+    offline: bool,
     transcript: &mut Transcript,
 ) -> Step<()> {
     let unavailable = !binary_available(version)
@@ -234,8 +212,8 @@ fn install_binary(
         "Downloading and installing {name} {}...",
         version.directory_name()
     ));
-    let tarball =
-        fetch::fetch(context, version, transcript).map_err(|_| binary_failed(transcript))?;
+    let tarball = fetch::fetch(context, version, offline, transcript)
+        .map_err(|_| binary_failed(transcript))?;
     let artifact =
         fetch::Artifact::of(context, version).ok_or_else(|| binary_failed(transcript))?;
     place::place(context, &tarball, &artifact.files(), version_path).map_err(|message| {

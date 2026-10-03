@@ -1,12 +1,13 @@
 //! The command line of `nvm install`, as `nvm.sh` reads it: options first,
-//! then the version (or `lts/*`, `lts/<name>`), and what follows it is not
-//! looked at, except for the options that this port does not have.
+//! then the version (or `lts/*`, `lts/<name>`). What follows the version is
+//! looked at only for `--skip-default-packages` and the two options that name
+//! a version to take packages from; `--save` there, like any other word, is
+//! ignored, as in `nvm.sh`.
 
 use crate::error::CliError;
 
-/// Options that need a source build, `npm` or a `.nvmrc`: not in this port yet.
-const NOT_YET: [&str; 3] = ["-s", "-j", "--offline"];
-const NOT_YET_AFTER_VERSION: [&str; 2] = ["--save", "-w"];
+/// Options that need a source build: not in this port yet.
+const NOT_YET: [&str; 2] = ["-s", "-j"];
 /// Both options mean the same; `nvm.sh` words its messages after the one used.
 const REINSTALL_OPTIONS: [&str; 2] = ["--reinstall-packages-from", "--copy-packages-from"];
 
@@ -30,6 +31,10 @@ pub struct Options {
     /// `--reinstall-packages-from=<version>` (or `--copy-packages-from`): the
     /// version, as given, whose global packages are installed again.
     pub reinstall_from: Option<String>,
+    /// `--offline`: use what is installed or cached, and never the network.
+    pub offline: bool,
+    /// `--save` or `-w`: write the version to `.nvmrc` in the current directory.
+    pub save: bool,
 }
 
 fn unsupported(option: &str) -> CliError {
@@ -85,6 +90,8 @@ pub fn parse(args: &[String]) -> Result<Options, CliError> {
         match option.as_str() {
             "-b" | "--no-progress" => {}
             "--latest-npm" => options.latest_npm = true,
+            "--offline" => options.offline = true,
+            "--save" | "-w" => set_save(&mut options)?,
             "--skip-default-packages" => options.skip_default_packages = true,
             "--lts" => options.lts = Some("*".to_owned()),
             "--default" => set_alias(&mut options, "default")?,
@@ -109,10 +116,8 @@ pub fn parse(args: &[String]) -> Result<Options, CliError> {
     for option in rest {
         if option == "--skip-default-packages" {
             options.skip_default_packages = true;
-        } else if !read_reinstall(&mut options, option)?
-            && NOT_YET_AFTER_VERSION.contains(&option.as_str())
-        {
-            return Err(unsupported(option));
+        } else {
+            read_reinstall(&mut options, option)?;
         }
     }
     options.announce_lts = options.lts.is_some() && options.version.is_empty();
@@ -124,13 +129,28 @@ pub fn parse(args: &[String]) -> Result<Options, CliError> {
 fn is_option(arg: &str) -> bool {
     matches!(
         arg,
-        "-b" | "--no-progress" | "--lts" | "--default" | "--latest-npm" | "--skip-default-packages"
+        "-b" | "--no-progress"
+            | "--lts"
+            | "--default"
+            | "--latest-npm"
+            | "--skip-default-packages"
+            | "--offline"
+            | "--save"
+            | "-w"
     ) || arg.starts_with("--lts=")
         || arg.starts_with("--alias=")
         || arg.starts_with("---")
         || NOT_YET.contains(&arg)
         || reinstall_option(arg).is_some()
-        || NOT_YET_AFTER_VERSION.contains(&arg)
+}
+
+fn set_save(options: &mut Options) -> Result<(), CliError> {
+    if options.save {
+        let message = "--save and -w may only be provided once";
+        return Err(CliError::InvalidOptions(message.to_owned()));
+    }
+    options.save = true;
+    Ok(())
 }
 
 fn set_alias(options: &mut Options, name: &str) -> Result<(), CliError> {

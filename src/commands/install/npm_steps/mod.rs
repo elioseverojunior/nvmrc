@@ -3,9 +3,7 @@
 //! an `npm` skips these steps with a warning (`nvm.sh` would download an `npm`
 //! installer from the internet and run it; this port never does).
 
-use std::path::Path;
-
-use crate::commands::install::flow::Step;
+use crate::commands::install::flow::{Step, Target};
 use crate::commands::install::options::Options;
 use crate::commands::npm::Npm;
 use crate::commands::npm::latest::{Node, install_latest};
@@ -25,12 +23,11 @@ use crate::error::NvmExitCode;
 pub fn run(
     context: &Context<'_>,
     options: &Options,
-    version: &Version,
-    version_path: &Path,
-    source: Option<&Source>,
+    target: &Target,
     transcript: &mut Transcript,
 ) -> Step<NvmExitCode> {
-    let npm = Npm::in_version(context, version_path);
+    let version = &target.version;
+    let npm = Npm::in_version(context, &target.path);
     if options.latest_npm {
         let status = upgrade(context, npm.as_ref(), version, transcript);
         if status != NvmExitCode::Success {
@@ -43,9 +40,12 @@ pub fn run(
             return Ok(status);
         }
     }
-    Ok(source.map_or(NvmExitCode::Success, |source| {
-        copy_packages(context, npm.as_ref(), version, source, transcript)
-    }))
+    Ok(target
+        .source
+        .as_ref()
+        .map_or(NvmExitCode::Success, |source| {
+            copy_packages(context, npm.as_ref(), version, source, transcript)
+        }))
 }
 
 /// `nvm reinstall-packages <source>` into the version just installed.

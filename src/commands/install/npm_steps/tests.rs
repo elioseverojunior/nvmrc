@@ -11,6 +11,14 @@ fn version() -> Version {
     "v20.10.0".parse().unwrap()
 }
 
+fn target(source: Option<Source>) -> Target {
+    Target {
+        version: version(),
+        path: Path::new(PATH).to_path_buf(),
+        source,
+    }
+}
+
 fn options(latest_npm: bool, skip: bool) -> Options {
     Options {
         latest_npm,
@@ -27,15 +35,8 @@ fn run_steps(
     let env = FakeEnv::default().with_var("NVM_DIR", "/n");
     let context = Context::new(fs, &env).with_process(process);
     let mut transcript = Transcript::default();
-    let status = run(
-        &context,
-        options,
-        &version(),
-        Path::new(PATH),
-        None,
-        &mut transcript,
-    )
-    .unwrap();
+    let target = target(None);
+    let status = run(&context, options, &target, &mut transcript).unwrap();
     let output = transcript.finish(status);
     (status, output.stdout, output.stderr)
 }
@@ -173,15 +174,8 @@ fn reinstall_from(
     let env = FakeEnv::default().with_var("NVM_DIR", "/n");
     let context = Context::new(fs, &env).with_process(process);
     let mut transcript = Transcript::default();
-    let status = run(
-        &context,
-        &options(false, true),
-        &version(),
-        Path::new(PATH),
-        Some(source),
-        &mut transcript,
-    )
-    .unwrap();
+    let target = target(Some(source.clone()));
+    let status = run(&context, &options(false, true), &target, &mut transcript).unwrap();
     let output = transcript.finish(status);
     (status, output.stdout, output.stderr)
 }

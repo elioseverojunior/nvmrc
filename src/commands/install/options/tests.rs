@@ -91,6 +91,31 @@ fn the_npm_options_are_read_before_and_after_the_version() {
 }
 
 #[test]
+fn offline_and_save_are_read_before_the_version() {
+    let options = parsed("--offline --save 20").unwrap();
+    assert!(options.offline && options.save);
+    assert!(parsed("-w 20").unwrap().save);
+    let neither = parsed("20").unwrap();
+    assert!(!neither.offline && !neither.save);
+}
+
+#[test]
+fn save_after_the_version_is_ignored_like_nvm_sh_does() {
+    let options = parsed("20 --save -w").unwrap();
+    assert!(!options.save);
+    assert_eq!(options.version, "20");
+}
+
+#[test]
+fn save_twice_is_status_6() {
+    for line in ["--save --save 20", "-w --save 20", "--save -w 20"] {
+        let error = parsed(line).unwrap_err();
+        assert_eq!(error.exit_code(), NvmExitCode::InvalidOptions, "{line}");
+        assert_eq!(error.to_string(), "--save and -w may only be provided once");
+    }
+}
+
+#[test]
 fn nothing_at_all_is_no_version() {
     let options = parsed("").unwrap();
     assert_eq!(
@@ -155,7 +180,7 @@ fn three_dashes_are_a_typo_with_status_55() {
 
 #[test]
 fn options_that_need_a_source_build_or_npm_are_not_supported_yet() {
-    for line in ["-s 20", "-j 4 20", "--offline 20", "20 --save"] {
+    for line in ["-s 20", "-j 4 20"] {
         let error = parsed(line).unwrap_err();
         assert_eq!(error.exit_code(), NvmExitCode::UnsupportedOption, "{line}");
         assert!(

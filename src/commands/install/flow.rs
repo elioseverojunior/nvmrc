@@ -1,5 +1,9 @@
 //! How the steps of an install end early.
 
+use std::path::PathBuf;
+
+use crate::commands::npm::packages::Source;
+use crate::domain::version::Version;
 use crate::error::{CliError, NvmExitCode};
 
 /// Why an install stops before its last step.
@@ -18,3 +22,12 @@ impl From<CliError> for Halt {
 }
 
 pub type Step<T> = Result<T, Halt>;
+
+/// The version an install is about.
+pub struct Target {
+    pub version: Version,
+    /// `$NVM_DIR/versions/<flavor>/<version>`.
+    pub path: PathBuf,
+    /// Where `--reinstall-packages-from` takes packages from.
+    pub source: Option<Source>,
+}
