@@ -86,23 +86,24 @@ struct Cells {
     text: [String; 3],
 }
 
-fn cells_for(
-    row: &RemoteRow,
-    input: &FormatInput<'_>,
-    latest: &Latest,
-    named: &HashMap<String, Vec<String>>,
-) -> Cells {
-    let text = row.version.to_string();
-    let installed = input.installed.contains(&row.version);
-    let kind = if text == input.current {
+fn row_kind(text: &str, current: &str, installed: bool) -> RowKind {
+    if text == current {
         RowKind::Current
     } else if installed {
         RowKind::Installed
     } else {
         RowKind::Plain
-    };
-    let version = format_row(&text, kind);
-    let padding = if installed { "" } else { "  " };
+    }
+}
+
+/// The three annotation columns of a row: LTS, latest, aliases.
+fn annotations(
+    row: &RemoteRow,
+    input: &FormatInput<'_>,
+    latest: &Latest,
+    named: &HashMap<String, Vec<String>>,
+) -> [String; 3] {
+    let text = row.version.to_string();
     let lts = row.lts.as_deref().map(|name| {
         if row.latest_lts {
             format!(" (Latest LTS: {name})")
@@ -117,15 +118,24 @@ fn cells_for(
     let aliases = named
         .get(&text)
         .map(|names| format!(" (Aliases: {})", names.join(", ")));
+    [lts, newest, aliases].map(Option::unwrap_or_default)
+}
+
+fn cells_for(
+    row: &RemoteRow,
+    input: &FormatInput<'_>,
+    latest: &Latest,
+    named: &HashMap<String, Vec<String>>,
+) -> Cells {
+    let text = row.version.to_string();
+    let installed = input.installed.contains(&row.version);
+    let version = format_row(&text, row_kind(&text, input.current, installed));
+    let padding = if installed { "" } else { "  " };
     Cells {
         width: version.len() + padding.len(),
         version,
         padding,
-        text: [
-            lts.unwrap_or_default(),
-            newest.unwrap_or_default(),
-            aliases.unwrap_or_default(),
-        ],
+        text: annotations(row, input, latest, named),
     }
 }
 

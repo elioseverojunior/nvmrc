@@ -80,14 +80,9 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
         Err(error) => return Ok(not_available(vec![error.to_string()])),
     };
     let node = fetch_if(context, node_runs, Flavor::Node, &mut warnings)?;
-    if let Some(wanted) = query.lts.as_deref() {
-        match lts_filter(context, wanted) {
-            Ok(name) => query.lts = Some(name),
-            Err(message) => {
-                warnings.push(message);
-                return Ok(not_available(warnings));
-            }
-        }
+    if let Err(message) = apply_lts_filter(context, &mut query) {
+        warnings.push(message);
+        return Ok(not_available(warnings));
     }
     let iojs = fetch_if(context, iojs_runs, Flavor::IoJs, &mut warnings)?;
     let listing = list(node.as_deref(), iojs.as_deref(), &query)
@@ -97,14 +92,29 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
     }
     let plain = listing.missing || query.lts.is_some() || options.pattern.is_some();
     let lines = format_rows(context, &listing.rows, plain)?;
-    let status = if listing.missing {
+    Ok(printed(lines, &warnings, listing.missing))
+}
+
+/// The listing as `nvm.sh` prints it: exit status 3 when some part found
+/// nothing, even if other rows were found.
+fn printed(lines: Vec<String>, warnings: &[String], missing: bool) -> Output {
+    let status = if missing {
         NvmExitCode::InvalidVersion
     } else {
         NvmExitCode::Success
     };
-    Ok(Output::stdout(lines.join("\n"))
+    Output::stdout(lines.join("\n"))
         .with_stderr(warnings.join("\n"))
-        .with_status(status))
+        .with_status(status)
+}
+
+/// Replaces the LTS filter by the codename it stands for, once the aliases
+/// are fresh; the message `nvm.sh` prints when it stands for none.
+fn apply_lts_filter(context: &Context<'_>, query: &mut Query) -> Result<(), String> {
+    if let Some(wanted) = query.lts.as_deref() {
+        query.lts = Some(lts_filter(context, wanted)?);
+    }
+    Ok(())
 }
 
 /// The row `nvm.sh` prints when nothing is listed, with exit status 3.
