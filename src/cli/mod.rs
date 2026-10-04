@@ -15,10 +15,12 @@ use self::commands::{Command, dispatch};
 use crate::adapters::fd_channel::FdChannel;
 use crate::adapters::retrying_http::RetryingHttp;
 use crate::adapters::sha256_digest::Sha256Digest;
+use crate::adapters::std_clock::StdClock;
 use crate::adapters::std_cpu::StdCpu;
 use crate::adapters::std_env::StdEnv;
 use crate::adapters::std_fs::StdFileSystem;
 use crate::adapters::std_process::StdProcess;
+use crate::adapters::std_prompt::StdPrompt;
 use crate::adapters::std_sleeper::StdSleeper;
 use crate::adapters::std_terminal::StdTerminal;
 use crate::adapters::tar_archive::TarArchive;
@@ -155,6 +157,8 @@ fn with_real_context<R>(body: impl FnOnce(&Context<'_>) -> R) -> R {
         .with_sleeper(&StdSleeper)
         .with_cpu(&StdCpu)
         .with_terminal(&StdTerminal)
+        .with_clock(&StdClock)
+        .with_prompt(&StdPrompt)
         .with_platform(platform);
     match &channel {
         Some(channel) => body(&context.with_script_channel(channel)),

@@ -4,10 +4,12 @@ use std::path::{Path, PathBuf};
 
 use crate::adapters::fs_alias_store::FsAliasStore;
 use crate::adapters::no_archive::NoArchive;
+use crate::adapters::no_clock::NoClock;
 use crate::adapters::no_cpu::NoCpu;
 use crate::adapters::no_digest::NoDigest;
 use crate::adapters::no_http::NoHttp;
 use crate::adapters::no_process::NoProcess;
+use crate::adapters::no_prompt::NoPrompt;
 use crate::adapters::no_sleeper::NoSleeper;
 use crate::adapters::no_terminal::NoTerminal;
 use crate::domain::alias::AliasStore;
@@ -15,7 +17,8 @@ use crate::domain::platform::{Os, Platform};
 use crate::domain::version::Version;
 use crate::error::CliError;
 use crate::ports::{
-    Archive, Cpu, Digest, Env, FileSystem, Http, Process, ScriptChannel, Sleeper, Terminal,
+    Archive, Clock, Cpu, Digest, Env, FileSystem, Http, Process, Prompt, ScriptChannel, Sleeper,
+    Terminal,
 };
 
 pub struct Context<'a> {
@@ -28,6 +31,8 @@ pub struct Context<'a> {
     sleeper: &'a dyn Sleeper,
     cpu: &'a dyn Cpu,
     terminal: &'a dyn Terminal,
+    clock: &'a dyn Clock,
+    prompt: &'a dyn Prompt,
     platform: Option<Platform>,
     script_channel: Option<&'a dyn ScriptChannel>,
 }
@@ -47,6 +52,8 @@ impl<'a> Context<'a> {
             sleeper: &NoSleeper,
             cpu: &NoCpu,
             terminal: &NoTerminal,
+            clock: &NoClock,
+            prompt: &NoPrompt,
             platform: Some(Platform {
                 os: Os::Linux,
                 arch: "x64".to_owned(),
@@ -104,6 +111,30 @@ impl<'a> Context<'a> {
     #[must_use]
     pub fn terminal(&self) -> &dyn Terminal {
         self.terminal
+    }
+
+    /// The time; a context starts out at the Unix epoch.
+    #[must_use]
+    pub fn with_clock(mut self, clock: &'a dyn Clock) -> Self {
+        self.clock = clock;
+        self
+    }
+
+    #[must_use]
+    pub fn clock(&self) -> &dyn Clock {
+        self.clock
+    }
+
+    /// Who answers questions; a context starts out with nobody to ask.
+    #[must_use]
+    pub fn with_prompt(mut self, prompt: &'a dyn Prompt) -> Self {
+        self.prompt = prompt;
+        self
+    }
+
+    #[must_use]
+    pub fn prompt(&self) -> &dyn Prompt {
+        self.prompt
     }
 
     /// The machine the binaries are for; `None` when it has no official ones.

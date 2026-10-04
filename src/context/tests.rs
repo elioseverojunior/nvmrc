@@ -1,7 +1,8 @@
 use super::*;
 use crate::domain::platform::Platform;
 use crate::fakes::{
-    FakeArchive, FakeCpu, FakeDigest, FakeEnv, FakeFileSystem, FakeHttp, FakeSleeper,
+    FakeArchive, FakeClock, FakeCpu, FakeDigest, FakeEnv, FakeFileSystem, FakeHttp, FakePrompt,
+    FakeSleeper,
 };
 
 fn nvm_dir_for(env: &FakeEnv) -> Result<PathBuf, CliError> {
@@ -132,6 +133,29 @@ fn a_context_does_not_know_its_processors_until_it_is_given_a_cpu() {
         Context::new(&fs, &env).with_cpu(&cpu).cpu().cores(),
         Some(8)
     );
+}
+
+#[test]
+fn a_context_is_at_the_epoch_until_it_is_given_a_clock() {
+    let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
+    assert_eq!(Context::new(&fs, &env).clock().unix_seconds(), 0);
+    let clock = FakeClock::at(1_791_110_040);
+    let context = Context::new(&fs, &env).with_clock(&clock);
+    assert_eq!(context.clock().unix_seconds(), 1_791_110_040);
+}
+
+#[test]
+fn a_context_cannot_ask_until_it_is_given_a_prompt() {
+    let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
+    let unanswered = Context::new(&fs, &env).prompt().confirm("Apply?");
+    assert_eq!(
+        unanswered.unwrap_err().kind(),
+        std::io::ErrorKind::Unsupported
+    );
+    let prompt = FakePrompt::answering(true);
+    let context = Context::new(&fs, &env).with_prompt(&prompt);
+    assert!(context.prompt().confirm("Apply?").unwrap());
+    assert_eq!(prompt.asked(), ["Apply?"]);
 }
 
 #[test]

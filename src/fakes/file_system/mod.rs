@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -13,6 +13,8 @@ pub struct FakeFileSystem {
     executables: RefCell<BTreeSet<PathBuf>>,
     modified: RefCell<BTreeMap<PathBuf, SystemTime>>,
     links: RefCell<BTreeMap<PathBuf, PathBuf>>,
+    replaced: RefCell<Vec<PathBuf>>,
+    temporaries: Cell<u64>,
 }
 
 impl FakeFileSystem {
@@ -43,6 +45,13 @@ impl FakeFileSystem {
         self
     }
 
+    /// The paths given to [`FileSystem::replace_file`] that it replaced, in
+    /// order.
+    #[must_use]
+    pub fn replaced(&self) -> Vec<PathBuf> {
+        self.replaced.borrow().clone()
+    }
+
     /// An explicit, possibly empty, directory. Parents of files exist already.
     #[must_use]
     pub fn with_dir(mut self, path: &str) -> Self {
@@ -66,7 +75,8 @@ fn move_paths(set: &mut BTreeSet<PathBuf>, from: &Path, moved: &dyn Fn(&Path) ->
 
 impl FileSystem for FakeFileSystem {
     fn read_to_string(&self, path: &Path) -> io::Result<String> {
-        let bytes = self.files.borrow().get(path).cloned();
+        let path = self.resolve(path).unwrap_or_else(|| path.to_path_buf());
+        let bytes = self.files.borrow().get(&path).cloned();
         let bytes = bytes.ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))?;
         String::from_utf8(bytes).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
     }
@@ -100,7 +110,8 @@ impl FileSystem for FakeFileSystem {
     }
 
     fn is_file(&self, path: &Path) -> bool {
-        self.files.borrow().contains_key(path)
+        let path = self.resolve(path).unwrap_or_else(|| path.to_path_buf());
+        self.files.borrow().contains_key(&path)
     }
 
     fn remove_file(&self, path: &Path) -> io::Result<()> {
@@ -199,21 +210,29 @@ impl FileSystem for FakeFileSystem {
     }
 
     fn same_directory(&self, a: &Path, b: &Path) -> bool {
-        let (a, b) = (self.resolve(a), self.resolve(b));
-        a == b && self.file_info(&a).is_ok_and(|info| info.is_dir)
+        match (self.resolve(a), self.resolve(b)) {
+            (Some(a), Some(b)) => a == b && self.file_info(&a).is_ok_and(|info| info.is_dir),
+            _ => false,
+        }
+    }
+
+    fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
+        self.canonical(path)
+    }
+
+    fn replace_file(
+        &self,
+        path: &Path,
+        contents: &str,
+        verify: &dyn Fn(&Path) -> io::Result<()>,
+    ) -> io::Result<()> {
+        self.replace_through_links(path, contents, verify)
     }
 }
 
-impl FakeFileSystem {
-    /// `path` with a symlink it starts with replaced by its target.
-    fn resolve(&self, path: &Path) -> PathBuf {
-        let links = self.links.borrow();
-        let found = links
-            .iter()
-            .find_map(|(link, target)| Some(target.join(path.strip_prefix(link).ok()?)));
-        found.unwrap_or_else(|| path.to_path_buf())
-    }
-}
+mod links;
 
+#[cfg(test)]
+mod links_tests;
 #[cfg(test)]
 mod tests;
