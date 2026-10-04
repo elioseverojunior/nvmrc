@@ -80,6 +80,8 @@ pub enum VersionError {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum FloorError {
+    /// `$NVM_DIR/min-version` is replaced by the real path where it is
+    /// printed (`install::resolve::check_floor`), as nvm.sh expands it.
     #[error("Invalid minimum version '{0}' (from NVM_MIN_VERSION or $NVM_DIR/min-version).")]
     Invalid(String),
     #[error("Version {version} is below the minimum allowed version {floor}.")]

@@ -31,7 +31,7 @@ fn a_version_below_the_floor_is_status_7_with_both_lines() {
         lines(&output.stderr),
         [
             "Version v20.10.0 is below the minimum allowed version v22.0.0.",
-            "Lower or unset NVM_MIN_VERSION (or edit $NVM_DIR/min-version) to install it.",
+            "Lower or unset NVM_MIN_VERSION (or edit /n/min-version) to install it.",
         ]
     );
     assert!(!world.installed());
@@ -110,5 +110,19 @@ fn a_held_lock_that_never_clears_stops_the_install_with_status_1() {
         error
             .to_string()
             .starts_with("Timed out after 1s waiting for another install of v20.10.0")
+    );
+}
+
+#[test]
+fn an_invalid_floor_names_the_min_version_file_of_nvm_dir() {
+    let mut world = World::new();
+    world.env = FakeEnv::default()
+        .with_var("NVM_DIR", "/n")
+        .with_var("NVM_MIN_VERSION", "bogus");
+    let output = world.run("20").unwrap();
+    assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
+    assert_eq!(
+        output.stderr,
+        "Invalid minimum version 'bogus' (from NVM_MIN_VERSION or /n/min-version)."
     );
 }

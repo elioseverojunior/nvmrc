@@ -109,25 +109,28 @@ fn not_found_message(options: &Options) -> String {
     )
 }
 
+/// How the floor messages name the file before the real path replaces it.
+const MIN_VERSION_FILE: &str = "$NVM_DIR/min-version";
+
 pub(super) fn check_floor(
     context: &Context<'_>,
     version: &Version,
     transcript: &mut Transcript,
 ) -> Step<()> {
-    let from_file = context
-        .fs
-        .read_to_string(&context.nvm_dir()?.join("min-version"))
-        .ok();
+    let file = context.nvm_dir()?.join("min-version");
+    let from_file = context.fs.read_to_string(&file).ok();
     let from_env = context.env.var("NVM_MIN_VERSION");
     let floor = VersionFloor::from_sources(from_env.as_deref(), from_file.as_deref())
         .and_then(|floor| floor.map_or(Ok(()), |floor| floor.check(version)));
     let Err(error) = floor else {
         return Ok(());
     };
-    transcript.err(error.to_string());
+    let shown = file.display().to_string();
+    transcript.err(error.to_string().replace(MIN_VERSION_FILE, &shown));
     if matches!(error, crate::error::FloorError::Below { .. }) {
-        transcript
-            .err("Lower or unset NVM_MIN_VERSION (or edit $NVM_DIR/min-version) to install it.");
+        transcript.err(format!(
+            "Lower or unset NVM_MIN_VERSION (or edit {shown}) to install it."
+        ));
     }
     Err(Halt::Exit(NvmExitCode::BelowVersionFloor))
 }
