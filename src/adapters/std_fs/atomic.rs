@@ -79,15 +79,9 @@ fn permissions_of(target: &Path) -> io::Result<Option<Permissions>> {
     }
 }
 
-#[cfg(unix)]
 fn new_file_permissions() -> Option<Permissions> {
     use std::os::unix::fs::PermissionsExt;
     Some(Permissions::from_mode(0o644))
-}
-
-#[cfg(not(unix))]
-fn new_file_permissions() -> Option<Permissions> {
-    None
 }
 
 /// A new, empty file next to `target`, with a name no one else uses.

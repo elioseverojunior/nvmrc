@@ -77,39 +77,18 @@ impl FileSystem for StdFileSystem {
         fs::create_dir_all(path)
     }
 
-    #[cfg(unix)]
     fn symlink(&self, target: &Path, link: &Path) -> io::Result<()> {
         std::os::unix::fs::symlink(target, link)
     }
 
-    #[cfg(not(unix))]
-    fn symlink(&self, _target: &Path, _link: &Path) -> io::Result<()> {
-        Err(io::Error::from(io::ErrorKind::Unsupported))
-    }
-
-    #[cfg(unix)]
     fn read_link(&self, link: &Path) -> io::Result<PathBuf> {
         fs::read_link(link)
     }
 
-    #[cfg(not(unix))]
-    fn read_link(&self, _link: &Path) -> io::Result<PathBuf> {
-        Err(io::Error::from(io::ErrorKind::Unsupported))
-    }
-
-    #[cfg(unix)]
     fn same_directory(&self, a: &Path, b: &Path) -> bool {
         use std::os::unix::fs::MetadataExt;
         match (fs::metadata(a), fs::metadata(b)) {
             (Ok(a), Ok(b)) => a.is_dir() && a.dev() == b.dev() && a.ino() == b.ino(),
-            _ => false,
-        }
-    }
-
-    #[cfg(not(unix))]
-    fn same_directory(&self, a: &Path, b: &Path) -> bool {
-        match (fs::canonicalize(a), fs::canonicalize(b)) {
-            (Ok(a), Ok(b)) => a == b && a.is_dir(),
             _ => false,
         }
     }
@@ -128,15 +107,9 @@ impl FileSystem for StdFileSystem {
     }
 }
 
-#[cfg(unix)]
 fn is_executable(metadata: &fs::Metadata) -> bool {
     use std::os::unix::fs::PermissionsExt;
     metadata.permissions().mode() & 0o111 != 0
-}
-
-#[cfg(not(unix))]
-fn is_executable(_metadata: &fs::Metadata) -> bool {
-    true
 }
 
 #[cfg(test)]

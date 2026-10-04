@@ -14,7 +14,6 @@ pub(super) fn spawn_inherited(invocation: &Invocation) -> io::Result<i32> {
 
 /// Replaces this process with `invocation`; returns only the error that
 /// kept it from starting.
-#[cfg(unix)]
 pub(super) fn exec_replacing(invocation: &Invocation) -> io::Result<i32> {
     use std::os::unix::process::CommandExt;
     Err(command_for(invocation)?.exec())
@@ -55,18 +54,12 @@ fn path_with_prefix(prefix: &Path, invocation: &Invocation) -> io::Result<OsStri
     std::env::join_paths(directories).map_err(io::Error::other)
 }
 
-#[cfg(unix)]
 pub(super) fn exit_code(status: ExitStatus) -> i32 {
     use std::os::unix::process::ExitStatusExt;
     status
         .code()
         .or_else(|| status.signal().map(|signal| 128 + signal))
         .unwrap_or(1)
-}
-
-#[cfg(not(unix))]
-pub(super) fn exit_code(status: ExitStatus) -> i32 {
-    status.code().unwrap_or(1)
 }
 
 #[cfg(all(test, unix))]

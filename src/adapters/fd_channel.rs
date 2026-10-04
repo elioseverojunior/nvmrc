@@ -41,7 +41,6 @@ impl ScriptChannel for FdChannel {
 /// leaves nothing to close; on any other failure, such as EMFILE, the
 /// descriptor is left open (and inheritable) and the code falls back to
 /// stdout as if the binary ran on its own.
-#[cfg(unix)]
 fn adopt(descriptor: i32) -> Option<File> {
     use std::os::fd::{FromRawFd, OwnedFd};
     // SAFETY: `from_raw_fd` requires an open descriptor that nothing else
@@ -62,11 +61,6 @@ fn adopt(descriptor: i32) -> Option<File> {
             None
         }
     }
-}
-
-#[cfg(not(unix))]
-fn adopt(_descriptor: i32) -> Option<File> {
-    None
 }
 
 #[cfg(all(test, unix))]
