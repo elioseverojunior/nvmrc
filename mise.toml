@@ -564,3 +564,108 @@ usage = '''
 flag "-v --verbose" help="Enable verbose (debug) output"
 flag "--output <file>" help="Where the notes are written" default="target/RELEASE_NOTES.md"
 '''
+
+[tasks."release:package"]
+alias = ["rp"]
+description = "Build the deb, rpm, apk and Arch packages from the musl archives"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+dist="${usage_dist:?}"
+version="$(mise run -q release:check)"
+for arch in amd64 arm64; do
+  case "$arch" in amd64) machine=x86_64 ;; arm64) machine=aarch64 ;; esac
+  name="nvmrc-$version-$machine-unknown-linux-musl"
+  unpacked="$(mktemp -d)"
+  tar -xzf "$dist/$name.tar.gz" -C "$unpacked"
+  for format in deb rpm apk archlinux; do
+    NFPM_ARCH="$arch" NVMRC_VERSION="$version" NVMRC_BIN_DIR="$unpacked/$name" \
+      nfpm package -f packaging/nfpm.yaml -p "$format" -t "$dist/"
+  done
+  rm -rf "$unpacked"
+done
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--dist <dir>" help="Where the archives are and the packages go" default="dist"
+'''
+
+[tasks."release:sums"]
+alias = ["rsum"]
+description = "Write the source SBOM and SHA256SUMS of every release file"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+dist="${usage_dist:?}"
+version="$(mise run -q release:check)"
+# The binaries are stripped, so a scan of them finds nothing: the SBOM is
+# the dependency graph of Cargo.lock that they were built from.
+syft scan file:Cargo.lock -o "spdx-json=$dist/nvmrc-$version.spdx.json"
+cd "$dist"
+find . -maxdepth 1 -type f ! -name SHA256SUMS ! -name '*.sigstore.json' |
+  sed 's|^\./||' | LC_ALL=C sort | xargs shasum -a 256 > SHA256SUMS
+cat SHA256SUMS
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--dist <dir>" help="The directory of release files" default="dist"
+'''
+
+[tasks."release:smoke"]
+alias = ["rsm"]
+description = "Install every package in its distribution's container and run it"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+dist="$(cd "${usage_dist:?}" && pwd)"
+arch="${usage_arch:?}"
+version="$(mise run -q release:check)"
+case "$arch" in amd64) machine=x86_64 ;; arm64) machine=aarch64 ;; esac
+checks="$(mktemp)"
+trap 'rm -f "$checks"' EXIT
+cat > "$checks" <<'CHECKS'
+set -eu
+want="nvm $1"; shell="$2"
+test "$(nvm --version)" = "$want" && test "$(nvmrc --version)" = "$want"
+test -x /usr/bin/nvm-exec
+nvmrc doctor
+status=0; nvm ls >/dev/null || status=$?
+test "$status" -eq 3
+test "$("$shell" -c "eval \"\$(nvmrc init $shell)\"; nvm --version")" = "$want"
+echo "ok: $(. /etc/os-release && echo "$ID $VERSION_ID") $(uname -m)"
+CHECKS
+smoke() { # <image> <install command> <shell>
+  docker run --rm --platform "linux/$arch" -v "$dist:/pkgs:ro" -v "$checks:/checks.sh:ro" \
+    "$1" sh -c "$2 >/dev/null && sh /checks.sh $version $3"
+}
+smoke debian:stable-slim "dpkg -i /pkgs/nvmrc_*_$arch.deb" bash
+smoke ubuntu:latest "dpkg -i /pkgs/nvmrc_*_$arch.deb" bash
+smoke amazonlinux:2023 "rpm -i /pkgs/nvmrc-*.$machine.rpm" bash
+smoke fedora:latest "rpm -i /pkgs/nvmrc-*.$machine.rpm" bash
+smoke registry.access.redhat.com/ubi9/ubi-minimal "rpm -i /pkgs/nvmrc-*.$machine.rpm" bash
+smoke alpine:latest "apk add --allow-untrusted /pkgs/nvmrc_*_$machine.apk" sh
+# archlinux publishes no arm64 image.
+[ "$arch" = arm64 ] || smoke archlinux:latest "pacman -U --noconfirm /pkgs/nvmrc-*-$machine.pkg.tar.zst" bash
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--dist <dir>" help="The directory of release files" default="dist"
+flag "--arch <arch>" help="The package architecture" required=#true {
+  choices "amd64" "arm64"
+}
+'''

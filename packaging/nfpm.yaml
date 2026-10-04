@@ -1,0 +1,45 @@
+# nfpm configuration of the deb, rpm, apk and Arch packages. `mise run
+# release:package` runs it once per format and architecture with NFPM_ARCH
+# (amd64, arm64), NVMRC_VERSION and NVMRC_BIN_DIR (the unpacked static musl
+# archive) set. Docs: https://nfpm.goreleaser.com/configuration/
+name: nvmrc
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${NVMRC_VERSION}
+release: "1"
+section: utils
+priority: optional
+maintainer: Elio S. Jr <elioseverojunior@gmail.com>
+description: A native Rust port of nvm, the Node Version Manager
+vendor: Elio S. Jr
+homepage: https://github.com/elioseverojunior/nvmrc
+license: MIT
+contents:
+  - src: ${NVMRC_BIN_DIR}/nvmrc
+    dst: /usr/bin/nvmrc
+    expand: true
+    file_info: {mode: 0755}
+  - src: ${NVMRC_BIN_DIR}/nvm
+    dst: /usr/bin/nvm
+    expand: true
+    file_info: {mode: 0755}
+  - src: ${NVMRC_BIN_DIR}/nvm-exec
+    dst: /usr/bin/nvm-exec
+    expand: true
+    file_info: {mode: 0755}
+  - src: README.md
+    dst: /usr/share/doc/nvmrc/README.md
+  - src: LICENSE
+    dst: /usr/share/doc/nvmrc/copyright
+    packager: deb
+  - src: LICENSE
+    dst: /usr/share/licenses/nvmrc/LICENSE
+    packager: rpm
+  - src: LICENSE
+    dst: /usr/share/licenses/nvmrc/LICENSE
+    packager: apk
+  - src: LICENSE
+    dst: /usr/share/licenses/nvmrc/LICENSE
+    packager: archlinux
+archlinux:
+  packager: Elio S. Jr <elioseverojunior@gmail.com>
