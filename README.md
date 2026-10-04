@@ -27,14 +27,17 @@ describe what a release will contain.
     `aarch64-unknown-linux-musl`.
   - Linux, glibc 2.34 or newer: `x86_64-unknown-linux-gnu`,
     `aarch64-unknown-linux-gnu`.
-- Packages, built from the static binaries (no dependencies; the binaries
-  go to `/usr/bin`). They are not signed with a distribution key: check
-  them as "Verifying a release" shows.
-  - Debian, Ubuntu: `sudo dpkg -i nvmrc_<version>-1_<amd64|arm64>.deb`
+- Packages, built from the static binaries (the binaries go to
+  `/usr/bin`). Their one dependency is `ca-certificates`, the trust store
+  HTTPS needs, so install them with the package manager, which pulls it in.
+  They are not signed with a distribution key: check them as "Verifying a
+  release" shows.
+  - Debian, Ubuntu:
+    `sudo apt-get install ./nvmrc_<version>-1_<amd64|arm64>.deb`
   - Fedora, RHEL, Amazon Linux 2023:
-    `sudo rpm -i nvmrc-<version>-1.<x86_64|aarch64>.rpm`
+    `sudo dnf install ./nvmrc-<version>-1.<x86_64|aarch64>.rpm`
   - Alpine:
-    `apk add --allow-untrusted nvmrc_<version>-r1_<x86_64|aarch64>.apk`
+    `apk add --update --allow-untrusted nvmrc_<version>-r1_<x86_64|aarch64>.apk`
   - Arch: `sudo pacman -U nvmrc-<version>-1-<x86_64|aarch64>.pkg.tar.zst`
 - Docker (linux/amd64, linux/arm64): the image holds the static binaries
   and CA certificates only, no shell and no libc, so it is for one-off
@@ -68,13 +71,18 @@ describe what a release will contain.
 Every file of a release is attested by GitHub (SLSA build provenance), each
 binary inside the archives is attested on its own, and the SBOM
 (`nvmrc-<version>.spdx.json`, the dependency graph of `Cargo.lock`) is
-attested as such. With the GitHub CLI:
+attested as such. Only a tagged release is signed or attested; the checks
+below also pin the release workflow and the tag, so nothing a manual run
+or another workflow attested passes. With the GitHub CLI:
 
 ```sh
-gh attestation verify nvmrc-0.1.0-x86_64-unknown-linux-musl.tar.gz --repo elioseverojunior/nvmrc
-gh attestation verify /usr/bin/nvm --repo elioseverojunior/nvmrc
-gh attestation verify oci://ghcr.io/elioseverojunior/nvmrc:0.1.0 --repo elioseverojunior/nvmrc
-gh attestation verify nvmrc_0.1.0-1_amd64.deb --repo elioseverojunior/nvmrc \
+release=(--repo elioseverojunior/nvmrc
+  --signer-workflow elioseverojunior/nvmrc/.github/workflows/release.yml
+  --source-ref refs/tags/v0.1.0)
+gh attestation verify nvmrc-0.1.0-x86_64-unknown-linux-musl.tar.gz "${release[@]}"
+gh attestation verify /usr/bin/nvm "${release[@]}"
+gh attestation verify oci://ghcr.io/elioseverojunior/nvmrc:0.1.0 "${release[@]}"
+gh attestation verify nvmrc_0.1.0-1_amd64.deb "${release[@]}" \
   --predicate-type https://spdx.dev/Document/v2.3
 ```
 
@@ -87,10 +95,15 @@ identity='^https://github\.com/elioseverojunior/nvmrc/\.github/workflows/release
 issuer=https://token.actions.githubusercontent.com
 cosign verify-blob --bundle SHA256SUMS.sigstore.json \
   --certificate-identity-regexp "$identity" --certificate-oidc-issuer "$issuer" SHA256SUMS
-sha256sum --check --ignore-missing SHA256SUMS
+shasum -a 256 --check --ignore-missing SHA256SUMS # macOS and Linux
 cosign verify ghcr.io/elioseverojunior/nvmrc:0.1.0 \
   --certificate-identity-regexp "$identity" --certificate-oidc-issuer "$issuer"
 ```
+
+The commands use bash arrays (bash, zsh). The cosign identity names the
+release workflow at a `v*` tag; `gh` checks the exact tag. A macOS archive
+downloaded with a browser is quarantined by Gatekeeper: after verifying it,
+`xattr -d com.apple.quarantine nvmrc nvm nvm-exec` on the unpacked binaries.
 
 None of these can run before the first published release; the commands
 are the ones the workflow's identities and file names produce. How the

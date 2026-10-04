@@ -320,8 +320,9 @@ script's `exec "$@"`.
 A release comes from a `v*` tag equal to `v` plus the `Cargo.toml` version,
 which is what `nvm --version` prints. `.github/workflows/release.yml`
 re-runs every CI gate, builds on native runners (Linux glibc on Ubuntu
-22.04 for a glibc 2.34 floor, Linux static musl, macOS Intel and Apple
-silicon; x86_64 and aarch64 each), packages the static binaries as deb,
+22.04, with the glibc 2.34 floor enforced by measuring the binaries'
+symbol versions in `release:build`; Linux static musl; macOS Intel and
+Apple silicon; x86_64 and aarch64 each), packages the static binaries as deb,
 rpm, apk and Arch packages and as a `scratch` image for linux/amd64 and
 linux/arm64, smoke-tests each package in its distribution's container,
 signs every file with cosign (keyless) and attests provenance and the SBOM
