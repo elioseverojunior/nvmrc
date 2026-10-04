@@ -59,7 +59,7 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    let args = keep_leading_double_dash(args.into_iter().map(Into::into).collect());
+    let args = arguments(args);
     let cli = match Cli::try_parse_from(args) {
         Ok(cli) => cli,
         Err(error) if error.use_stderr() => {
@@ -91,6 +91,20 @@ fn keep_leading_double_dash(mut args: Vec<OsString>) -> Vec<OsString> {
         args.insert(2, OsString::from("--"));
     }
     args
+}
+
+/// What clap is given: a bare `nvm` is `nvm --help`, as nvm.sh's function
+/// does, and a `--` after `exec`, `run` or `set-colors` is kept.
+fn arguments<I, T>(args: I) -> Vec<OsString>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString>,
+{
+    let mut args: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    if args.len() == 1 {
+        args.push(OsString::from("--help"));
+    }
+    keep_leading_double_dash(args)
 }
 
 /// What a failed command prints: its message, on stderr except for `N/A`,
