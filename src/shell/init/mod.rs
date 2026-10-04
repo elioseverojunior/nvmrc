@@ -71,11 +71,17 @@ impl Shell {
         }
     }
 
-    /// The line of the startup file that loads the snippet.
-    fn load_line(self) -> String {
+    /// The line of the startup file that loads the snippet. It runs the
+    /// `nvmrc` binary by name, never `nvm`: when nvm.sh (or a lazy `nvm()`
+    /// stub) is already loaded, `eval "$(nvm init zsh)"` would run nvm.sh's
+    /// function, which does not know `init` and prints nothing, so nvm.sh
+    /// silently stays in charge (digest finding 0.1). No function or alias
+    /// is ever named `nvmrc`.
+    #[must_use]
+    pub fn load_line(self) -> String {
         match self {
-            Self::Fish => "nvm init fish | source".to_owned(),
-            _ => format!("eval \"$(nvm init {})\"", self.name()),
+            Self::Fish => "nvmrc init fish | source".to_owned(),
+            _ => format!("eval \"$(nvmrc init {})\"", self.name()),
         }
     }
 }

@@ -70,10 +70,11 @@ fn the_snippet_names_its_shell_and_is_plain_ascii() {
     for (name, shell) in ALL {
         let text = snippet(shell, &InitOptions::default());
         assert!(text.is_ascii());
-        assert!(text.contains(&format!("nvm init {name}")), "{text}");
+        assert!(text.contains(&format!("`{}`", shell.load_line())), "{text}");
+        assert!(text.contains(&format!("nvmrc init {name}")), "{text}");
     }
     let fish = snippet(Shell::Fish, &InitOptions::default());
-    assert!(fish.contains("`nvm init fish | source`"), "{fish}");
+    assert!(fish.contains("`nvmrc init fish | source`"), "{fish}");
 }
 
 #[test]

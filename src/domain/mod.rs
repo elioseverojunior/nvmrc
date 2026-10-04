@@ -12,6 +12,7 @@ pub mod http_header;
 pub mod implicit;
 pub mod index;
 pub mod listing;
+pub mod migration;
 pub mod mirror;
 pub mod npm;
 pub mod nvmrc;
