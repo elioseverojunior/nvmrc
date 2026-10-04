@@ -9,6 +9,7 @@ use crate::ports::{Completed, Invocation, Process, ProcessOutput};
 #[derive(Default)]
 pub struct FakeProcess {
     outputs: BTreeMap<PathBuf, ProcessOutput>,
+    runs: BTreeMap<(PathBuf, String), ProcessOutput>,
     executions: BTreeMap<(PathBuf, String), Completed>,
     effects: BTreeMap<(PathBuf, String), Box<dyn Fn()>>,
     executed: RefCell<Vec<Invocation>>,
@@ -39,6 +40,19 @@ impl FakeProcess {
 }
 
 impl FakeProcess {
+    /// What `run` answers to `program` run with exactly `args` (joined with
+    /// spaces), taking precedence over [`Self::with_output`].
+    #[must_use]
+    pub fn with_run(mut self, program: &str, args: &str, success: bool, stdout: &str) -> Self {
+        let output = ProcessOutput {
+            success,
+            stdout: stdout.to_owned(),
+        };
+        self.runs
+            .insert((PathBuf::from(program), args.to_owned()), output);
+        self
+    }
+
     /// What `execute` answers to `program` run with exactly `args` (joined
     /// with spaces); any other invocation is not found.
     #[must_use]
@@ -112,9 +126,11 @@ impl Process for FakeProcess {
             .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
     }
 
-    fn run(&self, program: &Path, _args: &[&str]) -> io::Result<ProcessOutput> {
-        self.outputs
-            .get(program)
+    fn run(&self, program: &Path, args: &[&str]) -> io::Result<ProcessOutput> {
+        let key = (program.to_path_buf(), args.join(" "));
+        self.runs
+            .get(&key)
+            .or_else(|| self.outputs.get(program))
             .cloned()
             .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
     }

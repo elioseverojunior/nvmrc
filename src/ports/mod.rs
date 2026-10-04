@@ -256,6 +256,11 @@ pub trait Archive {
     fn extract(&self, archive: &Path, destination: &Path) -> io::Result<()>;
 }
 
+pub trait Terminal {
+    /// Whether standard output is a terminal (`[ -t 1 ]`).
+    fn stdout_is_terminal(&self) -> bool;
+}
+
 pub trait Cpu {
     /// How many processors this machine has for a build to use, when known.
     fn cores(&self) -> Option<usize>;

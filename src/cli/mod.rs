@@ -20,6 +20,7 @@ use crate::adapters::std_env::StdEnv;
 use crate::adapters::std_fs::StdFileSystem;
 use crate::adapters::std_process::StdProcess;
 use crate::adapters::std_sleeper::StdSleeper;
+use crate::adapters::std_terminal::StdTerminal;
 use crate::adapters::tar_archive::TarArchive;
 use crate::adapters::ureq_http::UreqHttp;
 use crate::commands::Output;
@@ -149,6 +150,7 @@ fn with_real_context<R>(body: impl FnOnce(&Context<'_>) -> R) -> R {
         .with_archive(&TarArchive)
         .with_sleeper(&StdSleeper)
         .with_cpu(&StdCpu)
+        .with_terminal(&StdTerminal)
         .with_platform(platform);
     match &channel {
         Some(channel) => body(&context.with_script_channel(channel)),

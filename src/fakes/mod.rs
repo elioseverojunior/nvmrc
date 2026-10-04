@@ -9,6 +9,7 @@ mod file_system;
 mod http;
 mod process;
 mod sleeper;
+mod terminal;
 
 pub use archive::FakeArchive;
 pub use channel::FakeScriptChannel;
@@ -19,3 +20,4 @@ pub use file_system::FakeFileSystem;
 pub use http::FakeHttp;
 pub use process::FakeProcess;
 pub use sleeper::FakeSleeper;
+pub use terminal::FakeTerminal;
