@@ -1,0 +1,29 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      cargo:
+        patterns:
+          - "*"
+    labels:
+      - dependencies
+      - rust
+
+  # Bumps the commit SHA and its trailing version comment together; the
+  # action-pin-checker workflow catches anything it leaves stale.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    labels:
+      - dependencies
+      - ci

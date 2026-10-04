@@ -1,0 +1,40 @@
+name: action-pin-checker
+
+# Every third-party action is pinned to a commit SHA with its version as a
+# trailing comment. This checks, weekly and on demand, that no pin is stale;
+# `mise run actions:pins -- --write` refreshes them locally.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: action-pin-checker
+  cancel-in-progress: true
+
+env:
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  # The job installs only uv; `mise run` must not fetch the rest.
+  MISE_TASK_RUN_AUTO_INSTALL: "false"
+
+jobs:
+  action-pins:
+    name: action SHA pins
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          install_args: uv
+          cache: false
+      - name: verify the action pins are up to date
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: mise run actions:pins
