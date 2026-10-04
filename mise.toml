@@ -20,6 +20,7 @@ jq = { version = "latest" }
 nfpm = { version = "2" }
 rumdl = { version = "latest" }
 syft = { version = "1" }
+uv = { version = "latest" }
 yq = { version = "latest" }
 
 # Cargo Tools
@@ -423,6 +424,38 @@ cargo audit
 shell = "bash -c"
 usage = '''
 flag "-v --verbose" help="Enable verbose (debug) output"
+'''
+
+[tasks."actions:pins"]
+alias = ["ap"]
+description = "Check (or --write) the commit SHA pins of the workflows' actions"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+# The token comes first, before any xtrace, so --verbose never prints it.
+# CI passes GITHUB_TOKEN or GH_TOKEN; an interactive shell falls back to gh.
+if [ -z "${GITHUB_TOKEN:-}${GH_TOKEN:-}" ] && [ -t 0 ] && command -v gh >/dev/null 2>&1; then
+  GH_TOKEN="$(gh auth token 2>/dev/null || true)"
+  export GH_TOKEN
+fi
+
+args=()
+[ "${usage_write:-false}" = "true" ] && args+=(--write)
+[ "${usage_apply_major:-false}" = "true" ] && args+=(--apply-major)
+if [ "${usage_verbose:-false}" = "true" ]; then
+  args+=(-v)
+  set -x
+fi
+
+uv run --script scripts/update-actions-pins.py ${args[@]+"${args[@]}"}
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--write" help="Rewrite the stale pins in place (default: check only)"
+flag "--apply-major" help="Also apply major version bumps (default: report only)"
 '''
 
 # === Docker ===

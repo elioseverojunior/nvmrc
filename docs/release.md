@@ -51,12 +51,17 @@ not configured from this repository.
 
 ## Supply chain
 
-The release build jobs run the owner's
-`elioseverojunior/rust-toolchain@v0`, pinned by a loose tag, as the
-workflows' other actions are. Whoever can move that tag decides what runs
-inside the jobs that produce the signed binaries, so it is the main
-binary-integrity risk. The mitigation is tag protection on `v0` in that
-repository (or pinning the action to a commit SHA in `release.yml`).
+Every third-party action in the workflows, the owner's
+`elioseverojunior/rust-toolchain` included, is pinned to a full commit SHA,
+with the release it was resolved from as a trailing comment
+(`uses: actions/checkout@<sha> # v7.0.1`). Moving a tag upstream therefore
+changes nothing that runs in the jobs that produce the signed binaries.
+`mise run actions:pins` reports stale pins (the `action-pin-checker`
+workflow runs it weekly) and `mise run actions:pins -- --write` moves them
+to the latest release within the same major version; a new major version
+is only reported, and is applied with `--apply-major` after review.
+Dependabot also proposes the bumps weekly.
+
 Release jobs restore no cache: the Rust toolchain action runs without one,
 and every `jdx/mise-action` step sets `cache: false`, so cosign, nfpm, syft
 and git-cliff are downloaded and checked against `mise.lock` each run.

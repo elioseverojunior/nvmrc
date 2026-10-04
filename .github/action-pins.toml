@@ -1,0 +1,20 @@
+# Configuration for scripts/update-actions-pins.py, run by
+# `mise run actions:pins` (check only) or `mise run actions:pins -- --write`.
+#
+# Values here are shallow-merged over the script's built-in defaults: every
+# key set here fully replaces the default for that key. Inspect the effective
+# configuration with `uv run --script scripts/update-actions-pins.py
+# --print-config`.
+
+# Actions that resolve to a branch tip instead of a release tag.
+# Key = "owner/repo", value = the valid branch names (the first is the default).
+#
+# Empty: every action this repository uses publishes release tags, including
+# elioseverojunior/rust-toolchain, so it must NOT be listed here.
+branch_only_repos = {}
+
+# Actions pinned to a tag, never a SHA. None here.
+tag_only_repos = []
+
+# Max concurrent GitHub API requests.
+max_concurrent_api = 10
