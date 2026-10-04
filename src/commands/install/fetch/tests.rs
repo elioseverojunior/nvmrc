@@ -4,19 +4,19 @@ use crate::ports::FileSystem;
 
 const SUMS: &str = "http://127.0.0.1:1/v20.10.0/SHASUMS256.txt";
 const TARBALL_URL: &str = "http://127.0.0.1:1/v20.10.0/node-v20.10.0-linux-x64.tar.xz";
-const TARBALL: &str =
+pub(super) const TARBALL: &str =
     "/home/me/.nvm/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.xz";
 const GOOD: &str = "aa11";
 
-fn artifact_of(context: &Context<'_>) -> Artifact {
+pub(super) fn artifact_of(context: &Context<'_>) -> Artifact {
     Artifact::of(context, &version()).unwrap()
 }
 
-fn version() -> Version {
+pub(super) fn version() -> Version {
     "v20.10.0".parse().unwrap()
 }
 
-fn env() -> FakeEnv {
+pub(super) fn env() -> FakeEnv {
     FakeEnv::default()
         .with_var("NVM_DIR", "/home/me/.nvm")
         .with_var("HOME", "/home/me")
@@ -45,7 +45,7 @@ fn run(
     (result, transcript)
 }
 
-fn stderr(transcript: Transcript) -> Vec<String> {
+pub(super) fn stderr(transcript: Transcript) -> Vec<String> {
     transcript
         .finish(crate::error::NvmExitCode::Success)
         .stderr
@@ -111,7 +111,7 @@ fn a_broken_cached_archive_is_removed_and_downloaded_again() {
 }
 
 #[test]
-fn a_wrong_checksum_fails_and_leaves_the_archive_but_not_the_unpack_directory() {
+fn a_wrong_checksum_fails_and_removes_the_archive_and_the_unpack_directory() {
     let fs = FakeFileSystem::default();
     let http = FakeHttp::default()
         .with_body(SUMS, &sums(GOOD))
@@ -123,7 +123,7 @@ fn a_wrong_checksum_fails_and_leaves_the_archive_but_not_the_unpack_directory() 
         stderr(transcript)[1],
         "Checksums do not match: 'bad0' found, 'aa11' expected."
     );
-    assert!(fs.file_info(Path::new(TARBALL)).is_ok());
+    assert!(fs.file_info(Path::new(TARBALL)).is_err());
     let files = Path::new("/home/me/.nvm/.cache/bin/node-v20.10.0-linux-x64/files");
     assert!(fs.file_info(files).is_err());
 }
@@ -203,47 +203,6 @@ fn the_artifact_is_named_after_the_platform() {
         PathBuf::from("/home/me/.nvm/.cache/bin/node-v20.10.0-darwin-arm64/files")
     );
     assert!(Artifact::of(&context.with_platform(None), &"v20.10.0".parse().unwrap()).is_none());
-}
-
-fn offline(fs: &FakeFileSystem, http: &FakeHttp) -> (Result<PathBuf, Failed>, Transcript) {
-    let env = env();
-    let digest = FakeDigest::default();
-    let context = Context::new(fs, &env).with_http(http).with_digest(&digest);
-    let mut transcript = Transcript::default();
-    let result = fetch(
-        &context,
-        &artifact_of(&context),
-        &version(),
-        true,
-        &mut transcript,
-    );
-    (result, transcript)
-}
-
-/// The expectations are what the real `nvm install --offline` printed.
-#[test]
-fn offline_uses_the_cached_archive_without_a_checksum_or_the_network() {
-    let fs = FakeFileSystem::default().with_file(TARBALL, "cached");
-    let http = FakeHttp::default();
-    let (result, transcript) = offline(&fs, &http);
-    assert_eq!(result.unwrap(), PathBuf::from(TARBALL));
-    assert!(http.requests().is_empty());
-    assert_eq!(
-        stderr(transcript),
-        [
-            "Offline: using cached archive ${NVM_DIR}/.cache/bin/node-v20.10.0-linux-x64/node-v20.10.0-linux-x64.tar.xz"
-        ]
-    );
-}
-
-#[test]
-fn offline_without_a_cached_archive_fails_naming_the_slug() {
-    let (result, transcript) = offline(&FakeFileSystem::default(), &FakeHttp::default());
-    assert_eq!(result, Err(Failed));
-    assert_eq!(
-        stderr(transcript),
-        ["Offline: no cached archive found for node-v20.10.0-linux-x64"]
-    );
 }
 
 #[test]

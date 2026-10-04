@@ -117,7 +117,8 @@ fn cached_only(
     artifact: &Artifact,
     transcript: &mut Transcript,
 ) -> Result<PathBuf, Failed> {
-    if context.fs.file_info(&artifact.tarball).is_ok() {
+    let cached = context.fs.file_info(&artifact.tarball);
+    if cached.is_ok_and(|info| !info.is_dir) {
         let shown = sanitize_path(context, &artifact.tarball.to_string_lossy());
         transcript.err(format!("Offline: using cached archive {shown}"));
         return Ok(artifact.tarball.clone());
@@ -223,6 +224,9 @@ fn verify(
         }
         Err(error) => {
             transcript.err(error.to_string());
+            // Never left for a later `--offline` install, which takes the
+            // cache without a checksum.
+            let _ = context.fs.remove_file(&artifact.tarball);
             let _ = context.fs.remove_dir_all(&artifact.files());
             Err(Failed)
         }
@@ -234,3 +238,6 @@ mod tests;
 
 #[cfg(test)]
 mod name_tests;
+
+#[cfg(test)]
+mod offline_tests;
