@@ -83,19 +83,42 @@ fn shell_overrides_the_shell_of_the_block() {
 }
 
 #[test]
-fn the_profile_takes_the_login_shell_of_shell() {
-    let fs = FakeFileSystem::default().with_file("/Users/u/.profile", INSTALL_SH);
-    let process = checkers();
-    let prompt = FakePrompt::unavailable();
-    let env = home_env().with_var("SHELL", "/bin/zsh");
-    let setup = Setup {
-        fs: &fs,
-        env: &env,
-        process: &process,
-        prompt: &prompt,
-    };
-    assert_eq!(setup.output(&["--yes"]).status, NvmExitCode::Success);
-    assert!(read(&fs, "/Users/u/.profile").contains("eval \"$(nvmrc init zsh)\"\n"));
+fn the_profile_gets_the_posix_block_whatever_shell_says() {
+    for login_shell in ["/usr/local/bin/fish", "/bin/zsh", "/bin/bash"] {
+        let fs = FakeFileSystem::default().with_file("/Users/u/.profile", INSTALL_SH);
+        let process = checkers();
+        let prompt = FakePrompt::unavailable();
+        let env = home_env().with_var("SHELL", login_shell);
+        let setup = Setup {
+            fs: &fs,
+            env: &env,
+            process: &process,
+            prompt: &prompt,
+        };
+        assert_eq!(setup.output(&["--yes"]).status, NvmExitCode::Success);
+        let profile = read(&fs, "/Users/u/.profile");
+        assert!(profile.contains("eval \"$(nvmrc init sh)\"\n"), "{profile}");
+    }
+}
+
+#[test]
+fn shell_bash_keeps_the_profile_posix() {
+    let fs = FakeFileSystem::default()
+        .with_file("/Users/u/.profile", INSTALL_SH)
+        .with_file(BASHRC, INSTALL_SH);
+    let output = migrate(&fs, &["--yes", "--shell=bash"]);
+    assert_eq!(output.status, NvmExitCode::Success, "{}", output.stderr);
+    assert!(read(&fs, "/Users/u/.profile").contains("eval \"$(nvmrc init sh)\"\n"));
+    assert!(read(&fs, BASHRC).contains("eval \"$(nvmrc init bash)\"\n"));
+}
+
+#[test]
+fn a_zsh_block_in_the_profile_becomes_the_posix_block() {
+    let block = "# >>> nvmrc init >>>\neval \"$(nvmrc init zsh)\"\n# <<< nvmrc init <<<\n";
+    let fs = FakeFileSystem::default().with_file("/Users/u/.profile", block);
+    let output = migrate(&fs, &["--yes"]);
+    assert_eq!(output.status, NvmExitCode::Success, "{}", output.stderr);
+    assert_eq!(read(&fs, "/Users/u/.profile"), block.replace("zsh", "sh"));
 }
 
 #[test]

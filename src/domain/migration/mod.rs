@@ -20,11 +20,14 @@
 
 mod backup;
 mod diff;
+mod file_shell;
 
 #[cfg(test)]
 mod backup_tests;
 #[cfg(test)]
 mod diff_tests;
+#[cfg(test)]
+mod file_shell_tests;
 #[cfg(test)]
 mod shapes_tests;
 #[cfg(test)]
@@ -32,6 +35,7 @@ mod tests;
 
 pub use backup::{backup_name, latest_backup};
 pub use diff::unified_diff;
+pub use file_shell::{file_shell, syntax_check};
 
 use crate::domain::conflict::{BEGIN_MARKER, END_MARKER, MIGRATED_PREFIX, init_blocks, scan_text};
 use crate::shell::init::Shell;
@@ -228,30 +232,4 @@ fn push_migrated(text: &mut String, line: (&str, &str)) {
 fn push_line(text: &mut String, content: &str, ending: &str) {
     text.push_str(content);
     text.push_str(ending);
-}
-
-/// The program (and its arguments) that syntax-checks a candidate for the
-/// startup file `path`, chosen by its file name: `zsh` in the name (or
-/// `.zprofile`, `.zlogin`, `.zlogout`) `zsh -n`; `bash` `bash -n`; `.fish`
-/// `fish --no-execute`; `ksh` (`.kshrc`) `ksh -n`; any other name (`.profile`,
-/// an `$ENV` file) `sh -n`. `None` when `path` names no file. The caller
-/// appends the path of the temp file to the arguments.
-#[must_use]
-pub fn syntax_check(path: &str) -> Option<(&'static str, Vec<&'static str>)> {
-    const ZSH_FILES: [&str; 3] = [".zprofile", ".zlogin", ".zlogout"];
-    let name = path.rsplit('/').next().unwrap_or_default();
-    let (program, flag) = if name.is_empty() {
-        return None;
-    } else if name.contains("zsh") || ZSH_FILES.contains(&name) {
-        ("zsh", "-n")
-    } else if name.contains("bash") {
-        ("bash", "-n")
-    } else if name.ends_with(".fish") {
-        ("fish", "--no-execute")
-    } else if name.contains("ksh") {
-        ("ksh", "-n")
-    } else {
-        ("sh", "-n")
-    };
-    Some((program, vec![flag]))
 }

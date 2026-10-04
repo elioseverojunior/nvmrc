@@ -4,6 +4,8 @@
 use std::path::Path;
 
 use crate::domain::conflict::Kind;
+use crate::domain::migration::file_shell;
+use crate::shell::init::Shell;
 
 const AUTO: &str = "run `nvm migrate` (comments the line out and adds the nvmrc init line)";
 const MANUAL_LOADER: &str = "remove or replace this loader by hand: nvmrc has its own function \
@@ -53,27 +55,7 @@ pub fn suggested_patch(kind: Kind, depth: usize, path: &Path, text: &str) -> Opt
         return Some(DELETE_COMPLETION.to_owned());
     }
     by_hand.then(|| {
-        let shell = shell_of(path);
-        let line = if shell == "fish" {
-            "nvmrc init fish | source".to_owned()
-        } else {
-            format!("eval \"$(nvmrc init {shell})\"")
-        };
-        format!("replace the line with: {line}")
+        let shell = file_shell(&path.to_string_lossy()).unwrap_or(Shell::Sh);
+        format!("replace the line with: {}", shell.load_line())
     })
-}
-
-/// The shell a file is written for, from its name: `zsh` in the name,
-/// `.fish`, `ksh` in the name, bash otherwise.
-fn shell_of(path: &Path) -> &'static str {
-    let name = path.to_string_lossy();
-    if name.ends_with(".fish") {
-        "fish"
-    } else if name.contains("zsh") {
-        "zsh"
-    } else if name.contains("ksh") {
-        "ksh"
-    } else {
-        "bash"
-    }
 }

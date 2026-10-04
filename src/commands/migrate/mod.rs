@@ -34,8 +34,6 @@ use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::error::{CliError, NvmExitCode};
 
-pub use plan::shell_of;
-
 use args::Options;
 
 /// How `nvm migrate` is called.

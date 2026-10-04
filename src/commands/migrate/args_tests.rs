@@ -1,6 +1,5 @@
 use super::args::{Options, parse};
 use super::fixtures::Setup;
-use super::shell_of;
 use crate::error::{CliError, NvmExitCode};
 use crate::fakes::{FakeEnv, FakeFileSystem, FakeProcess, FakePrompt};
 use crate::shell::init::Shell;
@@ -78,39 +77,4 @@ fn run_rejects_bad_arguments_before_reading_anything() {
         setup.migrate(&["--nope"]),
         Err(CliError::Unsupported(_))
     ));
-}
-
-#[test]
-fn the_shell_of_a_file_comes_from_its_name() {
-    let env = FakeEnv::default();
-    let cases = [
-        ("/h/.zshrc", Shell::Zsh),
-        ("/h/.zprofile", Shell::Zsh),
-        ("/h/.zlogin", Shell::Zsh),
-        ("/h/.zshenv", Shell::Zsh),
-        ("/h/.bashrc", Shell::Bash),
-        ("/h/.bash_profile", Shell::Bash),
-        ("/h/.bash_login", Shell::Bash),
-        ("/h/.kshrc", Shell::Ksh),
-        ("/h/.config/fish/config.fish", Shell::Fish),
-        ("/h/.config/fish/conf.d/x.fish", Shell::Fish),
-        ("/h/.profile", Shell::Bash),
-    ];
-    for (path, shell) in cases {
-        assert_eq!(shell_of(path, &env), shell, "{path}");
-    }
-}
-
-#[test]
-fn the_profile_follows_a_supported_login_shell() {
-    let cases = [
-        ("/bin/zsh", Shell::Zsh),
-        ("/bin/ksh", Shell::Ksh),
-        ("/bin/dash", Shell::Dash),
-        ("/usr/bin/tcsh", Shell::Bash),
-    ];
-    for (login, shell) in cases {
-        let env = FakeEnv::default().with_var("SHELL", login);
-        assert_eq!(shell_of("/h/.profile", &env), shell, "{login}");
-    }
 }

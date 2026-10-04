@@ -56,7 +56,9 @@ fn only_loaders_fixed_by_hand_get_a_patch_in_the_shell_of_the_file() {
     };
     assert_eq!(patch(Kind::LazyLoader, 1, "/h/lazy.zsh"), by_hand("zsh"));
     assert_eq!(patch(Kind::Loader, 1, "/h/.kshrc"), by_hand("ksh"));
-    assert_eq!(patch(Kind::Loader, 1, "/h/nvm.sh.d/x.sh"), by_hand("bash"));
+    assert_eq!(patch(Kind::Loader, 1, "/h/nvm.sh.d/x.sh"), by_hand("sh"));
+    assert_eq!(patch(Kind::Loader, 1, "/h/.profile"), by_hand("sh"));
+    assert_eq!(patch(Kind::Loader, 1, "/h/.bash_aliases"), by_hand("bash"));
     assert_eq!(
         patch(Kind::LazyLoader, 1, "/h/nvm.fish"),
         Some("replace the line with: nvmrc init fish | source".to_owned())
