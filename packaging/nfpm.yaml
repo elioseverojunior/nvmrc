@@ -14,6 +14,11 @@ description: A native Rust port of nvm, the Node Version Manager
 vendor: Elio S. Jr
 homepage: https://github.com/elioseverojunior/nvmrc
 license: MIT
+# HTTPS (`nvm ls-remote`, `nvm install`) verifies against the system trust
+# store, which slim images (debian:stable-slim, ubuntu) ship without. The
+# package is named ca-certificates in Debian, Fedora/RHEL, Alpine and Arch.
+depends:
+  - ca-certificates
 contents:
   - src: ${NVMRC_BIN_DIR}/nvmrc
     dst: /usr/bin/nvmrc

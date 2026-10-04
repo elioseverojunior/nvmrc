@@ -487,7 +487,10 @@ set -Eeuo pipefail
 
 # Cargo.toml is the source of truth: `nvm --version` prints this version.
 version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
-tag="${usage_tag:-$(git describe --tags --exact-match 2>/dev/null || true)}"
+tag="${usage_tag:-}"
+# In a workflow run of a tag, that tag; else a v* tag pointing at HEAD itself.
+[ -n "$tag" ] || [ "${GITHUB_REF_TYPE:-}" != tag ] || tag="$GITHUB_REF_NAME"
+[ -n "$tag" ] || tag="$(git describe --tags --exact-match --match 'v*' HEAD 2>/dev/null || true)"
 if [ -n "$tag" ] && [ "$tag" != "v$version" ]; then
   echo "release:check: tag $tag does not match Cargo.toml version $version (want v$version)" >&2
   exit 1
@@ -497,7 +500,40 @@ echo "$version"
 shell = "bash -c"
 usage = '''
 flag "-v --verbose" help="Enable verbose (debug) output"
-flag "--tag <tag>" help="The tag being released (default: the tag at HEAD, if any)"
+flag "--tag <tag>" help="The tag being released (default: the run's tag, else a v* tag at HEAD)"
+'''
+
+[tasks."release:check:ci"]
+alias = ["rcci"]
+description = "Print the release workflow's version and publish outputs; refuse an unsafe publish"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+fail() { echo "::error::$1" >&2; exit 1; }
+version="$(mise run -q release:check)"
+publish=false
+# Only a run of a tag publishes, and a manual run only when it is not a dry run.
+[ "${GITHUB_REF_TYPE:-}" = tag ] && [ "${usage_dry_run:?}" != true ] && publish=true
+if [ "$publish" = true ]; then
+  [ "${usage_private:?}" != true ] ||
+    fail "artifact attestations need a public repository; make it public first"
+  # A tag on a commit that never merged must not release; a dry run may.
+  branch="${usage_default_branch:?}"
+  git merge-base --is-ancestor "${GITHUB_SHA:-HEAD}" "origin/$branch" ||
+    fail "$GITHUB_REF_NAME is not on $branch: tag a commit of $branch"
+fi
+printf 'version=%s\npublish=%s\n' "$version" "$publish"
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--dry-run <bool>" help="true for a manual dry run" default="true"
+flag "--private <bool>" help="true when the repository is private" default="true"
+flag "--default-branch <branch>" help="The branch a released commit must be on" default="main"
 '''
 
 [tasks."release:build"]
@@ -512,24 +548,15 @@ set -Eeuo pipefail
 
 target="${usage_target:?}"
 version="$(mise run -q release:check)"
-channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)"
-out="target/$target/release"
 if [ "${usage_container:-false}" = "true" ]; then
-  # A Linux target from any host: the official rust image of the pinned channel.
-  case "$target" in x86_64-*) platform=linux/amd64 ;; *) platform=linux/arm64 ;; esac
-  docker run --rm --platform "$platform" -v "$PWD:/work" -w /work \
-    -e CARGO_TARGET_DIR=/work/target/container "docker.io/library/rust:$channel" sh -c \
-    "apt-get update -qq && apt-get install -y -qq musl-tools >/dev/null && rustup target add $target && cargo build --release --locked --bins --target $target"
+  mise run release:build:container --target "$target"
   out="target/container/$target/release"
 else
+  channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)"
   rustup run "$channel" cargo build --release --locked --bins --target "$target"
+  out="target/$target/release"
 fi
-case "$target" in
-  *-linux-gnu) # The glibc floor promised by the README.
-    newest="$(objdump -T "$out/nvm" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1)"
-    [ "$(printf '%s\nGLIBC_2.34\n' "$newest" | sort -V | tail -n 1)" = GLIBC_2.34 ] ||
-      { echo "release:build: $target needs $newest, above GLIBC_2.34" >&2; exit 1; } ;;
-esac
+case "$target" in *-linux-gnu) mise run release:build:glibc --binary "$out/nvm" ;; esac
 name="nvmrc-$version-$target"
 mkdir -p "dist/$name"
 cp "$out/nvmrc" "$out/nvm" "$out/nvm-exec" LICENSE README.md "dist/$name/"
@@ -541,6 +568,55 @@ usage = '''
 flag "-v --verbose" help="Enable verbose (debug) output"
 flag "--target <triple>" help="The Rust target triple to build" required=#true
 flag "--container" help="Build inside the rust image (a Linux target from macOS)"
+'''
+
+[tasks."release:build:container"]
+alias = ["rbc"]
+description = "Build a Linux target inside the official rust image of the pinned channel"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+target="${usage_target:?}"
+channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)"
+case "$target" in x86_64-*) platform=linux/amd64 ;; *) platform=linux/arm64 ;; esac
+# The target reaches the container's shell as $TARGET, never inside its script.
+docker run --rm --platform "$platform" -v "$PWD:/work" -w /work -e TARGET="$target" \
+  -e CARGO_TARGET_DIR=/work/target/container "docker.io/library/rust:$channel" sh -c \
+  'apt-get update -qq && apt-get install -y -qq musl-tools >/dev/null &&
+   rustup target add "$TARGET" && cargo build --release --locked --bins --target "$TARGET"'
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--target <triple>" help="The Linux target triple to build" required=#true
+'''
+
+[tasks."release:build:glibc"]
+alias = ["rbg"]
+description = "Fail when a glibc binary needs a glibc newer than the README's floor"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+binary="${usage_binary:?}"
+floor="${usage_floor:?}"
+newest="$(objdump -T "$binary" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1)"
+[ "$(printf '%s\n%s\n' "$newest" "$floor" | sort -V | tail -n 1)" = "$floor" ] ||
+  { echo "release:build:glibc: $binary needs $newest, above $floor" >&2; exit 1; }
+echo "release:build:glibc: $binary needs $newest at most"
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--binary <path>" help="The glibc binary to measure" required=#true
+flag "--floor <symbol-version>" help="The newest glibc it may need" default="GLIBC_2.34"
 '''
 
 [tasks."release:notes"]
@@ -556,7 +632,7 @@ set -Eeuo pipefail
 output="${usage_output:?}"
 mkdir -p "$(dirname "$output")"
 range=--unreleased
-git describe --tags --exact-match >/dev/null 2>&1 && range=--latest
+git describe --tags --exact-match --match 'v*' HEAD >/dev/null 2>&1 && range=--latest
 git cliff "$range" --strip header -o "$output"
 '''
 shell = "bash -c"
@@ -631,35 +707,19 @@ set -Eeuo pipefail
 
 [ "${usage_verbose:-false}" = "true" ] && set -x
 
-dist="$(cd "${usage_dist:?}" && pwd)"
+dist="${usage_dist:?}"
 arch="${usage_arch:?}"
-version="$(mise run -q release:check)"
-case "$arch" in amd64) machine=x86_64 ;; arm64) machine=aarch64 ;; esac
-checks="$(mktemp)"
-trap 'rm -f "$checks"' EXIT
-cat > "$checks" <<'CHECKS'
-set -eu
-want="nvm $1"; shell="$2"
-test "$(nvm --version)" = "$want" && test "$(nvmrc --version)" = "$want"
-test -x /usr/bin/nvm-exec
-nvmrc doctor
-status=0; nvm ls >/dev/null || status=$?
-test "$status" -eq 3
-test "$("$shell" -c "eval \"\$(nvmrc init $shell)\"; nvm --version")" = "$want"
-echo "ok: $(. /etc/os-release && echo "$ID $VERSION_ID") $(uname -m)"
-CHECKS
-smoke() { # <image> <install command> <shell>
-  docker run --rm --platform "linux/$arch" -v "$dist:/pkgs:ro" -v "$checks:/checks.sh:ro" \
-    "$1" sh -c "$2 >/dev/null && sh /checks.sh $version $3"
+one() { # <image> <package format>
+  mise run release:smoke:package --dist "$dist" --arch "$arch" --image "$1" --format "$2"
 }
-smoke debian:stable-slim "dpkg -i /pkgs/nvmrc_*_$arch.deb" bash
-smoke ubuntu:latest "dpkg -i /pkgs/nvmrc_*_$arch.deb" bash
-smoke amazonlinux:2023 "rpm -i /pkgs/nvmrc-*.$machine.rpm" bash
-smoke fedora:latest "rpm -i /pkgs/nvmrc-*.$machine.rpm" bash
-smoke registry.access.redhat.com/ubi9/ubi-minimal "rpm -i /pkgs/nvmrc-*.$machine.rpm" bash
-smoke alpine:latest "apk add --allow-untrusted /pkgs/nvmrc_*_$machine.apk" sh
+one debian:stable-slim deb
+one ubuntu:latest deb
+one amazonlinux:2023 rpm
+one fedora:latest rpm
+one registry.access.redhat.com/ubi9/ubi-minimal rpm
+one alpine:latest apk
 # archlinux publishes no arm64 image.
-[ "$arch" = arm64 ] || smoke archlinux:latest "pacman -U --noconfirm /pkgs/nvmrc-*-$machine.pkg.tar.zst" bash
+[ "$arch" = arm64 ] || one archlinux:latest archlinux
 '''
 shell = "bash -c"
 usage = '''
@@ -668,6 +728,79 @@ flag "--dist <dir>" help="The directory of release files" default="dist"
 flag "--arch <arch>" help="The package architecture" required=#true {
   choices "amd64" "arm64"
 }
+'''
+
+[tasks."release:smoke:package"]
+alias = ["rsmp"]
+description = "Install one package with its distribution's package manager and run it"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+dist="$(cd "${usage_dist:?}" && pwd)"
+arch="${usage_arch:?}"
+version="$(mise run -q release:check)"
+case "$arch" in amd64) machine=x86_64 ;; arm64) machine=aarch64 ;; esac
+# The package manager, not a bare dpkg/rpm, so the declared dependencies install.
+case "${usage_format:?}" in
+  deb) install="apt-get update -qq && apt-get install -y -qq /pkgs/nvmrc_*_$arch.deb" ;;
+  # microdnf (ubi-minimal) installs no local file: it fetches the dependency, rpm checks it.
+  rpm) install="rpm=\$(echo /pkgs/nvmrc-*.$machine.rpm); if command -v dnf; then dnf install -y \$rpm;
+    else microdnf install -y ca-certificates && rpm -i \$rpm; fi" ;;
+  apk) install="apk add --no-cache --allow-untrusted /pkgs/nvmrc_*_$machine.apk" ;;
+  archlinux) install="pacman -U --noconfirm /pkgs/nvmrc-*-$machine.pkg.tar.zst" ;;
+esac
+shell=bash
+[ "$usage_format" = apk ] && shell=sh
+checks="$(mktemp)"
+trap 'rm -f "$checks"' EXIT
+mise run -q release:smoke:checks > "$checks"
+docker run --rm --platform "linux/$arch" -v "$dist:/pkgs:ro" -v "$checks:/checks.sh:ro" \
+  "${usage_image:?}" sh -c "$install >/dev/null && sh /checks.sh $version $shell"
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--dist <dir>" help="The directory of release files" default="dist"
+flag "--arch <arch>" help="The package architecture" required=#true {
+  choices "amd64" "arm64"
+}
+flag "--image <image>" help="The distribution's container image" required=#true
+flag "--format <format>" help="The package format the image installs" required=#true {
+  choices "deb" "rpm" "apk" "archlinux"
+}
+'''
+
+[tasks."release:smoke:checks"]
+alias = ["rsmc"]
+description = "Print the checks a smoke test runs inside the container (POSIX sh)"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+cat <<'CHECKS'
+set -eu
+want="nvm $1"; shell="$2"
+test "$(nvm --version)" = "$want" && test "$(nvmrc --version)" = "$want"
+test -x /usr/bin/nvm-exec
+nvmrc doctor
+status=0; nvm ls >/dev/null || status=$?
+test "$status" -eq 3
+test "$("$shell" -c "eval \"\$(nvmrc init $shell)\"; nvm --version")" = "$want"
+# HTTPS through the system trust store, which the ca-certificates dependency fills.
+nvm ls-remote --lts | tail -n 1 | grep -q 'v[0-9]'
+echo "ok: $(. /etc/os-release && echo "$ID $VERSION_ID") $(uname -m), TLS included"
+CHECKS
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
 '''
 
 [tasks."release:image:context"]
@@ -710,16 +843,39 @@ set -Eeuo pipefail
 [ "${usage_verbose:-false}" = "true" ] && set -x
 
 arch="${usage_arch:?}"
-version="$(mise run -q release:check)"
 docker buildx build --quiet --platform "linux/$arch" --load \
   -t "nvmrc:smoke-$arch" -f Dockerfile.release target/image >/dev/null
-got="$(docker run --rm --platform "linux/$arch" "nvmrc:smoke-$arch" nvmrc --version)"
-[ "$got" = "nvm $version" ] || { echo "release:image: linux/$arch printed '$got'" >&2; exit 1; }
-echo "ok: image linux/$arch: $got"
+mise run release:image:run --image "nvmrc:smoke-$arch" --arch "$arch"
 '''
 shell = "bash -c"
 usage = '''
 flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--arch <arch>" help="The image platform's architecture" required=#true {
+  choices "amd64" "arm64"
+}
+'''
+
+[tasks."release:image:run"]
+alias = ["rir"]
+description = "Run `nvmrc --version` in a release image and check the version"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+image="${usage_image:?}"
+arch="${usage_arch:?}"
+version="$(mise run -q release:check)"
+got="$(docker run --rm --platform "linux/$arch" "$image" nvmrc --version)"
+[ "$got" = "nvm $version" ] || { echo "release:image:run: $image (linux/$arch) printed '$got'" >&2; exit 1; }
+echo "ok: image $image linux/$arch: $got"
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--image <reference>" help="The image: a local tag, or a pushed image by digest" required=#true
 flag "--arch <arch>" help="The image platform's architecture" required=#true {
   choices "amd64" "arm64"
 }
@@ -764,6 +920,70 @@ flag "-v --verbose" help="Enable verbose (debug) output"
 flag "--dist <dir>" help="The directory of release files" default="dist"
 flag "--repository <owner/name>" help="The GitHub repository of the release" default="elioseverojunior/nvmrc"
 flag "--output <file>" help="Where the formula is written" default="target/homebrew/nvmrc.rb"
+'''
+
+[tasks."release:homebrew:tap"]
+alias = ["rht"]
+description = "Commit the rendered formula to a checked-out tap and push it; no-op when unchanged"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+tap="${usage_tap:?}"
+formula="${usage_formula:?}"
+version="$(mise run -q release:check)"
+mkdir -p "$tap/Formula"
+cp "$formula" "$tap/Formula/nvmrc.rb"
+git -C "$tap" add Formula/nvmrc.rb
+# A re-run finds the formula already pushed: nothing to commit.
+if git -C "$tap" diff --cached --quiet; then
+  echo "release:homebrew:tap: Formula/nvmrc.rb is up to date"
+  exit 0
+fi
+git -C "$tap" -c user.name="github-actions[bot]" \
+  -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+  commit -q -m "nvmrc $version"
+git -C "$tap" push -q
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--tap <dir>" help="The tap repository's checkout" required=#true
+flag "--formula <file>" help="The formula release:homebrew rendered" default="target/homebrew/nvmrc.rb"
+'''
+
+[tasks."release:github:draft"]
+alias = ["rgd"]
+description = "Create the GitHub release as a draft with every file, or update it on a re-run"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+dist="${usage_dist:?}"
+notes="${usage_notes:?}"
+version="$(mise run -q release:check)"
+tag="v$version" title="nvmrc $version" prerelease=false
+case "$version" in *-*) prerelease=true ;; esac
+if gh release view "$tag" >/dev/null 2>&1; then
+  # A re-run: the first attempt's release is kept, its files replaced.
+  gh release upload "$tag" --clobber "$dist"/*
+  gh release edit "$tag" --title "$title" --notes-file "$notes" --prerelease="$prerelease"
+else
+  gh release create "$tag" --draft --verify-tag --prerelease="$prerelease" \
+    --title "$title" --notes-file "$notes" "$dist"/*
+fi
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--dist <dir>" help="The signed release files" default="dist"
+flag "--notes <file>" help="The release notes release:notes rendered" default="target/RELEASE_NOTES.md"
 '''
 
 [tasks."release:snapshot"]

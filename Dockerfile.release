@@ -3,7 +3,10 @@
 # Built from prebuilt binaries only (no RUN), so both platforms build on any
 # host without emulation. The context is laid out by `mise run release:image`
 # as linux/<arch>/{nvmrc,nvm,nvm-exec}.
-FROM docker.io/library/alpine:3 AS certificates
+# Pinned by version tag, not digest: a new Alpine patch release is a deliberate
+# bump here. The release job runs the image it pushed, by digest, before
+# signing and attesting that digest.
+FROM docker.io/library/alpine:3.24.2 AS certificates
 
 FROM scratch
 ARG TARGETPLATFORM
