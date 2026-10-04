@@ -1,0 +1,298 @@
+name: release
+
+# A `v*` tag releases; a manual run is a dry run (all but publishing) by
+# default. Steps run `mise run release:*` tasks, as `release:snapshot` does.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Build, package, smoke-test, sign and attest; publish nothing
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  # Each job installs only the tools it names; `mise run` must not fetch the rest.
+  MISE_TASK_RUN_AUTO_INSTALL: "false"
+
+jobs:
+  gates:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  version:
+    name: version and tag
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      publish: ${{ steps.check.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          install: false
+      - id: check
+        env:
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+          PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          tag=""
+          [ "$GITHUB_REF_TYPE" = tag ] && tag="$GITHUB_REF_NAME"
+          version="$(mise run -q release:check ${tag:+--tag "$tag"})"
+          publish=false
+          [ -n "$tag" ] && [ "$DRY_RUN" != true ] && publish=true
+          if [ "$publish" = true ] && [ "$PRIVATE" = true ]; then
+            echo "::error::artifact attestations need a public repository; make it public first"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build (${{ matrix.target }})
+    needs: [gates, version]
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        include:
+          # glibc builds run on 22.04 so they need glibc 2.34 at most.
+          - { target: x86_64-unknown-linux-gnu, runner: ubuntu-22.04 }
+          - { target: aarch64-unknown-linux-gnu, runner: ubuntu-22.04-arm }
+          - { target: x86_64-unknown-linux-musl, runner: ubuntu-24.04 }
+          - { target: aarch64-unknown-linux-musl, runner: ubuntu-24.04-arm }
+          - { target: x86_64-apple-darwin, runner: macos-15-intel }
+          - { target: aarch64-apple-darwin, runner: macos-latest }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the musl C toolchain
+        if: endsWith(matrix.target, '-musl')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+      # No cache: nothing an earlier run left can reach a signed archive.
+      - uses: elioseverojunior/rust-toolchain@v0
+        with:
+          targets: ${{ matrix.target }}
+      - uses: jdx/mise-action@v5
+        with:
+          install: false
+      - run: mise run release:build --target "$TARGET"
+        env:
+          TARGET: ${{ matrix.target }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: build-${{ matrix.target }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  package:
+    name: packages, SBOM and checksums
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: build-*
+          path: dist
+          merge-multiple: true
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: nfpm syft
+      - run: mise run release:package
+      - run: mise run release:sums
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-files
+          path: dist/*
+          if-no-files-found: error
+
+  smoke:
+    name: package and image smoke tests (${{ matrix.arch }})
+    needs: package
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-files
+          path: dist
+      - uses: jdx/mise-action@v5
+        with:
+          install: false
+      - run: mise run release:smoke --arch "$PACKAGE_ARCH"
+        env:
+          PACKAGE_ARCH: ${{ matrix.arch }}
+      - run: mise run release:image --arch "$PACKAGE_ARCH"
+        env:
+          PACKAGE_ARCH: ${{ matrix.arch }}
+
+  sign-and-attest:
+    name: sign and attest
+    needs: [version, smoke]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      # Sigstore's public log would record a private repository's name, and
+      # GitHub attests a private repository only on Enterprise Cloud: a dry
+      # run there skips cosign and lets attestation fail without failing.
+      PRIVATE_DRY_RUN: ${{ github.event.repository.private && needs.version.outputs.publish != 'true' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-files
+          path: dist
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: cosign
+      - name: Sign every release file, SHA256SUMS included (keyless)
+        if: env.PRIVATE_DRY_RUN != 'true'
+        run: |
+          for file in dist/*; do
+            cosign sign-blob --yes --bundle "$file.sigstore.json" "$file"
+          done
+      - name: Unpack the binaries, which are attested one by one
+        run: |
+          mkdir -p binaries
+          for archive in dist/*.tar.gz; do tar -xzf "$archive" -C binaries; done
+      - uses: actions/attest@v4
+        continue-on-error: ${{ env.PRIVATE_DRY_RUN == 'true' }}
+        with:
+          subject-checksums: dist/SHA256SUMS
+      - uses: actions/attest@v4
+        continue-on-error: ${{ env.PRIVATE_DRY_RUN == 'true' }}
+        with:
+          subject-path: |
+            binaries/*/nvmrc
+            binaries/*/nvm
+            binaries/*/nvm-exec
+      - uses: actions/attest@v4
+        continue-on-error: ${{ env.PRIVATE_DRY_RUN == 'true' }}
+        with:
+          subject-checksums: dist/SHA256SUMS
+          sbom-path: dist/nvmrc-${{ needs.version.outputs.version }}.spdx.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: signed-files
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: publish the release, the image and the formula
+    needs: [version, sign-and-attest]
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          name: signed-files
+          path: dist
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: cosign git-cliff
+      - run: mise run release:notes
+      - name: Create the GitHub release with every signed file
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          case "$VERSION" in *-*) prerelease=--prerelease ;; esac
+          gh release create "$GITHUB_REF_NAME" --verify-tag $prerelease \
+            --title "nvmrc $VERSION" --notes-file target/RELEASE_NOTES.md dist/*
+      - run: mise run release:image:context
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+          labels: |
+            org.opencontainers.image.title=nvmrc
+            org.opencontainers.image.description=A native Rust port of nvm, the Node Version Manager
+            org.opencontainers.image.licenses=MIT
+      - id: push
+        uses: docker/build-push-action@v7
+        with:
+          context: target/image
+          file: Dockerfile.release
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: mode=max
+          sbom: true
+      - run: cosign sign --yes "$IMAGE@$DIGEST"
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+      - uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      # The tap is off until the owner sets the NVMRC_HOMEBREW_TAP variable
+      # (owner/name) and the HOMEBREW_TAP_TOKEN secret (contents: write there).
+      - if: vars.NVMRC_HOMEBREW_TAP != ''
+        run: mise run release:homebrew --repository "$GITHUB_REPOSITORY"
+      - if: vars.NVMRC_HOMEBREW_TAP != ''
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ vars.NVMRC_HOMEBREW_TAP }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - if: vars.NVMRC_HOMEBREW_TAP != ''
+        working-directory: tap
+        run: |
+          mkdir -p Formula
+          cp ../target/homebrew/nvmrc.rb Formula/nvmrc.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/nvmrc.rb
+          git commit -m "nvmrc $VERSION"
+          git push
