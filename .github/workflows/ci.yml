@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # release.yml re-runs every gate on the commit it releases.
+  workflow_call:
 
 permissions:
   contents: read
@@ -22,8 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Install the toolchain of rust-toolchain.toml
-        run: rustup toolchain install
+      - uses: elioseverojunior/rust-toolchain@v0
       - run: cargo fmt --all --check
 
   clippy:
@@ -35,14 +36,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - name: Install the linker of .cargo/config.toml
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang mold
-      - name: Install the toolchain of rust-toolchain.toml
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+      - uses: elioseverojunior/rust-toolchain@v0
+        with:
+          cache: true
+          cache-key-hash: ${{ hashFiles('**/Cargo.lock') }}
+          cache-key-suffix: clippy
       - run: cargo clippy --all-targets --all-features --locked -- -D warnings
 
   test:
@@ -57,14 +55,16 @@ jobs:
       # The end-to-end tests of `nvm init` and the contract run in every
       # shell nvmrc supports and skip the missing ones: on Linux all are
       # installed; macOS has bash, zsh, sh, dash and ksh already.
-      - name: Install the linker and every shell
+      - name: Install every shell
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang mold dash fish ksh zsh
-      - name: Install the toolchain of rust-toolchain.toml
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+          sudo apt-get install -y --no-install-recommends dash fish ksh zsh
+      - uses: elioseverojunior/rust-toolchain@v0
+        with:
+          cache: true
+          cache-key-hash: ${{ hashFiles('**/Cargo.lock') }}
+          cache-key-suffix: test
       - run: cargo test --locked
 
   msrv:
@@ -72,22 +72,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Install the linker of .cargo/config.toml
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang mold
-      - name: Install Rust 1.85
-        run: rustup toolchain install 1.85 --profile minimal
-      - uses: Swatinem/rust-cache@v2
-      - run: rustup run 1.85 cargo check --all-targets --locked
+      # Installs the toolchain of rust-toolchain.toml and, next to it, the
+      # rust-version of Cargo.toml, reachable as `cargo +1.85`.
+      - uses: elioseverojunior/rust-toolchain@v0
+        with:
+          msrv-install: true
+          cache: true
+          cache-key-hash: ${{ hashFiles('**/Cargo.lock') }}
+          cache-key-suffix: msrv
+      - run: cargo +1.85 check --all-targets --locked
 
   supply-chain:
     name: cargo deny and cargo audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Install the toolchain of rust-toolchain.toml
-        run: rustup toolchain install
+      - uses: elioseverojunior/rust-toolchain@v0
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny,cargo-audit
