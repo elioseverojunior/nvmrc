@@ -17,27 +17,17 @@ t = "test"
 # To make this CI-only instead (e.g. if warnings-as-errors is too aggressive for
 # local/IDE iteration), delete this line and set `RUSTFLAGS: -D warnings` in the
 # CI workflow env instead.
-# `target-cpu=native` is deliberately NOT here. Cargo REPLACES `[build]
-# rustflags` with `[target.<triple>] rustflags` rather than merging them, and
-# every triple built here has an override below -- so the flag never reached a
-# local or CI build anyway. Where it WOULD have applied is any triple without an
-# override, which is exactly the set a release matrix adds
-# (`*-unknown-linux-musl`, `*-pc-windows-msvc`): those would be compiled for the
-# build machine's CPU and can abort with SIGILL on an older one. Native tuning is
-# a per-machine choice, so it belongs in a developer's own `RUSTFLAGS`, never in
-# committed config that a release build inherits.
+# `target-cpu=native` is deliberately NOT here: release binaries are built on
+# CI runners and must run on any CPU of their architecture. Native tuning is a
+# per-machine choice for a developer's own `RUSTFLAGS`. Cargo REPLACES this
+# list with a `[target.<triple>] rustflags` list, so every such list below
+# repeats `-D warnings`.
 rustflags = ["-D", "warnings"]
 
 # Documentation lint gate: promotes rustdoc lints (broken_intra_doc_links,
 # redundant_explicit_links, bare_urls, invalid_html_tags, …) to hard errors so
 # broken docs fail the build instead of printing an ignorable warning.
 rustdocflags = ["-D", "warnings"]
-
-[env]
-# Ensures the cc crate uses the correct cross-compiler for the target
-CC_aarch64_unknown_linux_gnu = "aarch64-linux-gnu-gcc"
-# Ensures host build-dependencies use your local host compiler
-HOST_CC = "gcc"
 
 # ─── Build profiles: THE single source of truth ──────────────────────────────
 #
@@ -112,10 +102,8 @@ rustflags = ["-D", "warnings", "-C", "link-arg=-Wl,-dead_strip_dylibs"]
 [target.x86_64-apple-darwin]
 rustflags = ["-D", "warnings", "-C", "link-arg=-Wl,-dead_strip_dylibs"]
 
-# Linux x86_64 — use mold if available for faster linking
-[target.x86_64-unknown-linux-gnu]
-linker = "clang"
-rustflags = ["-D", "warnings", "-C", "link-arg=-fuse-ld=mold"]
-
-[target.aarch64-unknown-linux-gnu]
-linker = "aarch64-linux-gnu-gcc"
+# Linux has no linker override on purpose. Release builds run on stock CI
+# runners (glibc and musl, x86_64 and aarch64) and in the Nix sandbox, where
+# neither clang + mold nor aarch64-linux-gnu-gcc exists; the platform `cc`
+# links every Linux target. A developer who wants mold sets it in
+# `~/.cargo/config.toml`.

@@ -21,8 +21,7 @@ codes, checked against the test scenarios of the author's fork of nvm
   `strip = "symbols"`, `panic = "abort"`) lives in `.cargo/config.toml`. With
   rustup, the `llvm-tools` component that `rust-toolchain.toml` declares
   provides the `rust-objcopy` that stripping uses; a toolchain without it may
-  warn. On x86_64 Linux the linker settings need `clang` and `mold`;
-  cross-building for aarch64 Linux needs `gcc-aarch64-linux-gnu`.
+  warn.
 - A Homebrew formula is possible (a tap with `depends_on "rust" => :build`
   and `system "cargo", "install", *std_cargo_args`), but none is published.
 - For tools that run `$NVM_DIR/nvm-exec` by path, link it:
