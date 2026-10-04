@@ -99,6 +99,9 @@ impl Walker<'_, '_> {
         if !self.context.fs.is_file(&path) {
             return self.note(&from.path, Some(number), line, NoteReason::Missing(path));
         }
+        if is_nvm_loader_target(&path) {
+            return;
+        }
         let canonical = self.context.fs.canonicalize(&path);
         let canonical = canonical.unwrap_or_else(|_| path.clone());
         if from.depth < MAX_DEPTH {
@@ -149,4 +152,13 @@ impl Walker<'_, '_> {
             reason,
         });
     }
+}
+
+/// nvm.sh and its completion are what a loader line names, not startup files:
+/// reading them would report nvm's own functions and helpers as findings.
+fn is_nvm_loader_target(path: &Path) -> bool {
+    matches!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some("nvm.sh" | "bash_completion")
+    )
 }

@@ -126,6 +126,13 @@ pub(super) enum Command {
         #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
     },
+    /// Report the shell startup files that still load nvm.sh or define an
+    /// `nvm` that competes with nvmrc (`--shell <name>` limits the scan to
+    /// one shell). Exits 1 when it finds a conflict; never writes a file.
+    Doctor {
+        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
     /// What the `nvm` function runs at shell start: `use`, `install` or
     /// `none` (nvm.sh's `nvm_auto`).
     #[command(name = "__auto", hide = true)]
@@ -159,6 +166,7 @@ pub(super) fn dispatch(command: &Command, context: &Context<'_>) -> Result<Outpu
         Command::Exec { args } => commands::exec::run(context, args),
         Command::Run { args } => commands::run::run(context, args),
         Command::Init { args } => commands::init::run(args),
+        Command::Doctor { args } => commands::doctor::run(context, args),
         Command::Auto { args } => commands::auto::run(context, args),
     }
 }

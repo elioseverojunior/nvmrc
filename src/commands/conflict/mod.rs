@@ -8,7 +8,7 @@ mod roots;
 mod walk;
 
 #[cfg(test)]
-mod fixtures;
+pub(crate) mod fixtures;
 #[cfg(test)]
 mod report_tests;
 #[cfg(test)]
@@ -16,6 +16,7 @@ mod roots_tests;
 #[cfg(test)]
 mod walk_tests;
 
+use std::fmt;
 use std::path::PathBuf;
 
 use crate::domain::conflict::Hit;
@@ -52,6 +53,24 @@ pub enum NoteReason {
     Unreadable(String),
     /// The sourced file is deeper than [`MAX_DEPTH`]: not scanned.
     TooDeep(PathBuf),
+}
+
+impl fmt::Display for NoteReason {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unresolvable(why) => write!(formatter, "not followed: {why}"),
+            Self::Relative(path) => write!(
+                formatter,
+                "relative path resolved from the file's directory: {}",
+                path.display()
+            ),
+            Self::Missing(path) => write!(formatter, "file not found: {}", path.display()),
+            Self::Unreadable(error) => write!(formatter, "not read: {error}"),
+            Self::TooDeep(_) => {
+                write!(formatter, "not scanned: deeper than {MAX_DEPTH} levels")
+            }
+        }
+    }
 }
 
 /// Something the scan could not do, or did on a guess.

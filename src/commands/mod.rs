@@ -6,6 +6,7 @@ pub mod color_policy;
 pub mod conflict;
 pub mod current;
 pub mod deactivate;
+pub mod doctor;
 pub mod exec;
 pub mod init;
 pub mod install;
