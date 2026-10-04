@@ -313,7 +313,7 @@ flag "-v --verbose" help="Enable verbose (debug) output"
 
 [tasks."lint:docker"]
 alias = ["hl"]
-description = "Lint the Dockerfile with hadolint"
+description = "Lint the Dockerfiles with hadolint"
 run = '''
 #!/usr/bin/env bash
 
@@ -321,7 +321,7 @@ set -Eeuo pipefail
 
 [ "${usage_verbose:-false}" = "true" ] && set -x
 
-hadolint Dockerfile
+hadolint Dockerfile Dockerfile.release
 '''
 shell = "bash -c"
 usage = '''
@@ -666,6 +666,61 @@ usage = '''
 flag "-v --verbose" help="Enable verbose (debug) output"
 flag "--dist <dir>" help="The directory of release files" default="dist"
 flag "--arch <arch>" help="The package architecture" required=#true {
+  choices "amd64" "arm64"
+}
+'''
+
+[tasks."release:image:context"]
+alias = ["ric"]
+description = "Lay out the image build context from the musl archives"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+dist="${usage_dist:?}"
+context="${usage_context:?}"
+version="$(mise run -q release:check)"
+for arch in amd64 arm64; do
+  case "$arch" in amd64) machine=x86_64 ;; arm64) machine=aarch64 ;; esac
+  name="nvmrc-$version-$machine-unknown-linux-musl"
+  mkdir -p "$context/linux/$arch"
+  tar -xzf "$dist/$name.tar.gz" -C "$context/linux/$arch" --strip-components=1 \
+    "$name/nvmrc" "$name/nvm" "$name/nvm-exec"
+done
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--dist <dir>" help="The directory of release files" default="dist"
+flag "--context <dir>" help="Where the image build context is laid out" default="target/image"
+'''
+
+[tasks."release:image"]
+alias = ["ri"]
+description = "Build the release image for one platform and run `nvmrc --version` in it"
+depends = ["release:image:context"]
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+arch="${usage_arch:?}"
+version="$(mise run -q release:check)"
+docker buildx build --quiet --platform "linux/$arch" --load \
+  -t "nvmrc:smoke-$arch" -f Dockerfile.release target/image >/dev/null
+got="$(docker run --rm --platform "linux/$arch" "nvmrc:smoke-$arch" nvmrc --version)"
+[ "$got" = "nvm $version" ] || { echo "release:image: linux/$arch printed '$got'" >&2; exit 1; }
+echo "ok: image linux/$arch: $got"
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--arch <arch>" help="The image platform's architecture" required=#true {
   choices "amd64" "arm64"
 }
 '''
