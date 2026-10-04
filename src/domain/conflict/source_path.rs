@@ -17,9 +17,22 @@ use super::lexer::{Token, is_word_character, open_quote_contents, strip_comment,
 
 /// The command words that read a file into the shell.
 const COMMANDS: [&str; 3] = ["source", "\\.", "."];
-/// The reserved words and prefixes a command may follow.
-const COMMAND_KEYWORDS: [&str; 11] = [
-    "then", "do", "else", "if", "elif", "while", "until", "{", "!", "builtin", "command",
+/// The reserved words and prefixes a command may follow; `zsh-defer` and
+/// `time` run the command after them.
+const COMMAND_KEYWORDS: [&str; 13] = [
+    "then",
+    "do",
+    "else",
+    "if",
+    "elif",
+    "while",
+    "until",
+    "{",
+    "!",
+    "builtin",
+    "command",
+    "zsh-defer",
+    "time",
 ];
 /// What may stand right before a command word.
 const COMMAND_PREFIXES: [char; 5] = [';', '&', '|', '{', '('];

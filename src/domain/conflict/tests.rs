@@ -247,3 +247,9 @@ fn a_begin_marker_without_an_end_marker_hides_nothing() {
     );
     assert_eq!(found(&stray), [(2, Loader)]);
 }
+
+#[test]
+fn a_loader_behind_a_wrapper_command_is_a_manual_finding() {
+    let text = "zsh-defer source ~/.nvm/nvm.sh\ntime . ~/.nvm/nvm.sh\n";
+    assert_eq!(found(text), [(1, CompoundLoader), (2, CompoundLoader)]);
+}

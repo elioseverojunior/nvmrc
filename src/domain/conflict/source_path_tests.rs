@@ -140,3 +140,15 @@ fn source_target_needs_the_command_position() {
         assert_eq!(source_target(line).as_deref(), Some(expected), "{line:?}");
     }
 }
+
+#[test]
+fn a_wrapper_command_may_stand_before_the_loader() {
+    assert_eq!(
+        source_target("zsh-defer source ~/.nvm/nvm.sh").as_deref(),
+        Some("~/.nvm/nvm.sh")
+    );
+    assert_eq!(
+        source_target("time . ~/.nvm/nvm.sh").as_deref(),
+        Some("~/.nvm/nvm.sh")
+    );
+}
