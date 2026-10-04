@@ -25,7 +25,7 @@ fn deliver_in(
         None => context,
     };
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    let code = finish("nvm", output, &context, &mut out, &mut err);
+    let code = finish(child::NVM, output, &context, &mut out, &mut err);
     (
         code,
         String::from_utf8(out).unwrap(),
@@ -82,7 +82,13 @@ fn the_variable_alone_opens_no_channel() {
     let env = FakeEnv::default().with_var("NVMRC_SCRIPT_FD", "3");
     let (mut out, mut err) = (Vec::new(), Vec::new());
     let output = script_output("o", "");
-    let code = finish("nvm", &output, &Context::new(&fs, &env), &mut out, &mut err);
+    let code = finish(
+        child::NVM,
+        &output,
+        &Context::new(&fs, &env),
+        &mut out,
+        &mut err,
+    );
     assert_eq!(
         (code, out, err),
         (0, b"unset NVM_BIN\n".to_vec(), b"o\n".to_vec())

@@ -15,6 +15,7 @@ pub struct FakeProcess {
     executed: RefCell<Vec<Invocation>>,
     spawns: BTreeMap<(PathBuf, String), Result<i32, io::ErrorKind>>,
     spawned: RefCell<Vec<Invocation>>,
+    handed_over: RefCell<Vec<Invocation>>,
 }
 
 impl FakeProcess {
@@ -83,7 +84,7 @@ impl FakeProcess {
         self
     }
 
-    /// The exit code `spawn` answers to `program` run with exactly `args`
+    /// The exit code `spawn` and `hand_over` answer to `program` run with exactly `args`
     /// (joined with spaces); any other spawn is not found.
     #[must_use]
     pub fn with_spawn(mut self, program: &str, args: &str, exit_code: i32) -> Self {
@@ -104,6 +105,21 @@ impl FakeProcess {
     #[must_use]
     pub fn spawned(&self) -> Vec<Invocation> {
         self.spawned.borrow().clone()
+    }
+
+    /// Every invocation `hand_over` was given, in order.
+    #[must_use]
+    pub fn handed_over(&self) -> Vec<Invocation> {
+        self.handed_over.borrow().clone()
+    }
+
+    /// What `spawn` and `hand_over` answer to `invocation`.
+    fn answer(&self, invocation: &Invocation) -> io::Result<i32> {
+        let key = (invocation.program.clone(), invocation.args.join(" "));
+        match self.spawns.get(&key) {
+            Some(answer) => answer.map_err(io::Error::from),
+            None => Err(io::Error::from(io::ErrorKind::NotFound)),
+        }
     }
 
     /// Every invocation `execute` was given, in order.
@@ -137,11 +153,13 @@ impl Process for FakeProcess {
 
     fn spawn(&self, invocation: &Invocation) -> io::Result<i32> {
         self.spawned.borrow_mut().push(invocation.clone());
-        let key = (invocation.program.clone(), invocation.args.join(" "));
-        match self.spawns.get(&key) {
-            Some(answer) => answer.map_err(io::Error::from),
-            None => Err(io::Error::from(io::ErrorKind::NotFound)),
-        }
+        self.answer(invocation)
+    }
+
+    /// Records the hand-over and answers as [`Self::with_spawn`] says.
+    fn hand_over(&self, invocation: &Invocation) -> io::Result<i32> {
+        self.handed_over.borrow_mut().push(invocation.clone());
+        self.answer(invocation)
     }
 }
 

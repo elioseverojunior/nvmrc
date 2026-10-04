@@ -6,7 +6,7 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 const BINARY: &str = env!("CARGO_BIN_EXE_nvm-exec");
 const UNABLE: &str = "nvm-exec: unable to select a node version\n  Set `NODE_VERSION` \
@@ -229,4 +229,24 @@ fn a_parent_that_sets_no_pwd_or_a_stale_one_still_finds_the_nvmrc_of_the_directo
     let mut missing = fixture.command();
     missing.env_remove("PWD").args(["node", "a"]);
     assert_result(&missing.output().unwrap(), (&expected, "", 0));
+}
+
+/// Upstream `nvm-exec` ends with `exec "$@"`: the command takes the process
+/// over, so it runs with the pid `nvm-exec` was started with.
+#[test]
+fn the_command_replaces_nvm_exec() {
+    let fixture = Fixture::new();
+    let child = fixture
+        .command()
+        .env("NODE_VERSION", "18")
+        .args(["sh", "-c", "echo $$"])
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let pid = child.id();
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        pid.to_string()
+    );
 }

@@ -73,7 +73,7 @@ where
         }
     };
     let output = dispatch(&cli.command, context).unwrap_or_else(|error| failure(&error));
-    finish("nvm", &output, context, out, err)
+    finish(child::NVM, &output, context, out, err)
 }
 
 /// The commands that see a `--` right after their name.
@@ -120,7 +120,7 @@ fn failure(error: &CliError) -> Output {
 /// Prints the streams, then runs the program the command left to run, if
 /// any, whose status wins.
 fn finish(
-    tool: &str,
+    launcher: child::Launcher,
     output: &Output,
     context: &Context<'_>,
     out: &mut dyn Write,
@@ -128,7 +128,7 @@ fn finish(
 ) -> u8 {
     let printed = print(output, context, out, err);
     match &output.spawn {
-        Some(invocation) => child::run_child(tool, context, invocation, err),
+        Some(invocation) => child::run_child(launcher, context, invocation, err),
         None => printed,
     }
 }
@@ -211,7 +211,7 @@ where
         .map(|argument| argument.into().to_string_lossy().into_owned())
         .collect();
     let output = crate::commands::nvm_exec::run(context, &command);
-    finish("nvm-exec", &output, context, out, err)
+    finish(child::NVM_EXEC, &output, context, out, err)
 }
 
 /// Entry point of the `nvm-exec` binary.

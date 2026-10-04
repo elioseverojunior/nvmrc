@@ -104,4 +104,16 @@ pub trait Process {
     /// Fails when the program cannot be started (`NotFound` when it does not
     /// exist).
     fn spawn(&self, invocation: &Invocation) -> io::Result<i32>;
+
+    /// Hands this process over to `invocation`, as a shell's `exec` does:
+    /// where it can (Unix), the process becomes the program, so signals,
+    /// the terminal and the exit status are the program's own, and this
+    /// returns only when the program could not be started. Elsewhere it
+    /// runs the program as [`Self::spawn`] does and returns its status.
+    ///
+    /// # Errors
+    /// Fails when the program cannot be started.
+    fn hand_over(&self, invocation: &Invocation) -> io::Result<i32> {
+        self.spawn(invocation)
+    }
 }

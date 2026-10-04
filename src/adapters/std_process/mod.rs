@@ -66,6 +66,11 @@ impl Process for StdProcess {
         super::std_spawn::spawn_inherited(invocation)
     }
 
+    #[cfg(unix)]
+    fn hand_over(&self, invocation: &Invocation) -> io::Result<i32> {
+        super::std_spawn::exec_replacing(invocation)
+    }
+
     fn run(&self, program: &Path, args: &[&str]) -> io::Result<ProcessOutput> {
         let deadline = Instant::now() + self.timeout;
         let mut child = without_channel(&mut Command::new(program))

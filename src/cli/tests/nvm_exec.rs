@@ -21,11 +21,12 @@ fn nvm_exec_with(command: &[&str], process: &FakeProcess) -> (u8, String, String
 }
 
 #[test]
-fn the_command_runs_and_its_status_is_the_status() {
+fn the_command_takes_the_process_over_and_its_status_is_the_status() {
     let process = FakeProcess::default().with_spawn("node", "a", 9);
     let (code, out, err) = nvm_exec_with(&["node", "a"], &process);
     assert_eq!((code, out.as_str(), err.as_str()), (9, "", ""));
-    assert_eq!(process.spawned().len(), 1);
+    assert_eq!(process.handed_over().len(), 1);
+    assert!(process.spawned().is_empty());
 }
 
 #[test]

@@ -74,7 +74,13 @@ fn deliver(output: &Output) -> (u8, String, String) {
     let fs = FakeFileSystem::default();
     let env = FakeEnv::default();
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    let code = finish("nvm", output, &Context::new(&fs, &env), &mut out, &mut err);
+    let code = finish(
+        child::NVM,
+        output,
+        &Context::new(&fs, &env),
+        &mut out,
+        &mut err,
+    );
     (
         code,
         String::from_utf8(out).unwrap(),

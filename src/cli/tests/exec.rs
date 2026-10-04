@@ -71,3 +71,13 @@ fn run_takes_a_leading_double_dash_for_a_script_argument() {
     assert!(err.contains("`nvm run` was invoked without a version argument"));
     assert!(process.spawned().is_empty());
 }
+
+#[test]
+fn exec_waits_for_its_child_instead_of_handing_over() {
+    let process = FakeProcess::default().with_spawn("node", "a", 0);
+    run_with(&["nvm", "exec", "18", "node", "a"], &process);
+    assert_eq!(
+        (process.spawned().len(), process.handed_over().len()),
+        (1, 0)
+    );
+}

@@ -9,6 +9,19 @@ use std::process::{Command, ExitStatus};
 
 /// Runs `invocation` with inherited stdio and waits for it.
 pub(super) fn spawn_inherited(invocation: &Invocation) -> io::Result<i32> {
+    Ok(exit_code(command_for(invocation)?.status()?))
+}
+
+/// Replaces this process with `invocation`; returns only the error that
+/// kept it from starting.
+#[cfg(unix)]
+pub(super) fn exec_replacing(invocation: &Invocation) -> io::Result<i32> {
+    use std::os::unix::process::CommandExt;
+    Err(command_for(invocation)?.exec())
+}
+
+/// The command `invocation` describes, with stdio inherited.
+fn command_for(invocation: &Invocation) -> io::Result<Command> {
     let mut command = Command::new(&invocation.program);
     for name in &invocation.env_remove {
         command.env_remove(name);
@@ -22,7 +35,8 @@ pub(super) fn spawn_inherited(invocation: &Invocation) -> io::Result<i32> {
     if let Some(prefix) = &invocation.path_prefix {
         command.env("PATH", path_with_prefix(prefix, invocation)?);
     }
-    Ok(exit_code(without_channel(&mut command).status()?))
+    without_channel(&mut command);
+    Ok(command)
 }
 
 /// `prefix` in front of the `PATH` the child ends up with: the `env` entry
