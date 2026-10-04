@@ -94,15 +94,10 @@ fn from_nvmrc(context: &Context<'_>, transcript: &mut Transcript) -> Result<Sele
     Ok(selection)
 }
 
-/// `nvm use <args>`: its status, its stderr and the version it chose.
+/// `nvm use <args>`: its stderr and, when it succeeded, the version it chose.
 fn switch(context: &Context<'_>, args: &[String]) -> Result<Selection, CliError> {
-    let output = use_version::run(context, args)?;
-    let target = match output.status {
-        NvmExitCode::Success => use_version::plan(context, args, &mut Transcript::default())
-            .ok()
-            .map(|(_, target)| target),
-        _ => None,
-    };
+    let (output, target) = use_version::run_and_target(context, args)?;
+    let target = target.filter(|_| output.status == NvmExitCode::Success);
     Ok(Selection {
         stderr: output.stderr,
         target,

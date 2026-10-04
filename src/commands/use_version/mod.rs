@@ -39,10 +39,28 @@ pub fn plan(
 /// twice, and the errors of building the switch (an unresolvable
 /// `NVM_DIR`).
 pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
+    run_and_target(context, args).map(|(output, _)| output)
+}
+
+/// [`run`], also returning the target it switched to (`None` when it stopped
+/// before the switch), so that a caller never resolves the version twice.
+///
+/// # Errors
+/// As [`run`].
+pub fn run_and_target(
+    context: &Context<'_>,
+    args: &[String],
+) -> Result<(Output, Option<Target>), CliError> {
     let options = options::parse(args)?;
     let mut transcript = Transcript::default();
     match target::resolve(context, &options, &mut transcript) {
-        Ok(target) => apply::apply(context, &options, &target, transcript),
-        Err(halt) => Ok(transcript.finish(halt.status)),
+        Ok(target) => {
+            let output = apply::apply(context, &options, &target, transcript)?;
+            Ok((output, Some(target)))
+        }
+        Err(halt) => Ok((transcript.finish(halt.status), None)),
     }
 }
+
+#[cfg(test)]
+mod tests;
