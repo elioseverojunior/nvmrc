@@ -1,7 +1,7 @@
 # nvmrc — Native Rust port of nvm
 
 Date: 2026-10-02
-Status: Implemented (Plans 1 to 9); deviations in docs/deviations.md
+Status: Implemented (Plans 1 to 10); deviations in docs/deviations.md
 Reference implementation: `elioseverojunior/nvm` (`nvm.sh`, 5,456 lines,
 about 129 functions, plus `nvm-exec`, `install.sh`, `bash_completion`).
 
@@ -314,3 +314,18 @@ archive crates are chosen (section 10); `nvm-exec` stays a separate binary,
 because tools call it by path as `$NVM_DIR/nvm-exec` (the README says to link
 it there), and on Unix it replaces itself with the command, as the upstream
 script's `exec "$@"`.
+
+## 13. Release engineering (Plan 10)
+
+A release comes from a `v*` tag equal to `v` plus the `Cargo.toml` version,
+which is what `nvm --version` prints. `.github/workflows/release.yml`
+re-runs every CI gate, builds on native runners (Linux glibc on Ubuntu
+22.04 for a glibc 2.34 floor, Linux static musl, macOS Intel and Apple
+silicon; x86_64 and aarch64 each), packages the static binaries as deb,
+rpm, apk and Arch packages and as a `scratch` image for linux/amd64 and
+linux/arm64, smoke-tests each package in its distribution's container,
+signs every file with cosign (keyless) and attests provenance and the SBOM
+with GitHub artifact attestations, then publishes the GitHub release, the
+GHCR image and, once configured, a Homebrew formula. Every step is a
+`mise run release:*` task. `flake.nix` builds nvmrc with Nix. Windows is
+out of scope: the crate does not compile there.

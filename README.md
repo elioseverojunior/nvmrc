@@ -11,21 +11,90 @@ codes, checked against the test scenarios of the author's fork of nvm
 
 ## Install
 
-- `cargo install --locked --git https://github.com/elioseverojunior/nvmrc`
-  installs the three binaries into `~/.cargo/bin` (the crate is not on
-  crates.io yet: `publish = false`).
-- From a clone: `cargo build --release --locked`; the binaries are in
-  `target/release/`.
-- Requirements: Rust 1.85 or newer (MSRV); development uses the 1.99
+Releases are built from a `v*` tag by `.github/workflows/release.yml`, on
+native runners, and every file is signed and attested (see "Verifying a
+release"). The version is the one `nvm --version` prints.
+
+The repository is private today. Attestations and the public Sigstore log
+need a public repository, so the release workflow refuses to publish until
+it is public: there is no published release yet, and the channels below
+describe what a release will contain.
+
+- Archives, `nvmrc-<version>-<target>.tar.gz`, each with `nvmrc`, `nvm`,
+  `nvm-exec`, `LICENSE` and `README.md`:
+  - macOS: `aarch64-apple-darwin`, `x86_64-apple-darwin`.
+  - Linux, static (any distribution): `x86_64-unknown-linux-musl`,
+    `aarch64-unknown-linux-musl`.
+  - Linux, glibc 2.34 or newer: `x86_64-unknown-linux-gnu`,
+    `aarch64-unknown-linux-gnu`.
+- Packages, built from the static binaries (no dependencies; the binaries
+  go to `/usr/bin`). They are not signed with a distribution key: check
+  them as "Verifying a release" shows.
+  - Debian, Ubuntu: `sudo dpkg -i nvmrc_<version>-1_<amd64|arm64>.deb`
+  - Fedora, RHEL, Amazon Linux 2023:
+    `sudo rpm -i nvmrc-<version>-1.<x86_64|aarch64>.rpm`
+  - Alpine:
+    `apk add --allow-untrusted nvmrc_<version>-r1_<x86_64|aarch64>.apk`
+  - Arch: `sudo pacman -U nvmrc-<version>-1-<x86_64|aarch64>.pkg.tar.zst`
+- Docker (linux/amd64, linux/arm64): the image holds the static binaries
+  and CA certificates only, no shell and no libc, so it is for one-off
+  commands and for copying the binaries into another image:
+  `docker run --rm ghcr.io/elioseverojunior/nvmrc:<version> nvmrc --version`,
+  or in a Dockerfile
+  `COPY --from=ghcr.io/elioseverojunior/nvmrc:<version> /usr/bin/nvm* /usr/local/bin/`.
+- Nix: `nix profile install github:elioseverojunior/nvmrc`, or
+  `nix run github:elioseverojunior/nvmrc -- --version`.
+- Homebrew: each release renders a formula; it is pushed to the tap named
+  by the repository variable `NVMRC_HOMEBREW_TAP` once the owner sets it.
+  None is published yet.
+- From source: `cargo install --locked --git
+  https://github.com/elioseverojunior/nvmrc` installs the three binaries
+  into `~/.cargo/bin` (the crate is not on crates.io: `publish = false`),
+  or `cargo build --release --locked` from a clone puts them in
+  `target/release/`. Rust 1.85 or newer (MSRV); development uses the 1.99
   toolchain of `rust-toolchain.toml`. The release profile (fat LTO,
-  `strip = "symbols"`, `panic = "abort"`) lives in `.cargo/config.toml`. With
-  rustup, the `llvm-tools` component that `rust-toolchain.toml` declares
-  provides the `rust-objcopy` that stripping uses; a toolchain without it may
-  warn.
-- A Homebrew formula is possible (a tap with `depends_on "rust" => :build`
-  and `system "cargo", "install", *std_cargo_args`), but none is published.
+  `strip = "symbols"`, `panic = "abort"`) lives in `.cargo/config.toml`;
+  with rustup, the `llvm-tools` component that `rust-toolchain.toml`
+  declares provides the `rust-objcopy` that stripping uses.
+- Windows is not supported; building for it stops with a compile error.
+- An `nvm` function left by nvm.sh in a shell startup file shadows the
+  `nvm` binary in interactive shells: `nvmrc doctor` finds it and
+  `nvm migrate` replaces it (see "Moving from nvm.sh").
 - For tools that run `$NVM_DIR/nvm-exec` by path, link it:
   `ln -s "$(command -v nvm-exec)" "$NVM_DIR/nvm-exec"`.
+
+## Verifying a release
+
+Every file of a release is attested by GitHub (SLSA build provenance), each
+binary inside the archives is attested on its own, and the SBOM
+(`nvmrc-<version>.spdx.json`, the dependency graph of `Cargo.lock`) is
+attested as such. With the GitHub CLI:
+
+```sh
+gh attestation verify nvmrc-0.1.0-x86_64-unknown-linux-musl.tar.gz --repo elioseverojunior/nvmrc
+gh attestation verify /usr/bin/nvm --repo elioseverojunior/nvmrc
+gh attestation verify oci://ghcr.io/elioseverojunior/nvmrc:0.1.0 --repo elioseverojunior/nvmrc
+gh attestation verify nvmrc_0.1.0-1_amd64.deb --repo elioseverojunior/nvmrc \
+  --predicate-type https://spdx.dev/Document/v2.3
+```
+
+Every file is also signed with Sigstore by the release workflow (keyless;
+the bundle is `<file>.sigstore.json`). With cosign, check `SHA256SUMS`,
+then the files against it, and the image:
+
+```sh
+identity='^https://github\.com/elioseverojunior/nvmrc/\.github/workflows/release\.yml@refs/tags/v'
+issuer=https://token.actions.githubusercontent.com
+cosign verify-blob --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity-regexp "$identity" --certificate-oidc-issuer "$issuer" SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS
+cosign verify ghcr.io/elioseverojunior/nvmrc:0.1.0 \
+  --certificate-identity-regexp "$identity" --certificate-oidc-issuer "$issuer"
+```
+
+None of these can run before the first published release; the commands
+are the ones the workflow's identities and file names produce. How the
+release is built and what it trusts: [docs/release.md](docs/release.md).
 
 ## Shell integration
 
@@ -118,7 +187,8 @@ As nvm.sh: `version`, `current`, `ls`/`list`, `ls-remote`/`list-remote`,
 New: `init`, `doctor`, `migrate`.
 
 Not available: `unload`, `debug`, nvm.sh's `--help` text and `--version`
-number, `self-install`/`self-update` (v2), legacy platforms (v2).
+number, `self-install`/`self-update` (v2), legacy platforms (v2),
+Windows.
 
 ## Deviations
 
@@ -160,6 +230,14 @@ together.
   with bash, zsh, dash, ksh and fish.
 - `mise run compat:capture --nvm-sh <path>` re-runs the contract through a
   real nvm.sh and prints what differs.
+
+Releasing: set `version` in `Cargo.toml`, run `cargo check` (it updates
+`Cargo.lock`), commit both (`chore(release): v0.2.0`), then
+`git tag -s v0.2.0 -m "nvmrc 0.2.0"` and push the tag. The workflow
+refuses a tag that is not `v` plus the `Cargo.toml` version
+(`mise run release:check`). A manual run of the release workflow is a dry
+run by default, and `mise run release:snapshot` runs the same build,
+packaging and smoke tests locally into `dist/` (Docker required).
 
 Commits follow Conventional Commits and are GPG-signed. CI is in
 `.github/workflows/ci.yml`.
