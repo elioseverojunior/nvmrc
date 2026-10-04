@@ -11,11 +11,15 @@ quiet = true
 [tools]
 actionlint = { version = "latest" }
 cargo-deny = { version = "0.20" }
+cosign = { version = "3" }
 gh = { version = "latest" }
+git-cliff = { version = "2" }
 gitleaks = { version = "latest" }
 hadolint = { version = "latest" }
 jq = { version = "latest" }
+nfpm = { version = "2" }
 rumdl = { version = "latest" }
+syft = { version = "1" }
 yq = { version = "latest" }
 
 # Cargo Tools
@@ -466,4 +470,97 @@ description = "Every gate a commit must pass, as CI runs them"
 depends = ["fmt:check", "lint", "test", "test:msrv", "deny", "audit"]
 usage = '''
 flag "-v --verbose" help="Enable verbose (debug) output"
+'''
+
+# === Release ===
+# The release pipeline is .github/workflows/release.yml; every step it runs is
+# one of these tasks, so a snapshot on a laptop runs the same code.
+[tasks."release:check"]
+alias = ["rc"]
+description = "Print the release version; fail when the tag and Cargo.toml differ"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+# Cargo.toml is the source of truth: `nvm --version` prints this version.
+version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+tag="${usage_tag:-$(git describe --tags --exact-match 2>/dev/null || true)}"
+if [ -n "$tag" ] && [ "$tag" != "v$version" ]; then
+  echo "release:check: tag $tag does not match Cargo.toml version $version (want v$version)" >&2
+  exit 1
+fi
+echo "$version"
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--tag <tag>" help="The tag being released (default: the tag at HEAD, if any)"
+'''
+
+[tasks."release:build"]
+alias = ["rb"]
+description = "Build the three binaries for one target and archive them in dist/"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+target="${usage_target:?}"
+version="$(mise run -q release:check)"
+channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)"
+out="target/$target/release"
+if [ "${usage_container:-false}" = "true" ]; then
+  # A Linux target from any host: the official rust image of the pinned channel.
+  case "$target" in x86_64-*) platform=linux/amd64 ;; *) platform=linux/arm64 ;; esac
+  docker run --rm --platform "$platform" -v "$PWD:/work" -w /work \
+    -e CARGO_TARGET_DIR=/work/target/container "docker.io/library/rust:$channel" sh -c \
+    "apt-get update -qq && apt-get install -y -qq musl-tools >/dev/null && rustup target add $target && cargo build --release --locked --bins --target $target"
+  out="target/container/$target/release"
+else
+  rustup run "$channel" cargo build --release --locked --bins --target "$target"
+fi
+case "$target" in
+  *-linux-gnu) # The glibc floor promised by the README.
+    newest="$(objdump -T "$out/nvm" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1)"
+    [ "$(printf '%s\nGLIBC_2.34\n' "$newest" | sort -V | tail -n 1)" = GLIBC_2.34 ] ||
+      { echo "release:build: $target needs $newest, above GLIBC_2.34" >&2; exit 1; } ;;
+esac
+name="nvmrc-$version-$target"
+mkdir -p "dist/$name"
+cp "$out/nvmrc" "$out/nvm" "$out/nvm-exec" LICENSE README.md "dist/$name/"
+COPYFILE_DISABLE=1 tar -C dist -czf "dist/$name.tar.gz" "$name"
+rm -rf "dist/${name:?}"
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--target <triple>" help="The Rust target triple to build" required=#true
+flag "--container" help="Build inside the rust image (a Linux target from macOS)"
+'''
+
+[tasks."release:notes"]
+alias = ["rn"]
+description = "Render the release notes from the Conventional Commits with git-cliff"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+output="${usage_output:?}"
+mkdir -p "$(dirname "$output")"
+range=--unreleased
+git describe --tags --exact-match >/dev/null 2>&1 && range=--latest
+git cliff "$range" --strip header -o "$output"
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--output <file>" help="Where the notes are written" default="target/RELEASE_NOTES.md"
 '''

@@ -137,6 +137,53 @@ version = "0.1.4"
 backend = "cargo:yamllint-rs"
 specifiers = ["latest"]
 
+[[tools.cosign]]
+version = "3.1.3"
+backend = "aqua:sigstore/cosign"
+specifiers = ["3"]
+
+[tools.cosign."platforms.linux-arm64"]
+checksum = "sha256:c5d324e091826b0d7a78eb16fef316450b4eb9aaec045611c08ba06f5e73220a"
+url = "https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-linux-arm64"
+url_api = "https://api.github.com/repos/sigstore/cosign/releases/assets/503286299"
+provenance = "cosign"
+
+[tools.cosign."platforms.linux-arm64-musl"]
+checksum = "sha256:c5d324e091826b0d7a78eb16fef316450b4eb9aaec045611c08ba06f5e73220a"
+url = "https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-linux-arm64"
+url_api = "https://api.github.com/repos/sigstore/cosign/releases/assets/503286299"
+provenance = "cosign"
+
+[tools.cosign."platforms.linux-x64"]
+checksum = "sha256:4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71"
+url = "https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-linux-amd64"
+url_api = "https://api.github.com/repos/sigstore/cosign/releases/assets/503286005"
+provenance = "cosign"
+
+[tools.cosign."platforms.linux-x64-musl"]
+checksum = "sha256:4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71"
+url = "https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-linux-amd64"
+url_api = "https://api.github.com/repos/sigstore/cosign/releases/assets/503286005"
+provenance = "cosign"
+
+[tools.cosign."platforms.macos-arm64"]
+checksum = "sha256:5cf948c2f4dfe59687bdd0b8523709067383e03982cc543475c8a7dc70e92a76"
+url = "https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-darwin-arm64"
+url_api = "https://api.github.com/repos/sigstore/cosign/releases/assets/503286205"
+provenance = "cosign"
+
+[tools.cosign."platforms.macos-x64"]
+checksum = "sha256:2347488e5d5b25336644024dfeca5601b190e91197a71a917bda44744aff106c"
+url = "https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-darwin-amd64"
+url_api = "https://api.github.com/repos/sigstore/cosign/releases/assets/503286177"
+provenance = "cosign"
+
+[tools.cosign."platforms.windows-x64"]
+checksum = "sha256:9fe59be0eca1271873ce019061335eb1ac419b7059202e797828467ddabe33be"
+url = "https://github.com/sigstore/cosign/releases/download/v3.1.3/cosign-windows-amd64.exe"
+url_api = "https://api.github.com/repos/sigstore/cosign/releases/assets/503286236"
+provenance = "cosign"
+
 [[tools.gh]]
 version = "2.102.0"
 backend = "aqua:cli/cli"
@@ -183,6 +230,46 @@ checksum = "sha256:ae64e556ecc240b200f7eba60d550e4bb60d78e860e69dd88c449405b8606
 url = "https://github.com/cli/cli/releases/download/v2.102.0/gh_2.102.0_windows_amd64.zip"
 url_api = "https://api.github.com/repos/cli/cli/releases/assets/599854760"
 provenance = "github-attestations"
+
+[[tools.git-cliff]]
+version = "2.14.2"
+backend = "aqua:orhun/git-cliff"
+specifiers = ["2"]
+
+[tools.git-cliff."platforms.linux-arm64"]
+checksum = "sha256:69e208f6e4baef3a0f9b759d5f44223aa9336b86c691072a3d0c98d35a816e69"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.14.2/git-cliff-2.14.2-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/573483780"
+
+[tools.git-cliff."platforms.linux-arm64-musl"]
+checksum = "sha256:4be21b21ec9699af4d330b224aeba8a41d41d8f5b351ca2da8a9ea2bdc36380f"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.14.2/git-cliff-2.14.2-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/573485334"
+
+[tools.git-cliff."platforms.linux-x64"]
+checksum = "sha256:24f397c733add5390fdceee3a2088588ab0d5f944ce00d34cb7029b888cf2db4"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.14.2/git-cliff-2.14.2-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/573483509"
+
+[tools.git-cliff."platforms.linux-x64-musl"]
+checksum = "sha256:fa21e2fc70046fcfd0e43e5e4613873ab799aff3d9dc8559c00d31b270e417d0"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.14.2/git-cliff-2.14.2-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/573485273"
+
+[tools.git-cliff."platforms.macos-arm64"]
+checksum = "sha256:a0be97e237d440d34c5e508ec21d070b2c85cbb8be48a46a56f9a4e8bd247f05"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.14.2/git-cliff-2.14.2-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/573487203"
+
+[tools.git-cliff."platforms.macos-x64"]
+checksum = "sha256:4e647d2deb152aca1e987f225cf42b080b991dd98f3bce4027ef95446d982ac3"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.14.2/git-cliff-2.14.2-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/573484837"
+
+[tools.git-cliff."platforms.windows-x64"]
+checksum = "sha256:6ece2112b3f4af462190ecbea4aeb1315fff6af415629b597f84319073c31131"
+url = "https://github.com/orhun/git-cliff/releases/download/v2.14.2/git-cliff-2.14.2-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/573487227"
 
 [[tools.gitleaks]]
 version = "8.30.1"
@@ -318,6 +405,53 @@ url = "https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-windows-amd64.
 url_api = "https://api.github.com/repos/jqlang/jq/releases/assets/453012788"
 provenance = "github-attestations"
 
+[[tools.nfpm]]
+version = "2.47.0"
+backend = "aqua:goreleaser/nfpm"
+specifiers = ["2"]
+
+[tools.nfpm."platforms.linux-arm64"]
+checksum = "sha256:1c0f5f2999b9a974bfb04fdb0cc3306096de530ac5dbb25d739cc5f5219c919c"
+url = "https://github.com/goreleaser/nfpm/releases/download/v2.47.0/nfpm_2.47.0_Linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/goreleaser/nfpm/releases/assets/453316744"
+provenance = "cosign"
+
+[tools.nfpm."platforms.linux-arm64-musl"]
+checksum = "sha256:1c0f5f2999b9a974bfb04fdb0cc3306096de530ac5dbb25d739cc5f5219c919c"
+url = "https://github.com/goreleaser/nfpm/releases/download/v2.47.0/nfpm_2.47.0_Linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/goreleaser/nfpm/releases/assets/453316744"
+provenance = "cosign"
+
+[tools.nfpm."platforms.linux-x64"]
+checksum = "sha256:0660ca602b2d2d2ae4781a06c692b3eeb9d437ffea05b831d76e41f4a3188783"
+url = "https://github.com/goreleaser/nfpm/releases/download/v2.47.0/nfpm_2.47.0_Linux_x86_64.tar.gz"
+url_api = "https://api.github.com/repos/goreleaser/nfpm/releases/assets/453316748"
+provenance = "cosign"
+
+[tools.nfpm."platforms.linux-x64-musl"]
+checksum = "sha256:0660ca602b2d2d2ae4781a06c692b3eeb9d437ffea05b831d76e41f4a3188783"
+url = "https://github.com/goreleaser/nfpm/releases/download/v2.47.0/nfpm_2.47.0_Linux_x86_64.tar.gz"
+url_api = "https://api.github.com/repos/goreleaser/nfpm/releases/assets/453316748"
+provenance = "cosign"
+
+[tools.nfpm."platforms.macos-arm64"]
+checksum = "sha256:e8c9d1d9ac218eeed479375143dc46b8d51a2b8dbba8e2f9f15ecc8faa2e404b"
+url = "https://github.com/goreleaser/nfpm/releases/download/v2.47.0/nfpm_2.47.0_Darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/goreleaser/nfpm/releases/assets/453316746"
+provenance = "cosign"
+
+[tools.nfpm."platforms.macos-x64"]
+checksum = "sha256:2b04108f8757313dde92ed729560845aadfb7782887eb6988a5dd96f9c146861"
+url = "https://github.com/goreleaser/nfpm/releases/download/v2.47.0/nfpm_2.47.0_Darwin_x86_64.tar.gz"
+url_api = "https://api.github.com/repos/goreleaser/nfpm/releases/assets/453316747"
+provenance = "cosign"
+
+[tools.nfpm."platforms.windows-x64"]
+checksum = "sha256:788f88a3bba0d89baa639aba54ba28b384958878700d440ce199a7ff4a567f11"
+url = "https://github.com/goreleaser/nfpm/releases/download/v2.47.0/nfpm_2.47.0_Windows_x86_64.zip"
+url_api = "https://api.github.com/repos/goreleaser/nfpm/releases/assets/453316741"
+provenance = "cosign"
+
 [[tools.rumdl]]
 version = "0.2.46"
 backend = "aqua:rvben/rumdl"
@@ -364,6 +498,46 @@ checksum = "sha256:f1949d0971e590bf2c29da7bb02e8fc81c80e010ead32be21b552c7c1c9e0
 url = "https://github.com/rvben/rumdl/releases/download/v0.2.46/rumdl-v0.2.46-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/494553010"
 provenance = "github-attestations"
+
+[[tools.syft]]
+version = "1.54.0"
+backend = "aqua:anchore/syft"
+specifiers = ["1"]
+
+[tools.syft."platforms.linux-arm64"]
+checksum = "sha256:ee6d4566373a05b344bc6b5f1706f14419bf9338ba39ff686e247deefe9b8818"
+url = "https://github.com/anchore/syft/releases/download/v1.54.0/syft_1.54.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/anchore/syft/releases/assets/604117598"
+
+[tools.syft."platforms.linux-arm64-musl"]
+checksum = "sha256:ee6d4566373a05b344bc6b5f1706f14419bf9338ba39ff686e247deefe9b8818"
+url = "https://github.com/anchore/syft/releases/download/v1.54.0/syft_1.54.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/anchore/syft/releases/assets/604117598"
+
+[tools.syft."platforms.linux-x64"]
+checksum = "sha256:54a87372498168b2d033e876fd41fa4e8035b872699e525a57046e1f2f09c860"
+url = "https://github.com/anchore/syft/releases/download/v1.54.0/syft_1.54.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/anchore/syft/releases/assets/604117627"
+
+[tools.syft."platforms.linux-x64-musl"]
+checksum = "sha256:54a87372498168b2d033e876fd41fa4e8035b872699e525a57046e1f2f09c860"
+url = "https://github.com/anchore/syft/releases/download/v1.54.0/syft_1.54.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/anchore/syft/releases/assets/604117627"
+
+[tools.syft."platforms.macos-arm64"]
+checksum = "sha256:7e0bdad94c569fc6d5785c9a657bbae3d4c4e140ccb5eace3d0b5b6bc2b6dbcf"
+url = "https://github.com/anchore/syft/releases/download/v1.54.0/syft_1.54.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/anchore/syft/releases/assets/604117599"
+
+[tools.syft."platforms.macos-x64"]
+checksum = "sha256:22b71725e388a4c0de385249c4bc1044f78a870f2894f34b43ba957e792145d7"
+url = "https://github.com/anchore/syft/releases/download/v1.54.0/syft_1.54.0_darwin_amd64.tar.gz"
+url_api = "https://api.github.com/repos/anchore/syft/releases/assets/604117610"
+
+[tools.syft."platforms.windows-x64"]
+checksum = "sha256:77f4b472779058e819eec9a054753a5071a996aaa40db31a290f8b256748593f"
+url = "https://github.com/anchore/syft/releases/download/v1.54.0/syft_1.54.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/anchore/syft/releases/assets/604117608"
 
 [[tools.yq]]
 version = "4.53.6"
