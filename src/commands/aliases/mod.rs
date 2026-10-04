@@ -54,7 +54,10 @@ fn parse_words(args: &[String]) -> Result<Words, CliError> {
 /// # Errors
 /// - [`CliError::Unsupported`] for an unknown `--option`.
 /// - Whatever the listing, creation or deletion fails with.
+///
+/// Every form first creates `$NVM_DIR/alias/lts`, as nvm.sh does.
 pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
+    ensure_lts_directory(context);
     let Words {
         name,
         target,
@@ -69,6 +72,14 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
         (Some(name), Some(target)) => alias::run_with_colors(context, &name, &target, no_colors),
         (Some(name), None) => list(context, Some(&name), no_colors),
         (None, _) => list(context, None, no_colors),
+    }
+}
+
+/// nvm.sh's `nvm alias` starts with `mkdir -p "$NVM_DIR/alias/lts"`, whatever
+/// its arguments. A failure is ignored: the command goes on without it.
+fn ensure_lts_directory(context: &Context<'_>) {
+    if let Ok(alias_dir) = context.alias_dir() {
+        let _ = context.fs.create_dir_all(&alias_dir.join("lts"));
     }
 }
 

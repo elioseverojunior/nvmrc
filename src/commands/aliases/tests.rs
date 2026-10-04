@@ -247,3 +247,16 @@ fn hidden_files_and_directories_are_not_aliases() {
     assert!(lines(&output).iter().all(|line| !line.contains("DS_Store")));
     assert!(lines(&output).iter().all(|line| !line.starts_with("other")));
 }
+
+#[test]
+fn every_alias_command_creates_the_lts_directory_first() {
+    let cases: [&[&str]; 5] = [&[], &["--no-colors"], &["work"], &["new", "20"], &["a#b", "20"]];
+    for words in cases {
+        let fs = FakeFileSystem::default().with_file("/n/versions/node/v20.1.0/bin/node", "");
+        let env = FakeEnv::default().with_var("NVM_DIR", "/n");
+        let args: Vec<String> = words.iter().map(|word| (*word).to_owned()).collect();
+        let _ = run(&Context::new(&fs, &env), &args);
+        let lts = crate::ports::FileSystem::read_dir(&fs, Path::new("/n/alias/lts"));
+        assert!(lts.is_ok(), "{words:?}");
+    }
+}
