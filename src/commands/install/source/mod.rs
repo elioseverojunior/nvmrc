@@ -14,6 +14,9 @@ use crate::domain::source_build::{Compiler, clang_version, compiler, make};
 use crate::domain::version::Version;
 use crate::ports::Invocation;
 
+/// What `build` says when this machine has no source archive to build.
+const NO_SOURCE_BUILD: &str = "Installing from source is not supported on this platform.";
+
 /// What the build needs from the command line and the environment.
 pub struct Build<'a> {
     pub version: &'a Version,
@@ -81,7 +84,10 @@ pub fn build(
     }
     let os = context.platform().map_or(Os::Linux, |platform| platform.os);
     let toolchain = choose_compiler(context, os, transcript);
-    let artifact = Artifact::source_of(context, job.version).ok_or(BuildFailed)?;
+    let Some(artifact) = Artifact::source_of(context, job.version) else {
+        transcript.err(NO_SOURCE_BUILD);
+        return Err(BuildFailed);
+    };
     let tarball =
         fetch(context, &artifact, job.version, job.offline, transcript).map_err(|_| BuildFailed)?;
     let files = artifact.files();

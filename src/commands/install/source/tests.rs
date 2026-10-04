@@ -249,3 +249,15 @@ fn old_node_gets_a_shell_for_make_and_the_bsds_use_gmake() {
     let (result, _, _) = world.build(&[], freebsd);
     assert_eq!(result, Ok(()));
 }
+
+#[test]
+fn a_platform_without_source_builds_says_so() {
+    let world = World::new();
+    let (result, _, stderr) = world.build(&[], None);
+    assert_eq!(result, Err(BuildFailed));
+    assert_eq!(
+        stderr,
+        "Installing from source is not supported on this platform."
+    );
+    assert!(world.ran().is_empty());
+}
