@@ -69,7 +69,8 @@ impl Invocation {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Completed {
     pub success: bool,
-    /// The exit status, when the program ended by itself.
+    /// The exit status; `128 + n` for a program killed by signal `n`
+    /// (Unix), as a shell's `$?`. `None` only from fakes.
     pub code: Option<i32>,
     pub stdout: String,
     pub stderr: String,

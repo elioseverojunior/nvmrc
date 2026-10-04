@@ -42,7 +42,7 @@ fn path_with_prefix(prefix: &Path, invocation: &Invocation) -> io::Result<OsStri
 }
 
 #[cfg(unix)]
-fn exit_code(status: ExitStatus) -> i32 {
+pub(super) fn exit_code(status: ExitStatus) -> i32 {
     use std::os::unix::process::ExitStatusExt;
     status
         .code()
@@ -51,7 +51,7 @@ fn exit_code(status: ExitStatus) -> i32 {
 }
 
 #[cfg(not(unix))]
-fn exit_code(status: ExitStatus) -> i32 {
+pub(super) fn exit_code(status: ExitStatus) -> i32 {
     status.code().unwrap_or(1)
 }
 
