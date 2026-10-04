@@ -20,6 +20,7 @@ use crate::domain::colors::Palette;
 use crate::domain::listing::RowKind;
 use crate::domain::listing::colored::{paint_row, paint_system_row};
 use crate::domain::version::{Flavor, Version, VersionPattern};
+use crate::domain::version_prefix::without_trailing_group_dot;
 use crate::error::{CliError, NvmExitCode};
 
 mod options;
@@ -189,7 +190,7 @@ fn by_name(
     if is_alias {
         return alias_selection(context, name);
     }
-    let Ok(pattern) = name.parse::<VersionPattern>() else {
+    let Ok(pattern) = without_trailing_group_dot(name).parse::<VersionPattern>() else {
         return Ok(nothing_found());
     };
     Ok(some_or_nothing(versions(

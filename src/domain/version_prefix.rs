@@ -16,6 +16,17 @@ pub fn with_v_prefix(name: &str) -> String {
     }
 }
 
+/// `nvm_ls`'s treatment of a pattern with one or two version groups and a
+/// trailing dot: `v0.1.` is `v0.1` and `0.` is `0`. With three groups the
+/// dot stays (`v0.1.2.` matches nothing), as it does in nvm.sh.
+#[must_use]
+pub fn without_trailing_group_dot(pattern: &str) -> &str {
+    match pattern.strip_suffix('.') {
+        Some(rest) if rest.matches('.').count() <= 1 => rest,
+        _ => pattern,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -32,5 +43,14 @@ mod tests {
         for name in ["lts/iron", "node", "iojs", "iojs-", "\u{221e}", ""] {
             assert_eq!(with_v_prefix(name), name);
         }
+    }
+
+    #[test]
+    fn one_trailing_dot_after_one_or_two_groups_is_dropped() {
+        assert_eq!(without_trailing_group_dot("v0.1."), "v0.1");
+        assert_eq!(without_trailing_group_dot("0."), "0");
+        assert_eq!(without_trailing_group_dot("iojs-v3."), "iojs-v3");
+        assert_eq!(without_trailing_group_dot("v0.1"), "v0.1");
+        assert_eq!(without_trailing_group_dot("v0.1.2."), "v0.1.2.");
     }
 }

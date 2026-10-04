@@ -254,3 +254,15 @@ fn a_system_node_that_does_not_answer_is_listed_without_a_version() {
     let output = ls_on(&fs, "/other", None);
     assert_eq!(output, Output::stdout("->       system *"));
 }
+
+#[test]
+fn a_pattern_ending_with_a_dot_lists_that_line() {
+    assert_eq!(
+        ls(Some("v20.1.")),
+        Output::stdout(rows(&["        v20.1.0 *"]))
+    );
+    assert_eq!(
+        ls(Some("20.")),
+        Output::stdout(rows(&["        v20.1.0 *", "       v20.10.0 *"]))
+    );
+}
