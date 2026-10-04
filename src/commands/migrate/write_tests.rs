@@ -75,7 +75,10 @@ fn an_undo_of_a_file_edited_while_the_question_waits_is_refused() {
 #[test]
 fn a_file_refused_by_its_check_leaves_no_backup() {
     let fs = FakeFileSystem::default().with_file(BASHRC, INSTALL_SH);
-    let process = checkers().with_failure("bash");
+    let process =
+        checkers()
+            .with_failure("bash")
+            .with_run("bash", &format!("-n {BASHRC}"), true, "");
     let prompt = crate::fakes::FakePrompt::unavailable();
     let env = home_env();
     let setup = Setup {

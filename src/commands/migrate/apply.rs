@@ -29,6 +29,15 @@ pub fn apply_all(
 /// Writes `change` (see [`replace_with_backup`]); whether it was written.
 fn apply(context: &Context<'_>, change: &Change, transcript: &mut Transcript) -> bool {
     let check = SyntaxCheck::new(context.process(), &change.path);
+    if !check.original_passes(&change.path) {
+        transcript.err(format!(
+            "nvm migrate: {}: the file does not pass `{}` before the edit; left unchanged{}",
+            change.path.display(),
+            check.command_line(),
+            check.complaint()
+        ));
+        return false;
+    }
     let written = replace_with_backup(context, change, &|temporary| check.verify(temporary));
     report(change, &check, &written, transcript);
     written.is_ok()
@@ -50,8 +59,9 @@ fn report(
     match written {
         Ok(backup) => transcript.out(format!("migrated {path} (backup: {})", backup.display())),
         Err(Refusal::Failed(_)) if check.rejected() => transcript.err(format!(
-            "nvm migrate: {path}: the edited file would not pass `{}`; left unchanged",
-            check.command_line()
+            "nvm migrate: {path}: the edited file would not pass `{}`; left unchanged{}",
+            check.command_line(),
+            check.complaint()
         )),
         Err(refusal) => transcript.err(format!("nvm migrate: {path}: {refusal}")),
     }

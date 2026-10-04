@@ -24,6 +24,7 @@ impl FakeProcess {
         let output = ProcessOutput {
             success: true,
             stdout: stdout.to_owned(),
+            stderr: String::new(),
         };
         self.outputs.insert(PathBuf::from(program), output);
         self
@@ -34,6 +35,20 @@ impl FakeProcess {
         let output = ProcessOutput {
             success: false,
             stdout: String::new(),
+            stderr: String::new(),
+        };
+        self.outputs.insert(PathBuf::from(program), output);
+        self
+    }
+
+    /// `run` of `program`, whatever its arguments, fails after printing
+    /// `stderr`; [`Self::with_run`] still takes precedence.
+    #[must_use]
+    pub fn with_failure_saying(mut self, program: &str, stderr: &str) -> Self {
+        let output = ProcessOutput {
+            success: false,
+            stdout: String::new(),
+            stderr: stderr.to_owned(),
         };
         self.outputs.insert(PathBuf::from(program), output);
         self
@@ -48,6 +63,7 @@ impl FakeProcess {
         let output = ProcessOutput {
             success,
             stdout: stdout.to_owned(),
+            stderr: String::new(),
         };
         self.runs
             .insert((PathBuf::from(program), args.to_owned()), output);

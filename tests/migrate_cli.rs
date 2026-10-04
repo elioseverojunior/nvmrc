@@ -189,7 +189,7 @@ nvm migrate: 1 manual finding(s) left: run `nvm doctor`\n"
 }
 
 #[test]
-fn an_edit_that_fails_the_syntax_check_is_refused() {
+fn a_file_that_already_fails_the_syntax_check_is_left_alone_and_the_checker_is_quoted() {
     let home = TempDir::new().unwrap();
     let bashrc = home.path().join(".bashrc");
     let original = "[ -s \"$HOME/.nvm/nvm.sh\" ] && \\. \"$HOME/.nvm/nvm.sh\"\n\
@@ -198,10 +198,12 @@ echo \"never closed\n";
     let output = nvm(home.path(), &["migrate", "--yes"]);
     assert_eq!(output.status.code(), Some(1));
     assert!(
-        text(&output.stderr).contains("would not pass `bash -n`; left unchanged"),
+        text(&output.stderr)
+            .contains("the file does not pass `bash -n` before the edit; left unchanged:\n  "),
         "{}",
         text(&output.stderr)
     );
+    assert!(text(&output.stderr).contains("unexpected EOF"));
     assert_eq!(fs::read(&bashrc).unwrap(), original.as_bytes());
     assert!(backups(home.path(), ".bashrc").is_empty());
 }

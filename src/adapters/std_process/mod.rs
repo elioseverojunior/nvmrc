@@ -1,6 +1,6 @@
 use std::io::{self, Read};
 use std::path::Path;
-use std::process::{Child, ChildStdout, Command, ExitStatus, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -11,8 +11,8 @@ use crate::shell::{DESCRIPTOR_VARIABLE, DIALECT_VARIABLE};
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 /// Runs real programs, bounded so that a misbehaving one cannot hang or
-/// flood `nvm`: stdin is closed, stderr is discarded, at most `output_cap`
-/// bytes of stdout are kept, and a program still running after `timeout` is
+/// flood `nvm`: stdin is closed, at most `output_cap` bytes of stdout and of
+/// stderr are kept, and a program still running after `timeout` is
 /// killed, which fails the run with [`io::ErrorKind::TimedOut`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StdProcess {
@@ -77,20 +77,23 @@ impl Process for StdProcess {
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| io::Error::other("no stdout pipe"))?;
-        let reader = read_in_background(stdout, self.output_cap);
+        let stdout = read_in_background(pipe(child.stdout.take())?, self.output_cap);
+        let stderr = read_in_background(pipe(child.stderr.take())?, self.output_cap);
         let status = wait_until(&mut child, deadline)?;
-        let bytes = receive_until(&reader, deadline)??;
+        let stdout = receive_until(&stdout, deadline)??;
+        let stderr = receive_until(&stderr, deadline)??;
         Ok(ProcessOutput {
             success: status.success(),
-            stdout: String::from_utf8_lossy(&bytes).into_owned(),
+            stdout: String::from_utf8_lossy(&stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&stderr).into_owned(),
         })
     }
+}
+
+fn pipe<R>(pipe: Option<R>) -> io::Result<R> {
+    pipe.ok_or_else(|| io::Error::other("no pipe"))
 }
 
 /// `command` without the variables of the `nvm` function's channel (its
@@ -122,7 +125,10 @@ fn collect<R: Read + Send + 'static>(pipe: Option<R>) -> thread::JoinHandle<Stri
 
 /// Reads at most `cap` bytes on another thread. The thread is never joined:
 /// a grandchild holding the pipe open must not hold `nvm` up with it.
-fn read_in_background(stdout: ChildStdout, cap: usize) -> Receiver<io::Result<Vec<u8>>> {
+fn read_in_background<R: Read + Send + 'static>(
+    stdout: R,
+    cap: usize,
+) -> Receiver<io::Result<Vec<u8>>> {
     let (sender, receiver) = mpsc::channel();
     thread::spawn(move || {
         let mut bytes = Vec::new();

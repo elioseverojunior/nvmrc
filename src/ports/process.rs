@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 pub struct ProcessOutput {
     pub success: bool,
     pub stdout: String,
+    /// What the program wrote on stderr, capped like `stdout`.
+    pub stderr: String,
 }
 
 /// A program to run to completion, with no time limit: `npm install`,

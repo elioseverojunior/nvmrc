@@ -135,3 +135,9 @@ fn execute_reports_128_plus_the_signal_that_killed_the_program() {
     let done = execute("kill -9 $$");
     assert_eq!((done.success, done.code), (false, Some(137)));
 }
+
+#[test]
+fn run_keeps_what_the_program_said_on_stderr() {
+    let output = shell(&StdProcess::default(), "echo oops >&2; exit 2").unwrap();
+    assert_eq!((output.success, output.stderr.as_str()), (false, "oops\n"));
+}

@@ -53,6 +53,7 @@ fn the_edited_file_is_checked_with_its_temporary_path() {
     let temporary = format!("-n {HOME}/.nvmrc-tmp-{}-0", std::process::id());
     let process = checkers()
         .with_failure("bash")
+        .with_run("bash", &format!("-n {BASHRC}"), true, "")
         .with_run("bash", &temporary, true, "");
     let prompt = FakePrompt::unavailable();
     let env = home_env();

@@ -48,7 +48,10 @@ fn a_file_that_fails_its_check_is_refused_and_the_others_are_migrated() {
     let fs = FakeFileSystem::default()
         .with_file(BASHRC, INSTALL_SH)
         .with_file(ZSHRC, INSTALL_SH);
-    let process = checkers().with_failure("bash");
+    let process =
+        checkers()
+            .with_failure("bash")
+            .with_run("bash", &format!("-n {BASHRC}"), true, "");
     let output = run_with(&fs, &process);
     assert_eq!(output.status, NvmExitCode::Failure);
     assert_eq!(
@@ -133,4 +136,38 @@ fn manual_findings_left_after_a_migration_are_counted() {
         )
     );
     assert_eq!(output.status, NvmExitCode::Success);
+}
+
+#[test]
+fn a_file_already_broken_is_left_alone_and_said_so() {
+    let fs = FakeFileSystem::default().with_file(BASHRC, INSTALL_SH);
+    let complaint = "x: line 9: syntax error: unexpected end of file\n";
+    let process = checkers().with_failure_saying("bash", complaint);
+    let output = run_with(&fs, &process);
+    assert_eq!(output.status, NvmExitCode::Failure);
+    assert_eq!(
+        output.stderr,
+        format!(
+            "nvm migrate: {BASHRC}: the file does not pass `bash -n` before the edit; \
+left unchanged:\n  x: line 9: syntax error: unexpected end of file"
+        )
+    );
+    assert_eq!(read(&fs, BASHRC), INSTALL_SH);
+    assert!(fs.replaced().is_empty());
+}
+
+#[test]
+fn a_refused_edit_shows_what_the_checker_said() {
+    let fs = FakeFileSystem::default().with_file(BASHRC, INSTALL_SH);
+    let process = checkers()
+        .with_failure_saying("bash", "t: line 3: syntax error near `fi'\n")
+        .with_run("bash", &format!("-n {BASHRC}"), true, "");
+    let output = run_with(&fs, &process);
+    assert_eq!(
+        output.stderr,
+        format!(
+            "nvm migrate: {BASHRC}: the edited file would not pass `bash -n`; \
+left unchanged:\n  t: line 3: syntax error near `fi'"
+        )
+    );
 }
