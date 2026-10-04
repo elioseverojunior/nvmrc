@@ -6,8 +6,8 @@ scripts, CI and tools call) and `nvm-exec`.
 
 nvmrc uses the same `$NVM_DIR` layout as nvm, so versions installed by either
 tool work with both. It follows nvm.sh's commands, options, messages and exit
-codes, checked against the test scenarios of the author's fork of nvm (`tests/compat/`); the
-deviations are in [docs/deviations.md](docs/deviations.md).
+codes, checked against the test scenarios of the author's fork of nvm
+(`tests/compat/`); the deviations are in [docs/deviations.md](docs/deviations.md).
 
 ## Install
 
