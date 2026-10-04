@@ -3,6 +3,13 @@ name = "nvmrc"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85.0"
+description = "A native Rust port of nvm, the Node Version Manager"
+license = "MIT"
+repository = "https://github.com/elioseverojunior/nvmrc"
+keywords = ["nvm", "node", "nodejs", "version-manager", "shell"]
+categories = ["command-line-utilities", "development-tools"]
+# Ready for crates.io, but not published until the owner decides to.
+publish = false
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
