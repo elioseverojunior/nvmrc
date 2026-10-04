@@ -175,6 +175,8 @@ fn no_colors_and_the_separator_are_accepted() {
     let options = parse_options(&words("--no-colors -- 18")).unwrap();
     assert_eq!(options.pattern.as_deref(), Some("18"));
     assert_eq!(options.lts, None);
+    assert!(options.no_colors);
+    assert!(!parse_options(&words("18")).unwrap().no_colors);
 }
 
 #[test]

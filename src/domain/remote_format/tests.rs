@@ -1,3 +1,4 @@
+use super::latest::is_old_unstable;
 use super::*;
 use crate::domain::fixtures::{iojs_releases, node_releases};
 use crate::domain::remote::{Query, list};

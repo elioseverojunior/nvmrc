@@ -1,67 +1,63 @@
 //! `nvm ls-remote [pattern]`: the releases a mirror offers, one row each.
 //!
-//! Output is always plain, as `nvm.sh` prints when stdout is not a terminal.
+//! The rows and their annotations are colored like `nvm_print_versions` when
+//! stdout can show colors and `--no-colors` is not given; `NVM_NO_COLORS` in
+//! the environment is ignored, as `nvm.sh` shadows it.
 //! Every flavor that is listed is downloaded again each time, and the `lts/*`
 //! aliases are refreshed from the node index, as in `nvm.sh`.
 
 mod named_aliases;
+mod options;
+
+pub use options::{Options, parse_options};
 
 use crate::commands::Output;
+use crate::commands::color_policy::{self, ColorPolicy};
 use crate::commands::current;
 use crate::commands::remote_index::{fetch_if, lts_filter};
 use crate::context::Context;
+use crate::domain::colors::Palette;
 use crate::domain::listing::{RowKind, format_row};
 use crate::domain::remote::{Query, RemoteRow, list, scope};
-use crate::domain::remote_format::{FormatInput, format_remote_rows};
+use crate::domain::remote_format::{FormatInput, RemoteColors, paint_remote_rows};
 use crate::domain::version::Flavor;
 use crate::error::{CliError, NvmExitCode};
 
-/// The command line of `nvm ls-remote`, as `nvm.sh` reads it: the first
-/// non-empty word is the pattern, `lts/*` and `lts/<name>` mean the LTS
-/// filter, and `--no-colors` is accepted (output is always plain).
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct Options {
-    pub pattern: Option<String>,
-    pub lts: Option<String>,
+/// The colors of this run, decided once: the policy, the palette and the
+/// single `Invalid color code` warning of an invalid `NVM_COLORS`.
+struct Colors {
+    policy: ColorPolicy,
+    palette: Palette,
+    warning: Option<String>,
 }
 
-/// # Errors
-/// [`CliError::Unsupported`] for an unknown `--option`.
-pub fn parse_options(args: &[String]) -> Result<Options, CliError> {
-    let mut options = Options::default();
-    for arg in args {
-        match arg.as_str() {
-            "--" | "--no-colors" => {}
-            "--lts" => options.lts = Some("*".to_owned()),
-            option if option.starts_with("--lts=") => {
-                options.lts = Some(option["--lts=".len()..].to_owned());
-            }
-            option if option.starts_with("--") => {
-                let message = format!("Unsupported option \"{option}\".");
-                return Err(CliError::Unsupported(message));
-            }
-            word if options.pattern.is_none() && !word.is_empty() => {
-                options.pattern = Some(word.to_owned());
-                options.take_lts_pattern();
-            }
-            _ => {}
+impl Colors {
+    fn detect(context: &Context<'_>, no_colors: bool) -> Self {
+        let (palette, warning) = color_policy::palette(context);
+        Self {
+            policy: color_policy::detect(context, no_colors),
+            palette,
+            warning,
         }
     }
-    Ok(options)
-}
 
-impl Options {
-    /// `lts/*` and `lts/<name>` given as the pattern are the LTS filter,
-    /// unless `--lts` was already given.
-    fn take_lts_pattern(&mut self) {
-        if self.lts.as_deref().is_some_and(|lts| !lts.is_empty()) {
-            return;
+    fn remote(&self) -> Option<RemoteColors<'_>> {
+        self.policy.enabled.then_some(RemoteColors {
+            palette: &self.palette,
+            italics: self.policy.italics,
+        })
+    }
+
+    /// `nvm_print_versions` reads the palette for every listing, the `N/A`
+    /// one included, so the warning follows whatever else went to stderr.
+    fn warn(&self, mut output: Output) -> Output {
+        if let Some(warning) = &self.warning {
+            if !output.stderr.is_empty() {
+                output.stderr.push('\n');
+            }
+            output.stderr.push_str(warning);
         }
-        let Some(name) = self.pattern.as_deref().and_then(|p| p.strip_prefix("lts/")) else {
-            return;
-        };
-        self.lts = Some(name.to_owned());
-        self.pattern = Some(String::new());
+        output
     }
 }
 
@@ -70,6 +66,12 @@ impl Options {
 /// cannot be found.
 pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
     let options = parse_options(args)?;
+    let colors = Colors::detect(context, options.no_colors);
+    let output = listing(context, &options, &colors)?;
+    Ok(colors.warn(output))
+}
+
+fn listing(context: &Context<'_>, options: &Options, colors: &Colors) -> Result<Output, CliError> {
     let mut query = Query {
         pattern: options.pattern.clone().filter(|text| !text.is_empty()),
         lts: options.lts.clone().filter(|text| !text.is_empty()),
@@ -91,7 +93,7 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
         return Ok(not_available(warnings));
     }
     let plain = listing.missing || query.lts.is_some() || options.pattern.is_some();
-    let lines = format_rows(context, &listing.rows, plain)?;
+    let lines = format_rows(context, &listing.rows, plain, colors)?;
     Ok(printed(lines, &warnings, listing.missing))
 }
 
@@ -128,6 +130,7 @@ fn format_rows(
     context: &Context<'_>,
     rows: &[RemoteRow],
     plain: bool,
+    colors: &Colors,
 ) -> Result<Vec<String>, CliError> {
     let installed = context.installed_versions()?;
     let current = current::detect(context)?.to_string();
@@ -136,14 +139,17 @@ fn format_rows(
     } else {
         named_aliases::collect(context)?
     };
-    Ok(format_remote_rows(&FormatInput {
+    let input = FormatInput {
         rows,
         installed: &installed,
         current: &current,
         latest_alias: (!plain).then_some("node"),
         named_aliases: &named,
-    }))
+    };
+    Ok(paint_remote_rows(&input, colors.remote()))
 }
 
+#[cfg(test)]
+mod colored_tests;
 #[cfg(test)]
 mod tests;
