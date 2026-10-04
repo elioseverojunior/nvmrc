@@ -11332,13 +11332,30 @@ Each is pinned by a test and is for the Plan 9 compatibility contract.
 - **Relative `source` paths resolve from the sourcing file's directory** (the
   shell uses `$PWD`): an Info note. Unresolvable paths are never guessed.
 - **Only loader and completion lines are migrated**, as `# [nvmrc-migrated] ...`
-  comments, never deleted; `export NVM_DIR=` stays.
+  comments, never deleted; `export NVM_DIR=` stays. Changed by the fix wave:
+  only a line that runs nothing but the loader (an optional `[ -s ... ] &&`
+  guard, a one-line `if`) is migrated; a loader sharing its line with other
+  commands is a manual `CompoundLoader` finding.
+- **Nesting no longer uses indentation** (fix wave): any line inside an open
+  `if`/`case`/loop/function/brace block, and any line continued with `\`, is
+  manual, so the init block is only anchored at the top level.
+- **A begin marker without an end marker is not a block** (fix wave): it hides
+  nothing from the scan.
 - **The load line calls the `nvmrc` binary**, not `nvm init`.
-- **The shell of the block is kept from an existing init line.**
+- **The shell of the block is kept from an existing init line.** Fix wave:
+  `.profile`, `$ENV` and other files not named for a shell always get POSIX
+  `sh` (or an explicit `sh`, `dash`, `ksh`), never `$SHELL`; one function maps
+  a file name to its block shell, its syntax checker and doctor's patch.
 - **The diff is part of the prompt when interactive.**
-- **Backups do not copy permissions** (a regular file with the default mode next
-  to the link); the atomic replace of the profile keeps its mode and symlink.
-- **`--undo` leaves the backups**, so an undo can itself be undone.
+- **Backups keep the profile's permissions** (fix wave, was the default mode):
+  created with `create_new` and synced, `-N` suffixed when the second is taken,
+  only once the check passed and the file still holds what the diff showed
+  (else nothing is written), and removed if the rename fails.
+- **`--undo` backs the current content up first** (fix wave), so an undo can
+  itself be undone.
+- **Unread files are not clean** (fix wave): a profile that is not UTF-8 text
+  is a warning and exit 1 in `doctor` and `migrate`. Control bytes of profile
+  text are shown in caret notation; an absolute path heads a diff as is.
 - **A candidate that fails the syntax check is refused**, but when the checker
   is not installed the file is still written, with a warning: refusing would
   block every user who lacks that shell.
