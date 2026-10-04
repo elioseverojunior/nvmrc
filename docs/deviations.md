@@ -141,7 +141,10 @@ own:
 
 ## Platforms
 
-v1 runs on Linux and macOS (x86_64 and arm64). Not handled:
+v1 runs on Linux and macOS (x86_64 and arm64). Windows is not supported:
+the shell channel is an inherited file descriptor, `nvm-exec` replaces
+itself with `exec`, and installs set Unix permissions, so building for
+Windows stops with a compile error naming this file. Not handled:
 
 - AIX gets `.tar.xz` (nodejs.org publishes `.tar.gz` there).
 - armv6 and Rosetta are not detected as nvm.sh does.
