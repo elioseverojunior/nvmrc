@@ -3,6 +3,7 @@ pub mod aliases;
 pub mod auto;
 pub mod cache;
 pub mod color_policy;
+pub mod conflict;
 pub mod current;
 pub mod deactivate;
 pub mod exec;

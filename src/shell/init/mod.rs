@@ -47,7 +47,8 @@ pub enum Shell {
     Fish,
 }
 
-const SHELLS: [Shell; 6] = [
+/// Every shell, in the order `nvm init` lists them.
+pub const SHELLS: [Shell; 6] = [
     Shell::Bash,
     Shell::Zsh,
     Shell::Sh,

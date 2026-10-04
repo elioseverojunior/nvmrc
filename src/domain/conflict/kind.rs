@@ -8,7 +8,9 @@ pub enum Severity {
     /// Worth knowing, never a conflict (an `NVM_DIR` export, a `source` whose
     /// path cannot be followed).
     Info,
-    /// Breaks once nvm.sh is gone (a call of an nvm.sh helper), not a conflict.
+    /// Not a conflict, but worth a manual fix: a call of an nvm.sh helper
+    /// (breaks once nvm.sh is gone), or oh-my-zsh's `nvm` plugin (it returns
+    /// at once while nvmrc's `nvm` binary is on `PATH`, digest finding 0.5).
     Hint,
     /// nvm.sh (or something loading it) competes with nvmrc's `nvm`.
     Conflict,
@@ -28,7 +30,8 @@ pub enum Kind {
     LazyStub,
     /// `unset -f nvm`, `unfunction nvm`: a self-removing stub.
     Unset,
-    /// `nvm` in oh-my-zsh's `plugins=( ... )`, or its `zstyle`.
+    /// `nvm` in oh-my-zsh's `plugins=( ... )`, or its `zstyle`: a hint, since
+    /// the plugin does nothing while nvmrc's binary is on `PATH`.
     OmzPlugin,
     /// lukechilds/zsh-nvm.
     ZshNvm,
@@ -48,7 +51,7 @@ impl Kind {
     pub const fn severity(self) -> Severity {
         match self {
             Self::NvmDirExport | Self::NotFollowed => Severity::Info,
-            Self::HelperCall => Severity::Hint,
+            Self::HelperCall | Self::OmzPlugin => Severity::Hint,
             _ => Severity::Conflict,
         }
     }

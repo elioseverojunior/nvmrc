@@ -15,11 +15,11 @@ const ALL: [Kind; 11] = [
 ];
 
 #[test]
-fn severity_is_info_for_exports_and_unfollowed_sources_hint_for_helpers() {
+fn severity_is_info_for_exports_and_unfollowed_sources_hint_for_helpers_and_omz() {
     for kind in ALL {
         let expected = match kind {
             Kind::NvmDirExport | Kind::NotFollowed => Severity::Info,
-            Kind::HelperCall => Severity::Hint,
+            Kind::HelperCall | Kind::OmzPlugin => Severity::Hint,
             _ => Severity::Conflict,
         };
         assert_eq!(kind.severity(), expected, "{kind:?}");
@@ -57,4 +57,11 @@ fn labels_name_what_was_found() {
     assert_eq!(Kind::LazyLoader.label(), "lazy loader");
     assert_eq!(Kind::OmzPlugin.label(), "oh-my-zsh nvm plugin");
     assert_eq!(Kind::NvmDirExport.label(), "NVM_DIR export");
+}
+
+#[test]
+fn the_omz_plugin_is_a_hint_because_the_binary_on_path_neutralises_it() {
+    assert_eq!(Kind::OmzPlugin.severity(), Severity::Hint);
+    assert!(!Kind::OmzPlugin.is_conflict());
+    assert!(!Kind::OmzPlugin.is_auto_migratable());
 }
