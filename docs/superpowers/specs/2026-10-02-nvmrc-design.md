@@ -210,10 +210,15 @@ same text as `nvm.sh` wherever a test compares it. Structured logs use
 
 ### 7.2 Two levels of checking
 
-- **Runtime (cheap, always on):** the `init` snippet exports `NVMRC_SHELL=1`
-  and the binary checks whether `nvm.sh` looks active (`NVM_BIN`, the type of
-  `nvm`). On conflict it warns once per session on stderr with the cause and
-  the fix command. It never fails a command by itself.
+- **Runtime (cheap, interactive shells only):** the binary cannot see shell
+  functions, so the check lives in the `init` snippet. Once, before it
+  defines its own `nvm`, the snippet tests with the shell's builtins whether
+  nvm.sh's helpers are loaded (`type nvm_has`) or `nvm` already is a
+  function that is not nvmrc's (a lazy stub); only then it runs the hidden
+  `nvm __conflict <helpers|function>`, which prints the cause and the fix
+  commands on stderr. It never fails the init; a second init stays silent.
+  The `NVM_CD_FLAGS` hint is not used. A `source nvm.sh` that runs after the
+  init is not seen at runtime: only `nvm doctor` finds it.
 - **On disk (`nvm doctor`, read-only):** scans the profile files and files
   they source (depth 2) and lists each hit with file and line.
 
@@ -229,17 +234,18 @@ same text as `nvm.sh` wherever a test compares it. Structured logs use
 Rules: idempotent via `# >>> nvmrc init >>>` / `# <<< nvmrc init <<<`
 markers; reversible (`--undo` restores the latest backup); old lines are
 commented as `# [nvmrc-migrated] ...`, never deleted; `$NVM_DIR` data is never
-touched. Lazy-loader files (source 3) are never edited automatically: the
-exact snippet and a suggested patch are shown, and the file is changed only
-with an explicit `--yes` for that file.
+touched. Lazy-loader files (source 3) are never edited: the exact lines,
+the manual fix and a suggested patch are shown. The load line written is
+`eval "$(nvmrc init <shell>)"` (fish: `nvmrc init fish | source`): the
+`nvmrc` binary by name, which an `nvm` function cannot intercept.
 
 ### 7.4 Scanning engine
 
-Detection uses the ripgrep library crates (`grep-regex`, `grep-searcher`)
-behind a `LineScanner` port. The domain owns a single `RuleSet` table; the
-adapter supplies line numbers and binary/encoding handling. Tests feed bytes
-through the in-memory `FileSystem` using `search_slice`. The `ignore` walker
-is excluded from v1 (YAGNI): only a closed list of files is scanned.
+Detection uses no ripgrep crates and no `LineScanner` port: the rules are
+line patterns hand-written in the domain (the crate has no regex engine),
+table-driven and unit-tested, and the scanner reads the files through the
+`FileSystem` port. The `ignore` walker is excluded from v1 (YAGNI): only a
+closed list of files is scanned.
 
 ## 8. Testing
 
@@ -269,9 +275,10 @@ Linux matrix. Commits follow Conventional Commits and are GPG-signed.
 
 ## 10. Dependencies (v1)
 
-`clap`, `thiserror`, `anyhow`, `ureq` (blocking HTTP), `tracing`, `grep-regex`
-and `grep-searcher`. Checksums and archive extraction crates are chosen in the
-implementation plan. MSRV is 1.85 as declared in `Cargo.toml`.
+`clap`, `thiserror`, `anyhow`, `ureq` (blocking HTTP) and `tracing` (no
+ripgrep crates: the conflict rules are hand-written, see 7.4). Checksums and
+archive extraction crates are chosen in the implementation plan. MSRV is
+1.85 as declared in `Cargo.toml`.
 
 ## 11. Implementation order (v1)
 

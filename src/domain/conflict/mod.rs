@@ -20,6 +20,7 @@ mod lexer;
 mod nesting;
 mod plugins;
 mod rules;
+mod runtime;
 mod source_path;
 
 #[cfg(test)]
@@ -33,12 +34,15 @@ mod nesting_tests;
 #[cfg(test)]
 mod rules_tests;
 #[cfg(test)]
+mod runtime_tests;
+#[cfg(test)]
 mod source_path_tests;
 #[cfg(test)]
 mod tests;
 
 pub use expand::{Expansion, expand_path};
 pub use kind::{Kind, Severity};
+pub use runtime::{RUNTIME_WARNING_ADVICE, RuntimeConflict, runtime_warning};
 pub use source_path::source_target;
 
 use lexer::{indentation, strip_comment, tokens};

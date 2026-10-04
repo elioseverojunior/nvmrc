@@ -22,6 +22,7 @@ pub mod reinstall_packages;
 pub mod remote_index;
 pub mod resolve;
 pub mod run;
+pub mod runtime_conflict;
 pub mod sanitize;
 pub mod set_colors;
 pub mod transcript;

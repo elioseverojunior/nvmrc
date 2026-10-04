@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub const BINARY: &str = env!("CARGO_BIN_EXE_nvm");
+/// The same program as [`BINARY`], under the name the startup files call.
+pub const NVMRC_BINARY: &str = env!("CARGO_BIN_EXE_nvmrc");
 pub const SHELLS: [&str; 6] = ["bash", "zsh", "sh", "dash", "ksh", "fish"];
 pub const USING_18: &str = "Now using node v18.20.4 (npm v10.7.0)\n";
 
@@ -53,6 +55,7 @@ impl Lab {
             fs::create_dir_all(root.path().join(directory)).unwrap();
         }
         symlink(BINARY, root.path().join("bin/nvm")).unwrap();
+        symlink(NVMRC_BINARY, root.path().join("bin/nvmrc")).unwrap();
         Self { root }
     }
 
@@ -90,6 +93,28 @@ impl Lab {
 
     /// Runs `commands` in `shell`, from the project directory.
     pub fn run(&self, shell: &Path, commands: &str) -> Run {
+        self.run_in(shell, &[], commands)
+    }
+
+    /// Runs `commands` in `shell` started with `-i`, as interactive, without
+    /// a terminal: stdin is empty and the output is piped. No startup file
+    /// is read (`--norc --noprofile` for bash, `-f` for zsh, `ENV` unset for
+    /// sh, dash and ksh); bash, sh and dash say on stderr that job control
+    /// is off, ksh writes a newline there and a history file in `$HOME`.
+    pub fn run_interactive(&self, shell: &Path, commands: &str) -> Run {
+        let bash = ["--norc", "--noprofile", "-i"];
+        self.run_in(
+            shell,
+            if shell.ends_with("bash") {
+                &bash
+            } else {
+                &bash[2..]
+            },
+            commands,
+        )
+    }
+
+    fn run_in(&self, shell: &Path, options: &[&str], commands: &str) -> Run {
         let mut command = Command::new(shell);
         if shell.ends_with("zsh") {
             command.arg("-f");
@@ -98,6 +123,7 @@ impl Lab {
             command.arg("--no-config");
         }
         let output = command
+            .args(options)
             .args(["-c", commands])
             .env_clear()
             .env("PATH", self.base_path())
@@ -136,6 +162,15 @@ pub fn init_line(name: &str, options: &str) -> String {
     match name {
         "fish" => format!("nvm init fish{options} | source"),
         _ => format!("eval \"$(nvm init {name}{options})\""),
+    }
+}
+
+/// The line `nvm migrate` writes: the `nvmrc` binary by name, which a
+/// function named `nvm` defined earlier cannot intercept.
+pub fn load_line(name: &str) -> String {
+    match name {
+        "fish" => "nvmrc init fish | source".to_owned(),
+        _ => format!("eval \"$(nvmrc init {name})\""),
     }
 }
 

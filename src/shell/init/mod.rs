@@ -23,12 +23,14 @@
 //! "$(nvm init bash)"` (and `nvm init fish | source`) is 3 when the
 //! `.nvmrc` names a missing version.
 
+mod conflict_check;
 mod fish;
 mod posix;
 
 use std::str::FromStr;
 
 use crate::error::CliError;
+use conflict_check::conflict_check;
 
 /// The first and last lines of the snippet (defined with the conflict rules,
 /// which skip the block).
@@ -161,11 +163,14 @@ pub fn snippet(shell: Shell, options: &InitOptions) -> String {
     format!(
         "{BEGIN_MARKER}\n\
 # The nvm function of nvmrc, from `{load}` in the {name} startup file.\n\
-{code}{END_MARKER}\n",
+{check}{code}{END_MARKER}\n",
+        check = conflict_check(shell),
         load = shell.load_line(),
         name = shell.name(),
     )
 }
 
+#[cfg(test)]
+mod conflict_check_tests;
 #[cfg(test)]
 mod tests;

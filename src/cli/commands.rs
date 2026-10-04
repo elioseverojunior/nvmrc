@@ -148,6 +148,13 @@ pub(super) enum Command {
         #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
     },
+    /// The warning the `nvm` function's init prints when nvm.sh is still
+    /// loaded in an interactive shell (`helpers` or `function`).
+    #[command(name = "__conflict", hide = true)]
+    Conflict {
+        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
 }
 
 pub(super) fn dispatch(command: &Command, context: &Context<'_>) -> Result<Output, CliError> {
@@ -177,6 +184,7 @@ pub(super) fn dispatch(command: &Command, context: &Context<'_>) -> Result<Outpu
         Command::Doctor { args } => commands::doctor::run(context, args),
         Command::Migrate { args } => commands::migrate::run(context, args),
         Command::Auto { args } => commands::auto::run(context, args),
+        Command::Conflict { args } => commands::runtime_conflict::run(args),
     }
 }
 
