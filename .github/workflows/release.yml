@@ -1,14 +1,14 @@
 name: release
 
-# A `v*` tag releases; a manual run is a dry run (all but publishing) by
-# default. Steps run `mise run release:*` tasks, as `release:snapshot` does.
+# A `v*` tag on the default branch releases; a manual run is a dry run (build,
+# package, smoke tests) by default. Steps run `mise run release:*` tasks, as `release:snapshot` does.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
       dry-run:
-        description: Build, package, smoke-test, sign and attest; publish nothing
+        description: Build, package and smoke-test; sign, attest and publish nothing
         type: boolean
         default: true
 
@@ -40,25 +40,21 @@ jobs:
       publish: ${{ steps.check.outputs.publish }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the default branch, for the ancestry check
+          persist-credentials: false
       - uses: jdx/mise-action@v5
         with:
           install: false
+          cache: false
       - id: check
         env:
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
           PRIVATE: ${{ github.event.repository.private }}
-        run: |
-          tag=""
-          [ "$GITHUB_REF_TYPE" = tag ] && tag="$GITHUB_REF_NAME"
-          version="$(mise run -q release:check ${tag:+--tag "$tag"})"
-          publish=false
-          [ -n "$tag" ] && [ "$DRY_RUN" != true ] && publish=true
-          if [ "$publish" = true ] && [ "$PRIVATE" = true ]; then
-            echo "::error::artifact attestations need a public repository; make it public first"
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: >-
+          mise run -q release:check:ci --dry-run "$DRY_RUN" --private "$PRIVATE"
+          --default-branch "$DEFAULT_BRANCH" >> "$GITHUB_OUTPUT"
 
   build:
     name: build (${{ matrix.target }})
@@ -68,7 +64,7 @@ jobs:
     strategy:
       matrix:
         include:
-          # glibc builds run on 22.04 so they need glibc 2.34 at most.
+          # The glibc builds' floor (2.34) is what release:build measures.
           - { target: x86_64-unknown-linux-gnu, runner: ubuntu-22.04 }
           - { target: aarch64-unknown-linux-gnu, runner: ubuntu-22.04-arm }
           - { target: x86_64-unknown-linux-musl, runner: ubuntu-24.04 }
@@ -78,6 +74,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Install the musl C toolchain
         if: endsWith(matrix.target, '-musl')
         run: |
@@ -90,6 +88,7 @@ jobs:
       - uses: jdx/mise-action@v5
         with:
           install: false
+          cache: false
       - run: mise run release:build --target "$TARGET"
         env:
           TARGET: ${{ matrix.target }}
@@ -107,6 +106,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
           pattern: build-*
@@ -115,6 +116,7 @@ jobs:
       - uses: jdx/mise-action@v5
         with:
           install_args: nfpm syft
+          cache: false
       - run: mise run release:package
       - run: mise run release:sums
       - uses: actions/upload-artifact@v7
@@ -136,6 +138,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
           name: release-files
@@ -143,6 +147,7 @@ jobs:
       - uses: jdx/mise-action@v5
         with:
           install: false
+          cache: false
       - run: mise run release:smoke --arch "$PACKAGE_ARCH"
         env:
           PACKAGE_ARCH: ${{ matrix.arch }}
@@ -153,18 +158,18 @@ jobs:
   sign-and-attest:
     name: sign and attest
     needs: [version, smoke]
+    # A dry run stops after the smoke tests: a signature or an attestation
+    # only ever names a published, tagged release.
+    if: needs.version.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write
       attestations: write
-    env:
-      # Sigstore's public log would record a private repository's name, and
-      # GitHub attests a private repository only on Enterprise Cloud: a dry
-      # run there skips cosign and lets attestation fail without failing.
-      PRIVATE_DRY_RUN: ${{ github.event.repository.private && needs.version.outputs.publish != 'true' }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
           name: release-files
@@ -172,8 +177,8 @@ jobs:
       - uses: jdx/mise-action@v5
         with:
           install_args: cosign
+          cache: false
       - name: Sign every release file, SHA256SUMS included (keyless)
-        if: env.PRIVATE_DRY_RUN != 'true'
         run: |
           for file in dist/*; do
             cosign sign-blob --yes --bundle "$file.sigstore.json" "$file"
@@ -183,18 +188,15 @@ jobs:
           mkdir -p binaries
           for archive in dist/*.tar.gz; do tar -xzf "$archive" -C binaries; done
       - uses: actions/attest@v4
-        continue-on-error: ${{ env.PRIVATE_DRY_RUN == 'true' }}
         with:
           subject-checksums: dist/SHA256SUMS
       - uses: actions/attest@v4
-        continue-on-error: ${{ env.PRIVATE_DRY_RUN == 'true' }}
         with:
           subject-path: |
             binaries/*/nvmrc
             binaries/*/nvm
             binaries/*/nvm-exec
       - uses: actions/attest@v4
-        continue-on-error: ${{ env.PRIVATE_DRY_RUN == 'true' }}
         with:
           subject-checksums: dist/SHA256SUMS
           sbom-path: dist/nvmrc-${{ needs.version.outputs.version }}.spdx.json
@@ -217,11 +219,11 @@ jobs:
       artifact-metadata: write
     env:
       IMAGE: ghcr.io/${{ github.repository }}
-      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # git-cliff reads the history
+          persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
           name: signed-files
@@ -229,15 +231,14 @@ jobs:
       - uses: jdx/mise-action@v5
         with:
           install_args: cosign git-cliff
+          cache: false
       - run: mise run release:notes
-      - name: Create the GitHub release with every signed file
+      # A draft until the last step: a failure leaves no public release
+      # without its image or formula, and a re-run updates the draft.
+      - run: mise run release:github:draft
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          prerelease=""
-          case "$VERSION" in *-*) prerelease=--prerelease ;; esac
-          gh release create "$GITHUB_REF_NAME" --verify-tag $prerelease \
-            --title "nvmrc $VERSION" --notes-file target/RELEASE_NOTES.md dist/*
+          GH_REPO: ${{ github.repository }}
       - run: mise run release:image:context
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
@@ -268,9 +269,12 @@ jobs:
           annotations: ${{ steps.meta.outputs.annotations }}
           provenance: mode=max
           sbom: true
-      - run: cosign sign --yes "$IMAGE@$DIGEST"
+      - name: Run the pushed image, by digest, then sign it
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          mise run release:image:run --image "$IMAGE@$DIGEST" --arch amd64
+          cosign sign --yes "$IMAGE@$DIGEST"
       - uses: actions/attest@v4
         with:
           subject-name: ${{ env.IMAGE }}
@@ -279,20 +283,16 @@ jobs:
       # The tap is off until the owner sets the NVMRC_HOMEBREW_TAP variable
       # (owner/name) and the HOMEBREW_TAP_TOKEN secret (contents: write there).
       - if: vars.NVMRC_HOMEBREW_TAP != ''
-        run: mise run release:homebrew --repository "$GITHUB_REPOSITORY"
-      - if: vars.NVMRC_HOMEBREW_TAP != ''
         uses: actions/checkout@v7
         with:
           repository: ${{ vars.NVMRC_HOMEBREW_TAP }}
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
       - if: vars.NVMRC_HOMEBREW_TAP != ''
-        working-directory: tap
         run: |
-          mkdir -p Formula
-          cp ../target/homebrew/nvmrc.rb Formula/nvmrc.rb
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/nvmrc.rb
-          git commit -m "nvmrc $VERSION"
-          git push
+          mise run release:homebrew --repository "$GITHUB_REPOSITORY"
+          mise run release:homebrew:tap --tap tap
+      - run: gh release edit "$GITHUB_REF_NAME" --draft=false
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}

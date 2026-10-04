@@ -11,9 +11,12 @@ on:
 permissions:
   contents: read
 
+# Called by release.yml, github.workflow is "release": its gates get their own
+# group, so a release dry run and a push on the same branch never cancel or
+# queue behind each other. Only a pull request's newer push cancels a run.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -24,6 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: elioseverojunior/rust-toolchain@v0
       - run: cargo fmt --all --check
 
@@ -36,6 +41,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: elioseverojunior/rust-toolchain@v0
         with:
           cache: true
@@ -52,6 +59,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       # The end-to-end tests of `nvm init` and the contract run in every
       # shell nvmrc supports and skip the missing ones: on Linux all are
       # installed; macOS has bash, zsh, sh, dash and ksh already.
@@ -72,6 +81,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       # Installs the toolchain of rust-toolchain.toml and, next to it, the
       # rust-version of Cargo.toml, reachable as `cargo +1.85`.
       - uses: elioseverojunior/rust-toolchain@v0
@@ -87,6 +98,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: elioseverojunior/rust-toolchain@v0
       - uses: taiki-e/install-action@v2
         with:
@@ -99,6 +112,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - run: pipx run rumdl check .
 
   nix:
@@ -110,6 +125,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: cachix/install-nix-action@v31
       - run: nix flake check
       - run: nix build .#nvmrc
