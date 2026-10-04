@@ -13,6 +13,7 @@ pub mod install;
 pub mod install_latest_npm;
 pub mod ls;
 pub mod ls_remote;
+pub mod migrate;
 pub mod npm;
 pub mod nvm_exec;
 pub mod nvmrc_file;

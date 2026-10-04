@@ -133,6 +133,14 @@ pub(super) enum Command {
         #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
     },
+    /// Move the shell startup files from nvm.sh to nvmrc's init line: shows
+    /// the diffs, then (`--yes` or a confirmation) backs each file up and
+    /// rewrites it (`--dry-run` writes nothing; `--undo` restores the latest
+    /// backups; `--shell <name>` limits it to one shell).
+    Migrate {
+        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
     /// What the `nvm` function runs at shell start: `use`, `install` or
     /// `none` (nvm.sh's `nvm_auto`).
     #[command(name = "__auto", hide = true)]
@@ -167,6 +175,7 @@ pub(super) fn dispatch(command: &Command, context: &Context<'_>) -> Result<Outpu
         Command::Run { args } => commands::run::run(context, args),
         Command::Init { args } => commands::init::run(args),
         Command::Doctor { args } => commands::doctor::run(context, args),
+        Command::Migrate { args } => commands::migrate::run(context, args),
         Command::Auto { args } => commands::auto::run(context, args),
     }
 }
