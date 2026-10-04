@@ -3720,9 +3720,9 @@ git commit -S -m "feat(alias): color the alias rows like nvm_print_formatted_ali
   terminal has italics and the latest or aliases data exist (never for `--lts`
   or a pattern). The visible layout (padding, column widths, gaps) is IDENTICAL
   with colors on and off: widths count the visible text only, escapes stripped;
-  the padding is two spaces except on an installed row with colors off, where `
-  *` takes those two columns. The invalid-color warning is printed once on every
-  path that prints rows, after any download or LTS warning; an unsupported
+  the padding is two spaces except on an installed row with colors off, where the
+  asterisk takes those two columns. The invalid-color warning is printed once on
+  every path that prints rows, after any download or LTS warning; an unsupported
   option prints none.
 - [ ] **Step 1: Write the failing tests**
 
