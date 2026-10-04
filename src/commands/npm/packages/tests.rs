@@ -46,11 +46,8 @@ fn calls(process: &FakeProcess) -> Vec<String> {
         .collect()
 }
 
-/// The expectations are what `nvm install --reinstall-packages-from` of the
-/// real `nvm.sh` printed and ran, with a fake `npm`.
-#[test]
-fn the_packages_are_installed_in_one_command_and_the_links_are_linked() {
-    let process = FakeProcess::default()
+fn npm_that_installs_and_links() -> FakeProcess {
+    FakeProcess::default()
         .with_success(OLD_NPM, "list -g --depth=0", LISTING)
         .with_success(
             NEW_NPM,
@@ -62,7 +59,14 @@ fn the_packages_are_installed_in_one_command_and_the_links_are_linked() {
             "root -g",
             "/n/versions/node/v20.10.0/lib/node_modules\n",
         )
-        .with_success(NEW_NPM, "link", "linked\n");
+        .with_success(NEW_NPM, "link", "linked\n")
+}
+
+/// The expectations are what `nvm install --reinstall-packages-from` of the
+/// real `nvm.sh` printed and ran, with a fake `npm`.
+#[test]
+fn the_packages_are_installed_in_one_command_and_the_links_are_linked() {
+    let process = npm_that_installs_and_links();
     let (status, stdout, stderr) = run_reinstall(&Source::Version(version("v18.19.0")), &process);
     assert_eq!(status, NvmExitCode::Success);
     assert_eq!(

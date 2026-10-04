@@ -96,6 +96,33 @@ fn the_invalid_message_for_empty_content_ends_after_the_heading() {
     );
 }
 
+const COLORED_ERROR_BLOCK: &str = "\x1b[0;31minvalid .nvmrc!\n\
+all non-commented content (anything after # is a comment) must be either:\n\
+\x20 - a single bare nvm-recognized version-ish\n\
+\x20 - or, multiple distinct key-value pairs, each key/value separated by a single equals sign (=)\n\
+\n\
+additionally, a single bare nvm-recognized version-ish must be present (after stripping comments).\x1b[0m\n\
+\n";
+
+#[test]
+fn the_colored_invalid_message_wraps_the_error_red_and_the_parsed_block_yellow() {
+    let expected =
+        format!("{COLORED_ERROR_BLOCK}\x1b[0;33mnon-commented content parsed:\nfoo=bar\x1b[0m");
+    assert_eq!(colored_invalid_message(&["foo=bar".to_owned()]), expected);
+}
+
+#[test]
+fn the_colored_invalid_message_joins_the_parsed_lines() {
+    let message = colored_invalid_message(&["18".to_owned(), "20".to_owned()]);
+    assert!(message.ends_with("\x1b[0;33mnon-commented content parsed:\n18\n20\x1b[0m"));
+}
+
+#[test]
+fn the_colored_invalid_message_keeps_the_newline_before_the_reset_when_nothing_was_parsed() {
+    let expected = format!("{COLORED_ERROR_BLOCK}\x1b[0;33mnon-commented content parsed:\n\x1b[0m");
+    assert_eq!(colored_invalid_message(&[]), expected);
+}
+
 #[test]
 fn please_see_is_the_exact_hint() {
     assert_eq!(

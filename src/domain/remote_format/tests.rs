@@ -22,8 +22,27 @@ fn pairs(list: &[(&str, &str)]) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Every expected line below is what the real nvm.sh printed for the same
-/// mirror, installed versions and aliases.
+/// What the real nvm.sh printed, plain, for the same mirror with nothing
+/// installed and no named alias.
+const PLAIN_LISTING: &[&str] = &[
+    "       v0.10.48",
+    "       v0.12.18",
+    "    iojs-v1.0.0",
+    "    iojs-v2.5.0",
+    "    iojs-v3.0.0",
+    "    iojs-v3.3.1",
+    "         v4.0.0",
+    "         v4.9.1   (Latest LTS: Argon)",
+    "       v14.21.3   (Latest LTS: Fermium)",
+    "       v16.20.2   (Latest LTS: Gallium)",
+    "       v18.18.0   (LTS: Hydrogen)",
+    "       v18.19.0   (Latest LTS: Hydrogen)",
+    "        v20.9.0   (LTS: Iron)",
+    "       v20.10.0   (Latest LTS: Iron)",
+    "        v21.1.0",
+    "        v21.2.0                            (Latest: node)",
+];
+
 #[test]
 fn a_plain_listing_matches_nvm_sh() {
     let rows = rows(None);
@@ -34,27 +53,7 @@ fn a_plain_listing_matches_nvm_sh() {
         latest_alias: Some("node"),
         named_aliases: &[],
     };
-    assert_eq!(
-        format_remote_rows(&input),
-        [
-            "       v0.10.48",
-            "       v0.12.18",
-            "    iojs-v1.0.0",
-            "    iojs-v2.5.0",
-            "    iojs-v3.0.0",
-            "    iojs-v3.3.1",
-            "         v4.0.0",
-            "         v4.9.1   (Latest LTS: Argon)",
-            "       v14.21.3   (Latest LTS: Fermium)",
-            "       v16.20.2   (Latest LTS: Gallium)",
-            "       v18.18.0   (LTS: Hydrogen)",
-            "       v18.19.0   (Latest LTS: Hydrogen)",
-            "        v20.9.0   (LTS: Iron)",
-            "       v20.10.0   (Latest LTS: Iron)",
-            "        v21.1.0",
-            "        v21.2.0                            (Latest: node)",
-        ]
-    );
+    assert_eq!(format_remote_rows(&input), PLAIN_LISTING);
 }
 
 /// Every release with its installed mark and its aliases.

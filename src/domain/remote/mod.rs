@@ -62,26 +62,32 @@ pub fn list(
         iojs_runs,
     } = scope(query)?;
 
-    let mut missing = false;
-    let mut node_rows = Vec::new();
-    let mut iojs_rows = Vec::new();
-    if node_runs {
-        node_rows = node
-            .map(|releases| select(releases, pattern, query.lts.as_deref(), false))
-            .unwrap_or_default();
-        missing |= node_rows.is_empty();
-    }
-    if iojs_runs {
-        iojs_rows = iojs
-            .map(|releases| select(releases, pattern, None, true))
-            .unwrap_or_default();
-        missing |= iojs_rows.is_empty();
-    }
+    let (node_rows, node_missing) = flavor_rows(node, node_runs, |releases| {
+        select(releases, pattern, query.lts.as_deref(), false)
+    });
+    let (iojs_rows, iojs_missing) = flavor_rows(iojs, iojs_runs, |releases| {
+        select(releases, pattern, None, true)
+    });
     let rows = merge(node_rows, iojs_rows);
     Ok(Listing {
-        missing: missing || rows.is_empty(),
+        missing: node_missing || iojs_missing || rows.is_empty(),
         rows,
     })
+}
+
+/// The rows of one flavor when the query reads it, and whether it came up
+/// empty (an unreadable index included); nothing and not missing otherwise.
+fn flavor_rows(
+    releases: Option<&[Release]>,
+    runs: bool,
+    pick: impl Fn(&[Release]) -> Vec<RemoteRow>,
+) -> (Vec<RemoteRow>, bool) {
+    if !runs {
+        return (Vec::new(), false);
+    }
+    let rows = releases.map(pick).unwrap_or_default();
+    let missing = rows.is_empty();
+    (rows, missing)
 }
 
 /// Which indexes a query reads, and the pattern left once a flavor word
@@ -137,12 +143,22 @@ fn select(
     let pattern = pattern
         .map(|text| normalize_pattern(text, iojs))
         .filter(|text| !text.is_empty());
+    let mut rows = marked_rows(releases, lts);
+    rows.retain(|row| {
+        pattern
+            .as_deref()
+            .is_none_or(|text| matches_word(row, text))
+    });
+    rows.sort_by_key(|row| row.version);
+    rows
+}
+
+/// The releases that fit the LTS filter, in index order (newest first), the
+/// first of each codename marked as its latest.
+fn marked_rows(releases: &[Release], lts: Option<&str>) -> Vec<RemoteRow> {
     let mut previous: Option<&str> = None;
     let mut rows = Vec::new();
-    for release in releases {
-        if !fits_lts(release, lts) {
-            continue;
-        }
+    for release in releases.iter().filter(|release| fits_lts(release, lts)) {
         let name = release.lts.as_deref();
         rows.push(RemoteRow {
             version: release.version,
@@ -151,12 +167,6 @@ fn select(
         });
         previous = name;
     }
-    rows.retain(|row| {
-        pattern
-            .as_deref()
-            .is_none_or(|text| matches_word(row, text))
-    });
-    rows.sort_by_key(|row| row.version);
     rows
 }
 

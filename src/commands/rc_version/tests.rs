@@ -97,6 +97,36 @@ fn invalid_content_is_reported_even_when_silent() {
     assert!(output.stdout.is_empty());
 }
 
+fn lookup_with_has_colors(value: &str) -> Output {
+    let fs = project("foo=bar\n");
+    let env = FakeEnv::default()
+        .with_var("PWD", "/proj")
+        .with_var("NVM_HAS_COLORS", value);
+    let mut transcript = Transcript::default();
+    rc_version(&Context::new(&fs, &env), false, &mut transcript);
+    transcript.finish(NvmExitCode::Success)
+}
+
+#[test]
+fn an_exported_nvm_has_colors_of_one_colors_the_invalid_message() {
+    let output = lookup_with_has_colors("1");
+    assert!(output.stderr.starts_with("\x1b[0;31minvalid .nvmrc!\n"));
+    assert!(
+        output
+            .stderr
+            .ends_with("\x1b[0;33mnon-commented content parsed:\nfoo=bar\x1b[0m")
+    );
+}
+
+#[test]
+fn any_other_nvm_has_colors_value_keeps_the_invalid_message_plain() {
+    for value in ["0", "true", "", " 1"] {
+        let output = lookup_with_has_colors(value);
+        assert!(output.stderr.starts_with("invalid .nvmrc!\n"), "{value:?}");
+        assert!(!output.stderr.contains('\x1b'), "{value:?}");
+    }
+}
+
 #[test]
 fn an_empty_parse_ends_right_after_the_header_line() {
     let (_, output) = lookup(&project("# only\n"), Some("/proj"), false);

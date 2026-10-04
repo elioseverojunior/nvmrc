@@ -10,11 +10,13 @@
 //! >/dev/null` silences only the messages); the function returns the
 //! binary's status. Every other command is the binary, untouched, without
 //! descriptor 3. Both export the variables the binary reads that a shell
-//! may hold unexported (`MANPATH`, `NODE_PATH`, `NVM_SYMLINK_CURRENT`,
-//! `PREFIX`) only when they are set, so `nvm exec` links `current` and
-//! checks the prefix as `use` does, and an unset one never reaches a program
-//! the binary starts as an empty variable (a `make` run by `nvm install`
-//! seeing `PREFIX=`).
+//! may hold unexported (`MANPATH`, `NODE_PATH`, `NVM_COLORS`,
+//! `NVM_HAS_COLORS`, `NVM_NO_COLORS`, `NVM_SYMLINK_CURRENT`, `PREFIX`) only
+//! when they are set, so `nvm exec` links `current` and checks the prefix as
+//! `use` does, the colors follow the shell's settings as nvm.sh (a shell
+//! function) sees them, and an unset one never reaches a program the binary
+//! starts as an empty variable (a `make` run by `nvm install` seeing
+//! `PREFIX=`).
 //!
 //! As sourcing `nvm.sh` does, the snippet ends with the automatic `use` (or
 //! `install`), whose status is the status of the whole snippet: `eval
@@ -118,7 +120,15 @@ impl InitOptions {
 }
 
 /// The variables the binary reads that a shell may hold unexported.
-const PASSED: [&str; 4] = ["MANPATH", "NODE_PATH", "NVM_SYMLINK_CURRENT", "PREFIX"];
+const PASSED: [&str; 7] = [
+    "MANPATH",
+    "NODE_PATH",
+    "NVM_COLORS",
+    "NVM_HAS_COLORS",
+    "NVM_NO_COLORS",
+    "NVM_SYMLINK_CURRENT",
+    "PREFIX",
+];
 
 /// `template` with each `@EXPORTS@` line replaced by `export(name)` for
 /// every [`PASSED`] variable, at the same indentation.

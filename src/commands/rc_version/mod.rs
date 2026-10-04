@@ -3,10 +3,11 @@
 
 use std::path::PathBuf;
 
+use crate::commands::color_policy;
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::nvmrc::{
-    NvmrcContent, PLEASE_SEE, find_nvmrc, invalid_message, process_content,
+    NvmrcContent, PLEASE_SEE, colored_invalid_message, find_nvmrc, invalid_message, process_content,
 };
 
 const MISSING_MESSAGE: &str = "No version provided and no .nvmrc file found";
@@ -54,10 +55,20 @@ pub fn rc_version(context: &Context<'_>, silent: bool, transcript: &mut Transcri
             RcVersion::Found { path, version }
         }
         NvmrcContent::Invalid { parsed } => {
-            transcript.err(invalid_message(&parsed).trim_end_matches('\n'));
+            transcript.err(invalid_report(context, &parsed));
             RcVersion::Invalid
         }
     }
+}
+
+/// The invalid-file message: colored only when the exported
+/// `NVM_HAS_COLORS=1` forces it, since nvm.sh wraps it inside a command
+/// substitution where the terminal check always fails.
+fn invalid_report(context: &Context<'_>, parsed: &[String]) -> String {
+    if color_policy::forced(context) {
+        return colored_invalid_message(parsed);
+    }
+    invalid_message(parsed).trim_end_matches('\n').to_owned()
 }
 
 /// The closing stderr line `use` and `install` add after an unusable

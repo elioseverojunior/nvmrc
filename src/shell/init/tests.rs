@@ -1,6 +1,18 @@
 use super::*;
 use crate::error::NvmExitCode;
 
+/// What the binary reads that a shell may hold unexported: nvm.sh sees the
+/// shell's own variables, the color settings included.
+const PASSED_VARIABLES: [&str; 7] = [
+    "MANPATH",
+    "NODE_PATH",
+    "NVM_COLORS",
+    "NVM_HAS_COLORS",
+    "NVM_NO_COLORS",
+    "NVM_SYMLINK_CURRENT",
+    "PREFIX",
+];
+
 const ALL: [(&str, Shell); 6] = [
     ("bash", Shell::Bash),
     ("zsh", Shell::Zsh),
@@ -86,7 +98,7 @@ fn the_function_runs_the_binary_with_the_code_on_descriptor_3() {
 #[test]
 fn every_command_gets_the_passed_variables_exported_only_when_set() {
     let text = snippet(Shell::Ksh, &InitOptions::default());
-    for passed in ["MANPATH", "NODE_PATH", "NVM_SYMLINK_CURRENT", "PREFIX"] {
+    for passed in PASSED_VARIABLES {
         let export = format!("if [ -n \"${{{passed}+set}}\" ]; then export {passed}; fi");
         assert_eq!(text.matches(&export).count(), 2, "{passed}: {text}");
         assert!(!text.contains(&format!("{passed}=")), "{passed}: {text}");
@@ -185,7 +197,7 @@ fn other_fish_commands_run_the_binary_untouched() {
 #[test]
 fn fish_passes_the_variables_to_the_binary_only_when_set() {
     let text = snippet(Shell::Fish, &InitOptions::default());
-    for passed in ["MANPATH", "NODE_PATH", "NVM_SYMLINK_CURRENT", "PREFIX"] {
+    for passed in PASSED_VARIABLES {
         let export = format!("set -q {passed}; and set -lx {passed} ${passed}\n");
         assert_eq!(text.matches(&export).count(), 2, "{passed}: {text}");
         assert!(!text.contains(&format!("{passed}=")), "{passed}: {text}");

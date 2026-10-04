@@ -82,6 +82,18 @@ pub fn acquire<'a>(
         return Ok(None);
     }
     let path = request.root.join(lock_name(request.version));
+    wait_for_lock(fs, sleeper, request, path, notes)
+}
+
+/// Retries the lock directory once a second, stealing a stale one, until it
+/// is created or `timeout_seconds` have passed.
+fn wait_for_lock<'a>(
+    fs: &'a dyn FileSystem,
+    sleeper: &dyn Sleeper,
+    request: &LockRequest<'_>,
+    path: PathBuf,
+    notes: &mut Vec<String>,
+) -> Result<Option<InstallLock<'a>>, CliError> {
     let mut waited = 0;
     loop {
         match fs.create_dir(&path) {

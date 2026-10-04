@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::domain::colors::{sgr, wrap};
 use crate::ports::FileSystem;
 
 pub const NVMRC_FILE_NAME: &str = ".nvmrc";
@@ -11,15 +12,16 @@ pub const NVMRC_FILE_NAME: &str = ".nvmrc";
 pub const PLEASE_SEE: &str =
     "Please see `nvm --help` or https://github.com/nvm-sh/nvm#nvmrc for more information.";
 
-const INVALID_HEADER: &str = "invalid .nvmrc!
+/// The red block of `nvm_nvmrc_invalid_msg` (its `error_text`).
+const INVALID_ERROR_TEXT: &str = "invalid .nvmrc!
 all non-commented content (anything after # is a comment) must be either:
   - a single bare nvm-recognized version-ish
   - or, multiple distinct key-value pairs, each key/value separated by a single equals sign (=)
 
-additionally, a single bare nvm-recognized version-ish must be present (after stripping comments).
+additionally, a single bare nvm-recognized version-ish must be present (after stripping comments).";
 
-non-commented content parsed:
-";
+/// The first line of the yellow block (its `warn_text`).
+const PARSED_HEADING: &str = "non-commented content parsed:";
 
 /// The outcome of applying the `.nvmrc` content rules.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,12 +103,27 @@ fn trim_space(text: &str) -> &str {
 /// newline, without the closing [`PLEASE_SEE`] line (the caller adds it).
 #[must_use]
 pub fn invalid_message(parsed: &[String]) -> String {
-    let mut message = String::from(INVALID_HEADER);
+    let mut message = format!("{INVALID_ERROR_TEXT}\n\n{PARSED_HEADING}\n");
     for line in parsed {
         message.push_str(line);
         message.push('\n');
     }
     message
+}
+
+/// [`invalid_message`] as nvm.sh prints it when `NVM_HAS_COLORS=1` forces
+/// `nvm_wrap_with_color_code`: the error block in red, the parsed block in
+/// yellow (fixed letters, whatever `NVM_COLORS` says), without a closing
+/// newline. The parsed block keeps its newline before the reset when nothing
+/// was parsed, as the reset follows `${1}` directly.
+#[must_use]
+pub fn colored_invalid_message(parsed: &[String]) -> String {
+    let parsed_block = format!("{PARSED_HEADING}\n{}", parsed.join("\n"));
+    format!(
+        "{}\n\n{}",
+        wrap(sgr('r'), INVALID_ERROR_TEXT),
+        wrap(sgr('y'), &parsed_block)
+    )
 }
 
 #[cfg(test)]
