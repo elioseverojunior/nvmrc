@@ -217,14 +217,3 @@ fn an_invalid_setting_gives_plain_rows_without_markers_and_warns_once() {
     let warning = "Invalid color code: z";
     assert_eq!(output, Output::stdout(expected).with_stderr(warning));
 }
-
-#[test]
-fn the_alias_rows_are_left_as_they_are() {
-    let output = Setup::tty().run(&fixture(), &[]);
-    let lines: Vec<&str> = output.stdout.lines().collect();
-    assert_eq!(lines[1], "\x1b[0;34m       v18.20.4\x1b[0m");
-    assert_eq!(lines[5], "default -> 18 (-> v18.20.4 *)");
-    let plain = Setup::tty().run(&fixture(), &["--no-colors"]);
-    assert_eq!(plain.stdout.lines().nth(5), Some(lines[5]));
-    assert_eq!(plain.stdout.lines().nth(2), Some(PLAIN[2]));
-}

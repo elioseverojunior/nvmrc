@@ -1,5 +1,9 @@
 //! The line `nvm alias` prints for one alias, as `nvm.sh` prints it when stdout
-//! is not a terminal (no colors).
+//! is not a terminal (no colors); [`colored`] paints it.
+
+pub mod colored;
+#[cfg(test)]
+mod colored_tests;
 
 /// `name -> target *` when the target already is the version, else
 /// `name -> target (-> version *)`. The `*` marks a version that resolved; the

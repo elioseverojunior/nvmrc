@@ -20,7 +20,7 @@ fn list_on(fs: &FakeFileSystem, path: &str, prefix: Option<&str>) -> Output {
     let env = FakeEnv::default()
         .with_var("NVM_DIR", "/n")
         .with_var("PATH", path);
-    list(&Context::new(fs, &env), prefix).unwrap()
+    list(&Context::new(fs, &env), prefix, false).unwrap()
 }
 
 fn list_with(fs: &FakeFileSystem, prefix: Option<&str>) -> Output {

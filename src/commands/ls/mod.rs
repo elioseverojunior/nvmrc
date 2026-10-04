@@ -1,7 +1,8 @@
 //! `nvm ls [pattern]`: the installed versions, one row each.
 //!
-//! The version rows are colored like `nvm_print_versions` when stdout can
-//! show colors and `--no-colors` is not given; the alias rows are plain.
+//! The version rows are colored like `nvm_print_versions` and the alias rows
+//! like `nvm_print_formatted_alias` when stdout can show colors and
+//! `--no-colors` is not given.
 //! Unlike `nvm.sh` it does not print a blank row when only a system node
 //! exists, and it keeps both io.js and Node versions that share a number.
 //! For an alias that resolves to nothing (`ls lts/gallium`, `ls unstable`,
@@ -49,12 +50,8 @@ pub fn run_command(context: &Context<'_>, args: &[String]) -> Result<Output, Cli
     let options = parse_options(args)?;
     let mut output = run(context, options.pattern.as_deref(), options.no_colors)?;
     if options.pattern.is_none() && !options.no_alias {
-        let alias_args = if options.no_colors {
-            vec!["--no-colors".to_owned()]
-        } else {
-            Vec::new()
-        };
-        let listed = aliases::run(context, &alias_args)?;
+        // The versions part already printed the `Invalid color code` line.
+        let listed = aliases::list(context, None, options.no_colors)?;
         if !listed.stdout.is_empty() {
             output.stdout = format!("{}\n{}", output.stdout, listed.stdout);
         }
@@ -85,12 +82,7 @@ pub fn run(
         palette,
         colors: color_policy::detect(context, no_colors).enabled,
     };
-    let rows: Vec<String> = selection
-        .entries
-        .iter()
-        .map(|entry| painter.render(entry))
-        .collect();
-    let mut output = Output::stdout(rows.join("\n"));
+    let mut output = Output::stdout(painter.render_all(&selection.entries));
     if let Some(warning) = warning {
         output = output.with_stderr(warning);
     }
@@ -239,6 +231,11 @@ impl Painter {
         paint_row(text, kind, &self.palette, self.colors)
     }
 
+    fn render_all(&self, entries: &[Entry]) -> String {
+        let rows: Vec<String> = entries.iter().map(|entry| self.render(entry)).collect();
+        rows.join("\n")
+    }
+
     fn render(&self, entry: &Entry) -> String {
         match entry {
             Entry::Version(version) => {
@@ -260,5 +257,7 @@ impl Painter {
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod alias_section_tests;
 #[cfg(test)]
 mod colored_tests;
