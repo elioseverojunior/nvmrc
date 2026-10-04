@@ -19,6 +19,7 @@ pub mod nvmrc;
 pub mod path_edit;
 pub mod path_search;
 pub mod platform;
+pub mod printable;
 pub mod remote;
 pub mod remote_format;
 pub mod source_build;

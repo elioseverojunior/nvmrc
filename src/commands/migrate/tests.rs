@@ -14,8 +14,8 @@ fn install_sh() -> FakeFileSystem {
     FakeFileSystem::default().with_file(BASHRC, INSTALL_SH)
 }
 
-const INSTALL_SH_DIFF: &str = "--- a//Users/u/.bashrc\n\
-+++ b//Users/u/.bashrc\n\
+const INSTALL_SH_DIFF: &str = "--- /Users/u/.bashrc\n\
++++ /Users/u/.bashrc\n\
 @@ -1,3 +1,6 @@\n \
 export NVM_DIR=\"$HOME/.nvm\"\n\
 -[ -s \"$NVM_DIR/nvm.sh\" ] && \\. \"$NVM_DIR/nvm.sh\"  # This loads nvm\n\

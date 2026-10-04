@@ -109,3 +109,11 @@ fn a_large_rewrite_stays_cheap_and_correct() {
     assert!(diff.starts_with("--- a/p\n+++ b/p\n@@ -1,3000 +1,3000 @@\n-old 0\n"));
     assert_eq!(diff.lines().count(), 3 + 6000);
 }
+
+#[test]
+fn an_absolute_path_is_shown_as_it_is() {
+    assert_eq!(
+        unified_diff("/h/.bashrc", "a\n", "b\n"),
+        "--- /h/.bashrc\n+++ /h/.bashrc\n@@ -1 +1 @@\n-a\n+b\n"
+    );
+}

@@ -1,6 +1,7 @@
 //! `nvm doctor [--shell <name>]`: reports the startup files that still load
-//! nvm.sh or fight nvmrc's `nvm` (plan 8). Read-only: it scans and prints,
-//! and never writes a file. Exit status 1 when a conflict exists.
+//! nvm.sh or fight nvmrc's `nvm` (plan 8). Read-only: it scans and prints
+//! (control characters of the files in caret notation), and never writes a
+//! file. Exit status 1 when a conflict exists or a file could not be read.
 
 mod fix;
 mod render;
@@ -15,6 +16,7 @@ mod tests;
 use crate::commands::Output;
 use crate::commands::conflict::{roots, scan};
 use crate::context::Context;
+use crate::domain::printable::printable;
 use crate::error::{CliError, NvmExitCode};
 use crate::shell::init::Shell;
 
@@ -38,12 +40,12 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
         return Ok(Output::stdout(NO_FILES));
     }
     let report = scan(context, &files);
-    let status = if report.has_conflicts() {
+    let status = if report.has_conflicts() || report.unreadable().next().is_some() {
         NvmExitCode::Failure
     } else {
         NvmExitCode::Success
     };
-    Ok(Output::stdout(render::render(&report)).with_status(status))
+    Ok(Output::stdout(printable(&render::render(&report))).with_status(status))
 }
 
 /// The shell of `--shell <name>` or `--shell=<name>`; the last one wins.

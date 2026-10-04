@@ -95,13 +95,14 @@ fn exports_and_notes() -> Report {
 }
 
 #[test]
-fn info_lists_the_kept_exports_then_the_notes() {
+fn info_lists_the_kept_exports_then_the_notes_and_a_warning_the_files_not_read() {
     assert_eq!(
         render(&exports_and_notes()),
         "nvm doctor: scanned 1 file(s)\n\n\
 Info:\n  /h/.zshenv:1: NVM_DIR export: kept by `nvm migrate`\n  \
-/h/.zshenv:2: not followed: unset $X\n  /h/gone: not read: denied\n\n\
-Result: no conflicts"
+/h/.zshenv:2: not followed: unset $X\n\n\
+Warning: not scanned, so they may still load nvm.sh:\n  /h/gone: not read: denied\n\n\
+Result: no conflicts found; 1 file(s) not read"
     );
 }
 

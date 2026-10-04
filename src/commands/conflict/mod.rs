@@ -112,6 +112,15 @@ impl Report {
             .filter(|(file, hit)| file.depth == 0 && hit.kind.is_auto_migratable())
     }
 
+    /// The files that could not be read (not text, not readable), with the
+    /// error: they may load nvm.sh, so a scan with any is not clean.
+    pub fn unreadable(&self) -> impl Iterator<Item = (&PathBuf, &str)> {
+        self.notes.iter().filter_map(|note| match &note.reason {
+            NoteReason::Unreadable(error) => Some((&note.path, error.as_str())),
+            _ => None,
+        })
+    }
+
     fn hits(&self) -> impl Iterator<Item = (&FileFindings, &Hit)> {
         self.files
             .iter()

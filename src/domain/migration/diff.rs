@@ -55,7 +55,7 @@ impl Script {
 }
 
 /// The unified diff from `old` to `new`, both shown as `path` (`--- a/<path>`,
-/// `+++ b/<path>`), with 3 lines of context and the hunks merged when their
+/// `+++ b/<path>`, or the path as it is when absolute), with 3 lines of context and the hunks merged when their
 /// contexts touch; a line without final newline is followed by
 /// `\ No newline at end of file`. Empty when the texts are equal. A range of
 /// one line is written without its count (`@@ -1 +1,2 @@`), an empty range
@@ -74,7 +74,11 @@ pub fn unified_diff(path: &str, old: &str, new: &str) -> String {
     } else {
         edit_script(&old_lines, &new_lines, &mut script);
     }
-    let mut diff = format!("--- a/{path}\n+++ b/{path}\n");
+    let mut diff = if path.starts_with('/') {
+        format!("--- {path}\n+++ {path}\n")
+    } else {
+        format!("--- a/{path}\n+++ b/{path}\n")
+    };
     for range in hunks(&script.steps) {
         render_hunk(&mut diff, &script.steps[range], &old_lines, &new_lines);
     }

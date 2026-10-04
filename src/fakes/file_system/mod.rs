@@ -78,7 +78,9 @@ impl FileSystem for FakeFileSystem {
         let path = self.resolve(path).unwrap_or_else(|| path.to_path_buf());
         let bytes = self.files.borrow().get(&path).cloned();
         let bytes = bytes.ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))?;
-        String::from_utf8(bytes).map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+        // The message std's `read_to_string` gives.
+        let invalid = "stream did not contain valid UTF-8";
+        String::from_utf8(bytes).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, invalid))
     }
 
     fn read_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>> {

@@ -3,7 +3,7 @@
 use std::fmt::Write as _;
 
 use super::fix::{fix_text, suggested_patch};
-use crate::commands::conflict::{FileFindings, Report};
+use crate::commands::conflict::{FileFindings, Note, NoteReason, Report};
 use crate::domain::conflict::{Hit, Kind, Severity};
 
 /// Kinds that are told in the Info section, not in a file's block.
@@ -19,6 +19,7 @@ pub fn render(report: &Report) -> String {
     )];
     sections.extend(report.files.iter().filter_map(file_block));
     sections.extend(info_section(report));
+    sections.extend(warning_section(report));
     sections.push(verdict(report));
     sections.join("\n\n")
 }
@@ -63,23 +64,52 @@ fn info_section(report: &Report) -> Option<String> {
                 format!("  {}:{}: {text}", file.path.display(), hit.line)
             })
     });
-    let notes = report.notes.iter().map(|note| match note.line {
-        Some(line) => format!("  {}:{line}: {}", note.path.display(), note.reason),
-        None => format!("  {}: {}", note.path.display(), note.reason),
-    });
+    let notes = report
+        .notes
+        .iter()
+        .filter(|note| !is_unread(note))
+        .map(|note| match note.line {
+            Some(line) => format!("  {}:{line}: {}", note.path.display(), note.reason),
+            None => format!("  {}: {}", note.path.display(), note.reason),
+        });
     let lines: Vec<String> = kept.chain(notes).collect();
     (!lines.is_empty()).then(|| format!("Info:\n{}", lines.join("\n")))
 }
 
+/// Whether `note` is about a file that could not be read (told apart, in
+/// the warning section).
+fn is_unread(note: &Note) -> bool {
+    matches!(note.reason, NoteReason::Unreadable(_))
+}
+
+/// The files that could not be read: unknown, so never clean.
+fn warning_section(report: &Report) -> Option<String> {
+    let lines: Vec<String> = report
+        .notes
+        .iter()
+        .filter(|note| is_unread(note))
+        .map(|note| format!("  {}: {}", note.path.display(), note.reason))
+        .collect();
+    (!lines.is_empty()).then(|| {
+        format!(
+            "Warning: not scanned, so they may still load nvm.sh:\n{}",
+            lines.join("\n")
+        )
+    })
+}
+
 fn verdict(report: &Report) -> String {
     let conflicts = report.conflicts().count();
-    if conflicts == 0 {
-        return "Result: no conflicts".to_owned();
-    }
+    let unread = report.unreadable().count();
     let fixable = report.auto_migratable().count();
-    if fixable == 0 {
-        format!("Result: {conflicts} conflict(s)")
-    } else {
-        format!("Result: {conflicts} conflict(s), {fixable} can be fixed with `nvm migrate`")
+    let mut verdict = match (conflicts, fixable) {
+        (0, _) if unread > 0 => "Result: no conflicts found".to_owned(),
+        (0, _) => "Result: no conflicts".to_owned(),
+        (_, 0) => format!("Result: {conflicts} conflict(s)"),
+        _ => format!("Result: {conflicts} conflict(s), {fixable} can be fixed with `nvm migrate`"),
+    };
+    if unread > 0 {
+        let _ = write!(verdict, "; {unread} file(s) not read");
     }
+    verdict
 }

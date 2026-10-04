@@ -48,6 +48,23 @@ pub fn planned(
     (changes, failed)
 }
 
+/// Warns about each of the `roots` the scan could not read (not text, not
+/// readable): it was not migrated and may still load nvm.sh. Whether one
+/// was found.
+pub fn unread_roots(report: &Report, roots: &[PathBuf], transcript: &mut Transcript) -> bool {
+    let mut found = false;
+    for (path, error) in report.unreadable() {
+        if roots.iter().any(|root| root == path) {
+            transcript.err(format!(
+                "nvm migrate: warning: {}: not read ({error}); not migrated",
+                path.display()
+            ));
+            found = true;
+        }
+    }
+    found
+}
+
 /// The edit of the file `path` whose content is `old`, when it changes.
 fn change_of(path: PathBuf, old: String, shell: Option<Shell>) -> Option<Change> {
     let shell = block_shell_of(&path.display().to_string(), &old, shell);

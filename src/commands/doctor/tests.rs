@@ -189,3 +189,34 @@ fn nvm_sh_and_its_completion_are_reported_as_loaders_and_never_scanned() {
     assert!(!output.stdout.contains("lazy stub"));
     assert!(!output.stdout.contains("helper call"));
 }
+
+#[test]
+fn control_bytes_of_a_finding_are_shown_in_caret_notation() {
+    let fs = FakeFileSystem::default().with_file(
+        "/Users/u/.bashrc",
+        "printf '\x1b]0;x\x07'; source ~/.nvm/nvm.sh\n",
+    );
+    let output = report(&fs, &home_env(), &[]);
+    assert!(
+        output.stdout.contains("printf '^[]0;x^G'; source"),
+        "{}",
+        output.stdout
+    );
+    assert!(!output.stdout.contains(['\x1b', '\x07']));
+}
+
+#[test]
+fn a_profile_that_is_not_utf8_is_a_warning_and_a_failure() {
+    let fs = FakeFileSystem::default();
+    let bashrc = std::path::Path::new("/Users/u/.bashrc");
+    crate::ports::FileSystem::write_bytes(&fs, bashrc, b"# caf\xe9\n. ~/.nvm/nvm.sh\n").unwrap();
+    let output = report(&fs, &home_env(), &[]);
+    assert_eq!(
+        output.stdout,
+        "nvm doctor: scanned 0 file(s)\n\n\
+Warning: not scanned, so they may still load nvm.sh:\n  \
+/Users/u/.bashrc: not read: stream did not contain valid UTF-8\n\n\
+Result: no conflicts found; 1 file(s) not read"
+    );
+    assert_eq!(output.status, NvmExitCode::Failure);
+}

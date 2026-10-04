@@ -24,6 +24,8 @@ mod apply_tests;
 mod args_tests;
 #[cfg(test)]
 mod fixtures;
+#[cfg(test)]
+mod output_tests;
 
 #[cfg(test)]
 mod tests;
@@ -39,6 +41,7 @@ use crate::commands::Output;
 use crate::commands::conflict::{Report, roots, scan};
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
+use crate::domain::printable::printable;
 use crate::error::{CliError, NvmExitCode};
 
 use args::Options;
@@ -67,7 +70,8 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
 fn migrate(context: &Context<'_>, files: &[PathBuf], options: Options) -> Output {
     let mut transcript = Transcript::default();
     let report = scan(context, files);
-    let (changes, unreadable) = plan::planned(context, &report, options.shell, &mut transcript);
+    let (changes, mut unreadable) = plan::planned(context, &report, options.shell, &mut transcript);
+    unreadable |= plan::unread_roots(&report, files, &mut transcript);
     if changes.is_empty() {
         transcript.out("nvm migrate: nothing to migrate");
         manual_line(&report, &mut transcript);
@@ -109,7 +113,8 @@ fn manual_line(report: &Report, transcript: &mut Transcript) {
     }
 }
 
-/// Shows `diffs` and decides whether to write them: `None` to go on, the
+/// Shows `diffs` (control characters in caret notation) and decides whether
+/// to write them: `None` to go on, the
 /// status to stop with otherwise. `--dry-run` stops after the diffs, `--yes`
 /// goes on, else the prompt asks with the diffs in its question (so they
 /// appear before it); without a terminal the diffs go to stdout and it
@@ -120,6 +125,7 @@ fn review(
     options: Options,
     transcript: &mut Transcript,
 ) -> Option<NvmExitCode> {
+    let diffs = &printable(diffs);
     if options.dry_run || options.yes {
         transcript.out(diffs.trim_end());
         return options.dry_run.then_some(NvmExitCode::Success);
