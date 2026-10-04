@@ -144,6 +144,15 @@ impl FileSystem for FakeFileSystem {
         Ok(())
     }
 
+    fn create_new_file(&self, path: &Path, contents: &str, _mode_of: &Path) -> io::Result<()> {
+        let taken =
+            self.files.borrow().contains_key(path) || self.links.borrow().contains_key(path);
+        if taken {
+            return Err(io::Error::from(io::ErrorKind::AlreadyExists));
+        }
+        self.write_file(path, contents)
+    }
+
     fn file_info(&self, path: &Path) -> io::Result<FileInfo> {
         let modified = self.modified.borrow().get(path).copied();
         if let Some(contents) = self.files.borrow().get(path) {

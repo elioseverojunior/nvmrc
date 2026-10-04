@@ -7,7 +7,7 @@ use crate::commands::Output;
 use crate::context::Context;
 use crate::error::CliError;
 use crate::fakes::{FakeClock, FakeEnv, FakeFileSystem, FakeProcess, FakePrompt};
-use crate::ports::FileSystem;
+use crate::ports::{FileSystem, Prompt};
 
 pub use crate::commands::conflict::fixtures::{HOME, home_env, link};
 
@@ -46,7 +46,7 @@ pub struct Setup<'a> {
     pub fs: &'a FakeFileSystem,
     pub env: &'a FakeEnv,
     pub process: &'a FakeProcess,
-    pub prompt: &'a FakePrompt,
+    pub prompt: &'a dyn Prompt,
 }
 
 impl Setup<'_> {

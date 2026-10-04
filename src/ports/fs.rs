@@ -56,6 +56,17 @@ pub trait FileSystem {
     /// Propagates the underlying I/O error.
     fn write_bytes(&self, path: &Path, contents: &[u8]) -> io::Result<()>;
 
+    /// Creates the new file `path` holding `contents`, synced to the disk,
+    /// with the permission bits of the file `mode_of` resolves to (`0o600`
+    /// when it has none; the umask does not apply), so a copy of a private
+    /// file stays private. Fails with `AlreadyExists` when anything (a
+    /// symbolic link included) is at `path`; on any other failure nothing is
+    /// left at `path`.
+    ///
+    /// # Errors
+    /// `AlreadyExists`; otherwise propagates the underlying I/O error.
+    fn create_new_file(&self, path: &Path, contents: &str, mode_of: &Path) -> io::Result<()>;
+
     /// # Errors
     /// Propagates the underlying I/O error (for example when `path` is missing).
     fn file_info(&self, path: &Path) -> io::Result<FileInfo>;

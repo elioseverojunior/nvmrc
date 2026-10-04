@@ -6,28 +6,52 @@ use crate::domain::timestamp::compact_utc;
 const BACKUP_INFIX: &str = ".nvmrc-backup-";
 
 /// The backup of `file_name` taken at `unix_seconds`:
-/// `<file_name>.nvmrc-backup-<yyyymmddThhmmssZ>` (UTC).
+/// `<file_name>.nvmrc-backup-<yyyymmddThhmmssZ>` (UTC), followed by
+/// `-<sequence>` unless `sequence` is 0 (the name of that second is taken).
 #[must_use]
-pub fn backup_name(file_name: &str, unix_seconds: i64) -> String {
-    format!("{file_name}{BACKUP_INFIX}{}", compact_utc(unix_seconds))
+pub fn backup_name(file_name: &str, unix_seconds: i64, sequence: u32) -> String {
+    let stamp = compact_utc(unix_seconds);
+    match sequence {
+        0 => format!("{file_name}{BACKUP_INFIX}{stamp}"),
+        _ => format!("{file_name}{BACKUP_INFIX}{stamp}-{sequence}"),
+    }
 }
 
 /// The newest backup of `file_name` among the file names `candidates`: the
-/// greatest timestamp among the names of exactly the [`backup_name`]
-/// pattern (other files and malformed timestamps are ignored). The names
-/// share their prefix, so the greatest name holds the greatest timestamp.
+/// greatest timestamp, then the greatest sequence number, among the names of
+/// exactly the [`backup_name`] pattern (other files, malformed timestamps or
+/// sequence numbers are ignored).
 #[must_use]
 pub fn latest_backup<'a>(file_name: &str, candidates: &'a [String]) -> Option<&'a str> {
     candidates
         .iter()
-        .map(String::as_str)
-        .filter(|candidate| {
-            candidate
-                .strip_prefix(file_name)
-                .and_then(|rest| rest.strip_prefix(BACKUP_INFIX))
-                .is_some_and(is_compact_utc)
+        .filter_map(|candidate| {
+            let rest = candidate.strip_prefix(file_name)?;
+            Some((order_key(rest.strip_prefix(BACKUP_INFIX)?)?, candidate))
         })
         .max()
+        .map(|(_, candidate)| candidate.as_str())
+}
+
+/// `(timestamp, sequence)` of the part after the infix, when well formed.
+fn order_key(suffix: &str) -> Option<(&str, u32)> {
+    let (stamp, sequence) = suffix.split_at_checked(16)?;
+    if !is_compact_utc(stamp) {
+        return None;
+    }
+    let sequence = match sequence.strip_prefix('-') {
+        None if sequence.is_empty() => 0,
+        Some(number) if is_sequence(number) => number.parse().ok()?,
+        _ => return None,
+    };
+    Some((stamp, sequence))
+}
+
+/// Digits without a leading zero.
+fn is_sequence(number: &str) -> bool {
+    !number.starts_with('0')
+        && !number.is_empty()
+        && number.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 /// Whether `stamp` has the shape of [`compact_utc`]: `yyyymmddThhmmssZ`.

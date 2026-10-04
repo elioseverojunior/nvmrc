@@ -103,7 +103,11 @@ fn migrate_rewrites_the_profile_and_undo_restores_it_byte_for_byte() {
     let undone = nvm(home.path(), &["migrate", "--undo", "--yes"]);
     assert_eq!(undone.status.code(), Some(0), "{}", text(&undone.stderr));
     assert_eq!(fs::read(&profile).unwrap(), PROFILE.as_bytes());
-    assert_eq!(backups(home.path(), ".bash_profile").len(), 1);
+    // The undo backed the migrated content up: a second undo redoes it.
+    assert_eq!(backups(home.path(), ".bash_profile").len(), 2);
+    let redone = nvm(home.path(), &["migrate", "--undo", "--yes"]);
+    assert_eq!(redone.status.code(), Some(0), "{}", text(&redone.stderr));
+    assert_eq!(fs::read_to_string(&profile).unwrap(), new);
 }
 
 /// A stow-like `~/.bash_profile` linked to `dotfiles/bash/.bash_profile`
@@ -144,6 +148,8 @@ fn a_symlinked_profile_keeps_its_link_and_permissions() {
     let saved = backups(home.path(), ".bash_profile");
     assert_eq!(saved.len(), 1);
     assert!(fs::symlink_metadata(&saved[0]).unwrap().is_file());
+    let backup_mode = fs::metadata(&saved[0]).unwrap().permissions().mode() & 0o777;
+    assert_eq!(backup_mode, 0o640);
     assert!(backups(&repository, ".bash_profile").is_empty());
     let undone = nvm(home.path(), &["migrate", "--undo", "--yes"]);
     assert_eq!(undone.status.code(), Some(0), "{}", text(&undone.stderr));
@@ -197,6 +203,21 @@ echo \"never closed\n";
         text(&output.stderr)
     );
     assert_eq!(fs::read(&bashrc).unwrap(), original.as_bytes());
+    assert!(backups(home.path(), ".bashrc").is_empty());
+}
+
+#[test]
+fn the_backup_of_a_private_profile_stays_private() {
+    let home = TempDir::new().unwrap();
+    let bashrc = home.path().join(".bashrc");
+    fs::write(&bashrc, PROFILE).unwrap();
+    fs::set_permissions(&bashrc, fs::Permissions::from_mode(0o600)).unwrap();
+    let output = nvm(home.path(), &["migrate", "--yes"]);
+    assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
+    let saved = backups(home.path(), ".bashrc");
+    assert_eq!(saved.len(), 1);
+    let mode = fs::metadata(&saved[0]).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
 }
 
 #[test]

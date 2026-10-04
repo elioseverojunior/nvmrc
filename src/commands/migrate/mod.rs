@@ -2,14 +2,19 @@
 //! shell startup files from nvm.sh to nvmrc's init line (plan 8, digest
 //! section 5). The top-level nvm.sh loader and completion lines of each root
 //! file become `# [nvmrc-migrated]` comments under the init block; the diffs
-//! are shown, and only `--yes` or a confirmation writes them: a backup
-//! beside each file (beside the LINK for a symbolic link), then an atomic
-//! replace through the link that the shell's syntax check must pass, then a
-//! scan proving no loader is left. `--undo` restores the latest backups.
+//! are shown, and only `--yes` or a confirmation writes them: an atomic
+//! replace through the link that the shell's syntax check must pass and
+//! that is refused when the file changed since the diff, with a backup of
+//! the old content (beside the LINK for a symbolic link, with the file's
+//! permissions) taken just before the rename, then a scan proving no loader
+//! is left. `--undo` restores the latest backups, backing the current
+//! content up the same way.
 //! `$NVM_DIR` and nvm.sh are never touched; paths are shown as named.
 
 mod apply;
 mod args;
+mod check;
+mod guarded;
 mod plan;
 mod undo;
 
@@ -24,6 +29,8 @@ mod fixtures;
 mod tests;
 #[cfg(test)]
 mod undo_tests;
+#[cfg(test)]
+mod write_tests;
 
 use std::io;
 use std::path::PathBuf;

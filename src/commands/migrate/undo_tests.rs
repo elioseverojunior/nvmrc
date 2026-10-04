@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use super::fixtures::{INSTALL_SH, INSTALL_SH_MIGRATED, link, migrate, read};
+use super::fixtures::{INSTALL_SH, INSTALL_SH_MIGRATED, STAMP, link, migrate, read};
 use crate::domain::migration::unified_diff;
 use crate::error::NvmExitCode;
 use crate::fakes::FakeFileSystem;
@@ -25,8 +25,12 @@ fn undo_restores_the_latest_backup_and_keeps_the_backups() {
     let diff = unified_diff(BASHRC, INSTALL_SH_MIGRATED, INSTALL_SH);
     assert_eq!(
         output.stdout,
-        format!("{}\nrestored {BASHRC} from {NEWER}", diff.trim_end())
+        format!(
+            "{}\nrestored {BASHRC} from {NEWER} (backup: {BASHRC}{STAMP})",
+            diff.trim_end()
+        )
     );
+    assert_eq!(read(&fs, &format!("{BASHRC}{STAMP}")), INSTALL_SH_MIGRATED);
     assert_eq!(output.status, NvmExitCode::Success);
     assert_eq!(read(&fs, BASHRC), INSTALL_SH);
     assert_eq!(read(&fs, NEWER), INSTALL_SH);

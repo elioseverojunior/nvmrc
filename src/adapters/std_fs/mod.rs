@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::ports::{DirEntry, FileInfo, FileSystem};
 
 mod atomic;
+mod create;
 
 pub struct StdFileSystem;
 
@@ -48,6 +49,10 @@ impl FileSystem for StdFileSystem {
 
     fn write_bytes(&self, path: &Path, contents: &[u8]) -> io::Result<()> {
         fs::write(path, contents)
+    }
+
+    fn create_new_file(&self, path: &Path, contents: &str, mode_of: &Path) -> io::Result<()> {
+        create::create_new_file(path, contents, mode_of)
     }
 
     fn file_info(&self, path: &Path) -> io::Result<FileInfo> {
@@ -136,5 +141,7 @@ fn is_executable(_metadata: &fs::Metadata) -> bool {
 
 #[cfg(test)]
 mod atomic_tests;
+#[cfg(all(test, unix))]
+mod create_tests;
 #[cfg(test)]
 mod tests;

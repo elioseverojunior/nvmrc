@@ -1,10 +1,12 @@
 //! `nvm migrate --undo`: each startup file gets back the content of its
-//! latest backup, written through a symbolic link with the same atomic
-//! replace; the backups stay.
+//! latest backup, written through a symbolic link with the same guarded
+//! replace as `migrate`, which first backs the current content up: the
+//! backups stay, and a second `--undo` undoes the first.
 
 use std::path::{Path, PathBuf};
 
 use super::args::Options;
+use super::guarded::replace_with_backup;
 use super::plan::Change;
 use super::{review, status_of};
 use crate::commands::Output;
@@ -89,20 +91,21 @@ fn restores(
     (found, failed)
 }
 
-/// Writes one restore through the link; whether it was written.
+/// Writes one restore through the link, backing the current content up
+/// first (so the undo can itself be undone); whether it was written.
 fn write(context: &Context<'_>, restore: &Restore, transcript: &mut Transcript) -> bool {
-    let change = &restore.change;
-    let path = change.path.display();
-    match context
-        .fs
-        .replace_file(&change.path, &change.new, &|_| Ok(()))
-    {
-        Ok(()) => {
-            transcript.out(format!("restored {path} from {}", restore.backup.display()));
+    let path = restore.change.path.display();
+    match replace_with_backup(context, &restore.change, &|_| Ok(())) {
+        Ok(backup) => {
+            transcript.out(format!(
+                "restored {path} from {} (backup: {})",
+                restore.backup.display(),
+                backup.display()
+            ));
             true
         }
-        Err(error) => {
-            transcript.err(format!("nvm migrate: {path}: {error}"));
+        Err(refusal) => {
+            transcript.err(format!("nvm migrate: {path}: {refusal}"));
             false
         }
     }
