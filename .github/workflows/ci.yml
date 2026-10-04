@@ -100,3 +100,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: pipx run rumdl check .
+
+  nix:
+    name: nix build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - run: nix flake check
+      - run: nix build .#nvmrc
+      - name: The Nix build prints the version of Cargo.toml
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+          test "$(./result/bin/nvm --version)" = "nvm $version"
