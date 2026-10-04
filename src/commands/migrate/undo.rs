@@ -62,11 +62,12 @@ fn latest(context: &Context<'_>, path: &Path) -> Option<PathBuf> {
         .filter(|entry| !entry.is_dir)
         .map(|entry| entry.name)
         .collect();
-    latest_backup(&name, &names).map(|backup| directory.join(backup))
+    latest_backup(&name, &names, context.clock().unix_seconds())
+        .map(|backup| directory.join(backup))
 }
 
-/// The restores that change something; a file or backup that cannot be read
-/// is reported and makes the second value `true`.
+/// The restores that change something; a file or backup that cannot be read,
+/// or an empty backup, is reported and makes the second value `true`.
 fn restores(
     context: &Context<'_>,
     backups: Vec<(PathBuf, PathBuf)>,
@@ -75,20 +76,44 @@ fn restores(
     let mut found = Vec::new();
     let mut failed = false;
     for (path, backup) in backups {
-        let read = |path: &Path| context.fs.read_to_string(path);
-        match read(&path).and_then(|old| Ok((old, read(&backup)?))) {
-            Ok((old, new)) if old == new => {}
-            Ok((old, new)) => found.push(Restore {
-                change: Change { path, old, new },
-                backup,
-            }),
-            Err(error) => {
-                transcript.err(format!("nvm migrate: {}: {error}", path.display()));
+        match restore_of(context, path, backup) {
+            Ok(Some(restore)) => found.push(restore),
+            Ok(None) => {}
+            Err(message) => {
+                transcript.err(message);
                 failed = true;
             }
         }
     }
     (found, failed)
+}
+
+/// The restore of `path` from `backup`; `None` when both hold the same text.
+/// An error message when either cannot be read, or when the backup is empty
+/// and the file is not (a backup cut short by a crash).
+fn restore_of(
+    context: &Context<'_>,
+    path: PathBuf,
+    backup: PathBuf,
+) -> Result<Option<Restore>, String> {
+    let read = |file: &Path| context.fs.read_to_string(file);
+    let failure = |error: std::io::Error| format!("nvm migrate: {}: {error}", path.display());
+    let old = read(&path).map_err(failure)?;
+    let new = read(&backup).map_err(failure)?;
+    if old == new {
+        return Ok(None);
+    }
+    if new.is_empty() {
+        return Err(format!(
+            "nvm migrate: {}: the backup is empty; {} was not restored",
+            backup.display(),
+            path.display()
+        ));
+    }
+    Ok(Some(Restore {
+        change: Change { path, old, new },
+        backup,
+    }))
 }
 
 /// Writes one restore through the link, backing the current content up

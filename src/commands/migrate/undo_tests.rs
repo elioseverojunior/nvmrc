@@ -85,3 +85,17 @@ fn migrate_then_undo_through_a_symlink_restores_the_target() {
     assert_eq!(read(&fs, target), INSTALL_SH);
     assert!(fs.read_link(Path::new("/Users/u/.zshrc")).is_ok());
 }
+
+#[test]
+fn an_empty_backup_is_not_restored_over_a_file_with_content() {
+    let fs = FakeFileSystem::default()
+        .with_file(BASHRC, INSTALL_SH_MIGRATED)
+        .with_file(NEWER, "");
+    let output = migrate(&fs, &["--undo", "--yes"]);
+    assert_eq!(output.status, NvmExitCode::Failure);
+    assert_eq!(
+        output.stderr,
+        format!("nvm migrate: {NEWER}: the backup is empty; {BASHRC} was not restored")
+    );
+    assert_eq!(read(&fs, BASHRC), INSTALL_SH_MIGRATED);
+}

@@ -24,8 +24,22 @@ pub(super) fn replace_file(
     if result.is_err() {
         // The rename did not happen, so the temporary file is still there.
         let _ = fs::remove_file(&temporary);
+    } else {
+        sync_directory(&target);
     }
     result
+}
+
+/// Makes the rename itself durable by syncing the directory entry. Best
+/// effort: the new contents are already in place and synced.
+fn sync_directory(target: &Path) {
+    #[cfg(unix)]
+    if let Some(directory) = target
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        let _ = File::open(directory).and_then(|handle| handle.sync_all());
+    }
 }
 
 /// The file a write to `path` must replace: the end of a symbolic link (the

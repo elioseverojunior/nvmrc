@@ -20,14 +20,17 @@ pub fn backup_name(file_name: &str, unix_seconds: i64, sequence: u32) -> String 
 /// The newest backup of `file_name` among the file names `candidates`: the
 /// greatest timestamp, then the greatest sequence number, among the names of
 /// exactly the [`backup_name`] pattern (other files, malformed timestamps or
-/// sequence numbers are ignored).
+/// sequence numbers are ignored). A backup dated after `now` (clock skew)
+/// loses to every other one.
 #[must_use]
-pub fn latest_backup<'a>(file_name: &str, candidates: &'a [String]) -> Option<&'a str> {
+pub fn latest_backup<'a>(file_name: &str, candidates: &'a [String], now: i64) -> Option<&'a str> {
+    let present = compact_utc(now);
     candidates
         .iter()
         .filter_map(|candidate| {
             let rest = candidate.strip_prefix(file_name)?;
-            Some((order_key(rest.strip_prefix(BACKUP_INFIX)?)?, candidate))
+            let (stamp, sequence) = order_key(rest.strip_prefix(BACKUP_INFIX)?)?;
+            Some(((stamp <= present.as_str(), stamp, sequence), candidate))
         })
         .max()
         .map(|(_, candidate)| candidate.as_str())
