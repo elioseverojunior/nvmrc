@@ -95,6 +95,14 @@ pub(super) enum Command {
         #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
     },
+    /// Set the five colors of `ls`, `ls-remote` and `alias` (`NVM_COLORS`),
+    /// from `rRgGbBcCyYmMkKeW`: installed, system, current, not installed,
+    /// default.
+    #[command(name = "set-colors")]
+    SetColors {
+        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
     // DELIBERATE DEVIATION: unlike nvm.sh, `-h`, `help` and `--help` after
     // `exec` and `run` are not taken for a request for nvm's help: every
     // argument after the subcommand is passed through to the command.
@@ -147,6 +155,7 @@ pub(super) fn dispatch(command: &Command, context: &Context<'_>) -> Result<Outpu
         Command::Unalias { names } => commands::unalias::run(context, names),
         Command::Use { args } => commands::use_version::run(context, args),
         Command::Deactivate { args } => commands::deactivate::run(context, args),
+        Command::SetColors { args } => commands::set_colors::run(context, args),
         Command::Exec { args } => commands::exec::run(context, args),
         Command::Run { args } => commands::run::run(context, args),
         Command::Init { args } => commands::init::run(args),

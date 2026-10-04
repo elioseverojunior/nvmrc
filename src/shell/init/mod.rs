@@ -3,10 +3,10 @@
 //! one POSIX function for bash, zsh, sh, dash and ksh (`posix.rs`), and one
 //! fish function for fish 3.4 or newer (`fish.rs`).
 //!
-//! The function runs `use`, `deactivate`, `install` (and `i`) and `__auto`
-//! with `NVMRC_SCRIPT_FD=3`: the binary writes the shell code for the
-//! calling shell to descriptor 3, which the function captures and
-//! evaluates, while stdout and stderr pass straight through (so `nvm use 18
+//! The function runs `use`, `deactivate`, `install` (and `i`),
+//! `set-colors` and `__auto` with `NVMRC_SCRIPT_FD=3`: the binary writes
+//! the shell code for the calling shell to descriptor 3, which the function
+//! captures and evaluates, while stdout and stderr pass straight through (so `nvm use 18
 //! >/dev/null` silences only the messages); the function returns the
 //! binary's status. Every other command is the binary, untouched, without
 //! descriptor 3. Both export the variables the binary reads that a shell

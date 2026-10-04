@@ -74,13 +74,17 @@ where
     finish("nvm", &output, context, out, err)
 }
 
+/// The commands that see a `--` right after their name.
+const KEEP_DOUBLE_DASH: [&str; 3] = ["exec", "run", "set-colors"];
+
 /// clap takes a `--` right after a subcommand for the end of the options
-/// and drops it, but nvm.sh's `exec` stops its own options there and `run`
-/// hands it to the script; doubling it makes clap pass the user's one on.
+/// and drops it, but nvm.sh's `exec` stops its own options there, `run`
+/// hands it to the script and `set-colors` takes it for the (invalid)
+/// setting; doubling it makes clap pass the user's one on.
 fn keep_leading_double_dash(mut args: Vec<OsString>) -> Vec<OsString> {
     let passes_it_on = args
         .get(1)
-        .is_some_and(|command| command == "exec" || command == "run");
+        .is_some_and(|command| KEEP_DOUBLE_DASH.iter().any(|name| command == name));
     if passes_it_on && args.get(2).is_some_and(|argument| argument == "--") {
         args.insert(2, OsString::from("--"));
     }

@@ -234,3 +234,35 @@ echo \"BIN=$NVM_BIN\"\necho \"PATH=$PATH\"";
     let expected = format!("BIN={bin}\nPATH={bin}:{}\n", lab.base_path());
     assert_eq!(run.stdout, expected, "{}", run.stderr);
 }
+
+const SET_COLORS_PLAIN: &str = "Setting colors to: r g b c m\n\
+WARNING: Colors may not display because they are not supported in this shell.\n";
+
+#[test]
+fn set_colors_keeps_nvm_colors_in_the_shell() {
+    let lab = Lab::new();
+    each_shell(|name, shell| {
+        let commands = "nvm set-colors rgbcm\n/usr/bin/printenv NVM_COLORS\necho \"$NVM_COLORS\"";
+        let run = lab.run(shell, &with_function(name, commands));
+        let expected = format!("{SET_COLORS_PLAIN}rgbcm\nrgbcm\n");
+        assert_eq!(
+            (run.status, run.stdout.as_str(), run.stderr.as_str()),
+            (0, expected.as_str(), ""),
+            "{name}"
+        );
+    });
+}
+
+#[test]
+fn an_invalid_set_colors_leaves_nvm_colors_unchanged() {
+    let lab = Lab::new();
+    each_shell(|name, shell| {
+        let commands = format!(
+            "nvm set-colors rgbcm >/dev/null\nnvm set-colors rgbc0 2>/dev/null\necho \"status={}\"\n\
+/usr/bin/printenv NVM_COLORS",
+            in_dialect(name, "$?", "$status")
+        );
+        let run = lab.run(shell, &with_function(name, &commands));
+        assert_eq!(run.stdout, "\nstatus=0\nrgbcm\n", "{name}: {}", run.stderr);
+    });
+}

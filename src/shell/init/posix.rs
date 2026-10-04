@@ -15,7 +15,7 @@ unalias nvm 2>/dev/null || true
 
 const BODY: &str = r#"
   case "${1-}" in
-    use | deactivate | install | i | __auto) ;;
+    use | deactivate | install | i | set-colors | __auto) ;;
     *)
       (
         @EXPORTS@

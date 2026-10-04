@@ -23,7 +23,7 @@ set -gx NVM_DIR $NVM_DIR
 "#;
 
 const FUNCTION: &str = r#"function nvm --description 'Node Version Manager (nvmrc)'
-    if not contains -- "$argv[1]" use deactivate install i __auto
+    if not contains -- "$argv[1]" use deactivate install i set-colors __auto
         begin
             @EXPORTS@
             command nvm $argv

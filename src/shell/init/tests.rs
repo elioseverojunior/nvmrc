@@ -78,7 +78,7 @@ fn the_function_runs_the_binary_with_the_code_on_descriptor_3() {
     let zsh = snippet(Shell::Zsh, &InitOptions::default());
     assert!(zsh.contains("\nfunction nvm {\n"), "{zsh}");
     assert!(text.contains("NVMRC_SCRIPT_FD=3 command \\nvm \"$@\" 3>&1 1>&4 4>&-"));
-    assert!(text.contains("use | deactivate | install | i | __auto)"));
+    assert!(text.contains("use | deactivate | install | i | set-colors | __auto)"));
     assert!(!text.contains("command nvm"), "{text}");
     assert!(text.contains("eval \"$__nvmrc_code\""));
 }
@@ -155,7 +155,9 @@ fn the_fish_function_captures_descriptor_3_and_names_its_dialect() {
     let text = snippet(Shell::Fish, &InitOptions::default());
     assert!(text.contains("\nfunction nvm "), "{text}");
     assert!(
-        text.contains("if not contains -- \"$argv[1]\" use deactivate install i __auto\n"),
+        text.contains(
+            "if not contains -- \"$argv[1]\" use deactivate install i set-colors __auto\n"
+        ),
         "{text}"
     );
     let capture = "NVMRC_SCRIPT_FD=3 NVMRC_SHELL_KIND=fish command nvm $argv 3>&1 1>&4 4>&- \

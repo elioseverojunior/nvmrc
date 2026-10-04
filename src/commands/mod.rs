@@ -20,6 +20,7 @@ pub mod remote_index;
 pub mod resolve;
 pub mod run;
 pub mod sanitize;
+pub mod set_colors;
 pub mod transcript;
 pub mod unalias;
 pub mod uninstall;
@@ -38,6 +39,9 @@ use crate::shell::Script;
 pub struct Output {
     pub stdout: String,
     pub stderr: String,
+    /// With an empty [`Self::stdout`], print an empty line there (a bare
+    /// `nvm_echo`) instead of nothing.
+    pub blank_stdout: bool,
     pub status: NvmExitCode,
     /// Shell code the generated `nvm` function must `eval`; empty for a
     /// command that changes nothing in the calling shell.
@@ -59,6 +63,13 @@ impl Output {
     #[must_use]
     pub fn with_stderr(mut self, text: impl Into<String>) -> Self {
         self.stderr = text.into();
+        self
+    }
+
+    /// An empty line on stdout when the stdout text is empty.
+    #[must_use]
+    pub fn with_blank_stdout(mut self) -> Self {
+        self.blank_stdout = true;
         self
     }
 
@@ -104,6 +115,12 @@ mod tests {
         let script = Script::new().unset("NVM_BIN").unwrap();
         let output = Output::stdout("x").with_script(script);
         assert_eq!(output.script.render(), "unset NVM_BIN\n");
+    }
+
+    #[test]
+    fn the_blank_stdout_line_is_off_by_default_and_can_be_asked_for() {
+        assert!(!Output::default().blank_stdout);
+        assert!(Output::default().with_blank_stdout().blank_stdout);
     }
 
     #[test]

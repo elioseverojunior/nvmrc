@@ -95,6 +95,7 @@ fn without_stdout(result: Result<Output, CliError>) -> Output {
     match result {
         Ok(output) => Output {
             stdout: String::new(),
+            blank_stdout: false,
             ..output
         },
         Err(CliError::NotInstalled) => {

@@ -31,9 +31,18 @@ fn line(text: &str) -> String {
     }
 }
 
+/// The stdout text as a line, or the empty line the command asked for.
+fn stdout_of(output: &Output) -> String {
+    if output.stdout.is_empty() && output.blank_stdout {
+        "\n".to_owned()
+    } else {
+        line(&output.stdout)
+    }
+}
+
 pub(super) fn deliver(output: &Output, context: &Context<'_>) -> Delivery {
     let mut delivery = Delivery {
-        stdout: line(&output.stdout),
+        stdout: stdout_of(output),
         stderr: line(&output.stderr),
         status: output.status,
     };

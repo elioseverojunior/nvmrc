@@ -294,4 +294,5 @@ mod init;
 mod install;
 mod nvm_exec;
 mod script;
+mod set_colors;
 mod spawn;
