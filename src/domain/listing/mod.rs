@@ -1,6 +1,8 @@
 //! The rows `nvm ls` prints, as `nvm.sh` prints them when stdout is not a
 //! terminal (no colors): the version right-aligned in 15 columns.
 
+pub mod colored;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RowKind {
     /// An installed version: `        v18.9.0 *`.

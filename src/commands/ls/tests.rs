@@ -21,7 +21,7 @@ fn ls_on(fs: &FakeFileSystem, path: &str, pattern: Option<&str>) -> Output {
         .with_var("NVM_DIR", "/n")
         .with_var("PATH", path);
     let context = Context::new(fs, &env).with_process(&process);
-    run(&context, pattern).unwrap()
+    run(&context, pattern, false).unwrap()
 }
 
 fn ls(pattern: Option<&str>) -> Output {
@@ -142,7 +142,8 @@ fn options_are_read_like_nvm_sh() {
         parsed,
         Options {
             pattern: Some("20".to_owned()),
-            no_alias: false
+            no_alias: false,
+            no_colors: true,
         }
     );
     let no_alias = parse_options(&words(&["--no-alias"])).unwrap();

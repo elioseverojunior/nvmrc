@@ -120,6 +120,21 @@ fn invalid_letters_are_reported_and_uncolored() {
 }
 
 #[test]
+fn the_warning_is_one_line_for_the_first_offending_role() {
+    let (_, invalid) = Palette::from_setting(Some("bzgxe"));
+    assert_eq!(
+        invalid_color_warning(&invalid).as_deref(),
+        Some("Invalid color code: z")
+    );
+    let (_, short) = Palette::from_setting(Some("rg"));
+    assert_eq!(
+        invalid_color_warning(&short).as_deref(),
+        Some("Invalid color code: ")
+    );
+    assert_eq!(invalid_color_warning(&[]), None);
+}
+
+#[test]
 fn zero_means_no_color_without_a_warning() {
     let (palette, offending) = Palette::from_setting(Some("b0gre"));
     assert_eq!(palette.code(Role::System), None);

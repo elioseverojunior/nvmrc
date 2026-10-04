@@ -158,6 +158,17 @@ pub fn wrap(code: Option<&str>, text: &str) -> String {
     }
 }
 
+/// The single stderr line a command prints for the offending roles reported
+/// by [`Palette::from_setting`]: `Invalid color code: <letter>` for the first
+/// one (nothing after the colon for a missing position), `None` when the
+/// setting is valid. nvm.sh prints it on every lookup; once is enough.
+#[must_use]
+pub fn invalid_color_warning(offending: &[Option<char>]) -> Option<String> {
+    let first = offending.first()?;
+    let letter = first.map(String::from).unwrap_or_default();
+    Some(format!("Invalid color code: {letter}"))
+}
+
 /// Mirrors the check of `nvm_set_colors`: exactly five characters, each one
 /// of `rRgGbBcCyYmMkKeW` (`0` is not accepted here).
 #[must_use]

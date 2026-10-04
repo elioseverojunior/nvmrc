@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use crate::context::Context;
+use crate::domain::colors::{Palette, invalid_color_warning};
 use crate::domain::path_search::find_in_path;
 
 #[cfg(test)]
@@ -102,4 +103,14 @@ pub fn detect_or_forced(context: &Context<'_>, no_colors_flag: bool) -> ColorPol
         enabled: detected.enabled || forced(context),
         italics: detected.italics,
     }
+}
+
+/// The palette of `NVM_COLORS`, read once per command, with the single
+/// `Invalid color code: <x>` line the command prints on stderr when the
+/// setting has an invalid or missing role.
+#[must_use]
+pub fn palette(context: &Context<'_>) -> (Palette, Option<String>) {
+    let setting = context.env.var("NVM_COLORS");
+    let (palette, offending) = Palette::from_setting(setting.as_deref());
+    (palette, invalid_color_warning(&offending))
 }

@@ -1,6 +1,7 @@
 //! `nvm ls [pattern]`: the installed versions, one row each.
 //!
-//! Output is always plain, as `nvm.sh` prints when stdout is not a terminal.
+//! The version rows are colored like `nvm_print_versions` when stdout can
+//! show colors and `--no-colors` is not given; the alias rows are plain.
 //! Unlike `nvm.sh` it does not print a blank row when only a system node
 //! exists, and it keeps both io.js and Node versions that share a number.
 //! For an alias that resolves to nothing (`ls lts/gallium`, `ls unstable`,
@@ -9,13 +10,19 @@
 
 use crate::commands::Output;
 use crate::commands::aliases;
+use crate::commands::color_policy;
 use crate::commands::current;
 use crate::commands::resolve::{Resolved, resolve_installed, system_node, system_version};
 use crate::context::Context;
 use crate::domain::alias::AliasStore;
-use crate::domain::listing::{RowKind, format_row, format_system_row};
+use crate::domain::colors::Palette;
+use crate::domain::listing::RowKind;
+use crate::domain::listing::colored::{paint_row, paint_system_row};
 use crate::domain::version::{Flavor, Version, VersionPattern};
 use crate::error::{CliError, NvmExitCode};
+
+mod options;
+pub use options::{Options, parse_options};
 
 enum Entry {
     Version(Version),
@@ -32,40 +39,6 @@ struct Selection {
     missing: bool,
 }
 
-/// The command line of `nvm ls`, as `nvm.sh` reads it: the first non-empty
-/// word is the pattern, `--no-colors` is accepted (output is always plain).
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct Options {
-    pub pattern: Option<String>,
-    pub no_alias: bool,
-}
-
-/// # Errors
-/// - [`CliError::Unsupported`] for an unknown `--option`, and for
-///   `--no-alias` together with a pattern.
-pub fn parse_options(args: &[String]) -> Result<Options, CliError> {
-    let mut options = Options::default();
-    for arg in args {
-        match arg.as_str() {
-            "--" | "--no-colors" => {}
-            "--no-alias" => options.no_alias = true,
-            option if option.starts_with("--") => {
-                let message = format!("Unsupported option \"{option}\".");
-                return Err(CliError::Unsupported(message));
-            }
-            word if options.pattern.is_none() && !word.is_empty() => {
-                options.pattern = Some(word.to_owned());
-            }
-            _ => {}
-        }
-    }
-    if options.pattern.is_some() && options.no_alias {
-        let message = "`--no-alias` is not supported when a pattern is provided.";
-        return Err(CliError::Unsupported(message.to_owned()));
-    }
-    Ok(options)
-}
-
 /// `nvm ls`: the versions, then (without a pattern or `--no-alias`) the
 /// aliases, with the exit status of the versions part.
 ///
@@ -74,9 +47,14 @@ pub fn parse_options(args: &[String]) -> Result<Options, CliError> {
 /// cannot be found.
 pub fn run_command(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
     let options = parse_options(args)?;
-    let mut output = run(context, options.pattern.as_deref())?;
+    let mut output = run(context, options.pattern.as_deref(), options.no_colors)?;
     if options.pattern.is_none() && !options.no_alias {
-        let listed = aliases::list(context, None)?;
+        let alias_args = if options.no_colors {
+            vec!["--no-colors".to_owned()]
+        } else {
+            Vec::new()
+        };
+        let listed = aliases::run(context, &alias_args)?;
         if !listed.stdout.is_empty() {
             output.stdout = format!("{}\n{}", output.stdout, listed.stdout);
         }
@@ -84,21 +62,38 @@ pub fn run_command(context: &Context<'_>, args: &[String]) -> Result<Output, Cli
     Ok(output)
 }
 
+/// `nvm ls [pattern]` without the aliases; `no_colors` is the `--no-colors`
+/// flag. An invalid `NVM_COLORS` adds its single warning on stderr.
+///
 /// # Errors
 /// Returns [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
-pub fn run(context: &Context<'_>, pattern: Option<&str>) -> Result<Output, CliError> {
+pub fn run(
+    context: &Context<'_>,
+    pattern: Option<&str>,
+    no_colors: bool,
+) -> Result<Output, CliError> {
     let current = current::detect(context)?.to_string();
     let mut installed = context.installed_versions()?;
     installed.sort();
     let not_available = not_available_kind(context, &installed)?;
     let pattern = pattern.filter(|text| !text.is_empty());
     let selection = select(context, installed, pattern, &current)?;
+    let (palette, warning) = color_policy::palette(context);
+    let painter = Painter {
+        current,
+        not_available,
+        palette,
+        colors: color_policy::detect(context, no_colors).enabled,
+    };
     let rows: Vec<String> = selection
         .entries
         .iter()
-        .map(|entry| render(entry, &current, not_available))
+        .map(|entry| painter.render(entry))
         .collect();
-    let output = Output::stdout(rows.join("\n"));
+    let mut output = Output::stdout(rows.join("\n"));
+    if let Some(warning) = warning {
+        output = output.with_stderr(warning);
+    }
     Ok(if selection.missing {
         output.with_status(NvmExitCode::InvalidVersion)
     } else {
@@ -222,27 +217,48 @@ fn alias_selection(context: &Context<'_>, name: &str) -> Result<Selection, CliEr
     }
 }
 
-fn kind_for(text: &str, current: &str) -> RowKind {
-    if text == current {
-        RowKind::Current
-    } else {
-        RowKind::Installed
-    }
+/// What the rows are rendered with: the version in use, how `N/A` shows,
+/// and the colors.
+struct Painter {
+    current: String,
+    not_available: RowKind,
+    palette: Palette,
+    colors: bool,
 }
 
-fn render(entry: &Entry, current: &str, not_available: RowKind) -> String {
-    match entry {
-        Entry::Version(version) => {
-            let text = version.to_string();
-            format_row(&text, kind_for(&text, current))
+impl Painter {
+    fn kind_for(&self, text: &str) -> RowKind {
+        if text == self.current {
+            RowKind::Current
+        } else {
+            RowKind::Installed
         }
-        Entry::System(version) => {
-            format_system_row(kind_for("system", current), version.as_deref())
+    }
+
+    fn row(&self, text: &str, kind: RowKind) -> String {
+        paint_row(text, kind, &self.palette, self.colors)
+    }
+
+    fn render(&self, entry: &Entry) -> String {
+        match entry {
+            Entry::Version(version) => {
+                let text = version.to_string();
+                self.row(&text, self.kind_for(&text))
+            }
+            Entry::System(version) => paint_system_row(
+                self.kind_for("system"),
+                version.as_deref(),
+                &self.palette,
+                self.colors,
+            ),
+            Entry::NotAvailable => self.row("N/A", self.not_available),
+            Entry::Raw(text, kind) => self.row(text, *kind),
         }
-        Entry::NotAvailable => format_row("N/A", not_available),
-        Entry::Raw(text, kind) => format_row(text, *kind),
     }
 }
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod colored_tests;
