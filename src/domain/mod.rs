@@ -1,6 +1,7 @@
 pub mod alias;
 pub mod alias_format;
 pub mod checksum;
+pub mod colors;
 pub mod compression;
 pub mod current;
 #[cfg(test)]
