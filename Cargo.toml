@@ -2,7 +2,7 @@
 name = "nvmrc"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85.0"
+rust-version = "1.85"
 description = "A native Rust port of nvm, the Node Version Manager"
 license = "MIT"
 repository = "https://github.com/elioseverojunior/nvmrc"
