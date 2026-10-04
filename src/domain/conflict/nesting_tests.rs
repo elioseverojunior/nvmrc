@@ -1,4 +1,4 @@
-use super::lexer::{indentation, strip_comment, tokens};
+use super::lexer::{strip_comment, tokens};
 use super::nesting::BlockTracker;
 
 /// Whether each line of `text` sits inside a block or opens or closes one
@@ -6,7 +6,7 @@ use super::nesting::BlockTracker;
 fn nested_flags(text: &str) -> Vec<bool> {
     let mut tracker = BlockTracker::default();
     text.lines()
-        .map(|line| tracker.observe(&tokens(strip_comment(line)), indentation(line)))
+        .map(|line| tracker.observe(&tokens(strip_comment(line))))
         .collect()
 }
 
@@ -36,7 +36,7 @@ fn an_if_with_a_body_is_nested_through_else_and_elif() {
     let text = "if [ -s \"$NVM_DIR/nvm.sh\" ]; then\n  . a\nelif true; then\n  . b\nelse\n  . c\nfi\n. d\n";
     assert_eq!(
         nested_flags(text),
-        [true, true, true, true, false, true, true, false]
+        [true, true, true, true, true, true, true, false]
     );
 }
 
@@ -58,14 +58,29 @@ fn loops_and_brace_groups_nest() {
         "for cmd in a b; do\n  eval \"x\"\ndone\n{\n  . y\n}\nwhile false\ndo\n  . z\ndone\n";
     assert_eq!(
         nested_flags(text),
-        [true, true, true, true, true, true, false, true, true, true]
+        [true, true, true, true, true, true, true, true, true, true]
     );
 }
 
 #[test]
-fn a_body_at_the_openers_indentation_is_not_nested() {
-    let text = "if true; then\n. \"$NVM_DIR/nvm.sh\"\nfi\n";
-    assert_eq!(nested_flags(text), [true, false, true]);
+fn a_body_at_the_openers_indentation_is_nested() {
+    let text = "if true; then\n. \"$NVM_DIR/nvm.sh\"\nfi\n. x\n";
+    assert_eq!(nested_flags(text), [true, true, true, false]);
+}
+
+#[test]
+fn an_if_split_before_then_and_a_case_nest() {
+    let text = "if [ -s x ]\nthen\n. x\nfi\ncase $- in\n*i*) . y ;;\nesac\n. z\n";
+    assert_eq!(
+        nested_flags(text),
+        [true, true, true, true, true, true, true, false]
+    );
+}
+
+#[test]
+fn reserved_words_count_only_where_a_command_starts() {
+    let text = "echo for if while case\n. x\nfor name in if fi done; do :; done\n. y\n";
+    assert_eq!(nested_flags(text), [false, false, false, false]);
 }
 
 #[test]

@@ -8,9 +8,12 @@
 //! `# [nvmrc-migrated] <line>` (install.sh's duplicate guard, a `grep` for
 //! `/nvm.sh`, still matches it and so never appends the loader again, digest
 //! finding 0.8). `export NVM_DIR=...` lines stay (finding 0.7), and so do the
-//! lines that need a manual fix (lazy loaders, stubs, plugins). The init
-//! block goes before the first migrated line (keeping the order relative to
-//! the `PATH` setup), or replaces the block already in the file.
+//! lines that need a manual fix (lazy loaders, loaders sharing their line
+//! with other commands, stubs, plugins). The init block goes before the first
+//! migrated line (keeping the order relative to the `PATH` setup), or
+//! replaces the block already in the file. A migrated line is always at the
+//! top level (no block open, not a continued line), so the block never lands
+//! inside an `if`, a function or after a `\`.
 //!
 //! [`Kind::Loader`]: crate::domain::conflict::Kind::Loader
 //! [`Kind::Completion`]: crate::domain::conflict::Kind::Completion
@@ -23,12 +26,14 @@ mod backup_tests;
 #[cfg(test)]
 mod diff_tests;
 #[cfg(test)]
+mod shapes_tests;
+#[cfg(test)]
 mod tests;
 
 pub use backup::{backup_name, latest_backup};
 pub use diff::unified_diff;
 
-use crate::domain::conflict::{BEGIN_MARKER, END_MARKER, MIGRATED_PREFIX, scan_text};
+use crate::domain::conflict::{BEGIN_MARKER, END_MARKER, MIGRATED_PREFIX, init_blocks, scan_text};
 use crate::shell::init::Shell;
 
 /// The planned edit of one file.
@@ -206,15 +211,11 @@ fn file_ending<'a>(lines: &[(&str, &'a str)]) -> &'a str {
         .unwrap_or("\n")
 }
 
-/// The 0-based lines of the first complete init block (markers included).
+/// The 0-based lines of the first complete init block (markers included),
+/// as the scan sees them ([`init_blocks`]).
 fn existing_block(lines: &[(&str, &str)]) -> Option<(usize, usize)> {
-    let begin = lines
-        .iter()
-        .position(|line| line.0.trim() == BEGIN_MARKER)?;
-    let length = lines[begin..]
-        .iter()
-        .position(|line| line.0.trim() == END_MARKER)?;
-    Some((begin, begin + length))
+    let contents: Vec<&str> = lines.iter().map(|line| line.0).collect();
+    init_blocks(&contents).first().copied()
 }
 
 /// `line` commented out by `migrate`, indentation kept after the prefix.

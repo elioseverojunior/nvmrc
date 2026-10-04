@@ -23,9 +23,13 @@ pub enum Kind {
     Loader,
     /// A top-level source of nvm's `bash_completion`.
     Completion,
-    /// A loader or completion inside a block, or in a file that defines lazy
-    /// stubs: never edited automatically.
+    /// A loader or completion inside a block, on a continued line, or in a
+    /// file that defines lazy stubs: never edited automatically.
     LazyLoader,
+    /// A top-level loader or completion sharing its line with other commands
+    /// (`export NVM_DIR=...; . nvm.sh`): commenting the line out would lose
+    /// them, so it is fixed by hand.
+    CompoundLoader,
     /// A function named like a node command (`nvm() {`, `function npm {`).
     LazyStub,
     /// `unset -f nvm`, `unfunction nvm`: a self-removing stub.
@@ -75,6 +79,7 @@ impl Kind {
             Self::Loader => "nvm.sh loader",
             Self::Completion => "nvm bash_completion",
             Self::LazyLoader => "lazy loader",
+            Self::CompoundLoader => "loader sharing its line",
             Self::LazyStub => "lazy stub",
             Self::Unset => "nvm unset",
             Self::OmzPlugin => "oh-my-zsh nvm plugin",

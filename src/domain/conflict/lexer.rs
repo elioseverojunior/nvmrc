@@ -1,5 +1,6 @@
 //! A one-line shell lexer, just enough for the rules: where a comment starts,
-//! the words and operators of a line, its indentation and word boundaries.
+//! the words and operators of a line, whether it continues on the next one,
+//! and word boundaries.
 //!
 //! Quotes are tracked within one line only (a string spanning lines, like
 //! oh-my-zsh's `eval "..."`, is read line by line as unquoted text).
@@ -143,11 +144,14 @@ impl Lexer {
     }
 }
 
-/// The number of blanks before the first other character of `line`.
-pub(super) fn indentation(line: &str) -> usize {
-    line.chars()
-        .take_while(|character| character.is_whitespace())
-        .count()
+/// Whether `code` (a line without its comment, and without its line ending)
+/// ends in an unescaped `\`, so the next physical line continues it.
+pub(super) fn ends_in_continuation(code: &str) -> bool {
+    let trailing = code
+        .chars()
+        .rev()
+        .take_while(|&character| character == '\\');
+    trailing.count() % 2 == 1
 }
 
 /// A letter, a digit or `_`, as a regex `\w`.

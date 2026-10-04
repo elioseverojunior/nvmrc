@@ -8,6 +8,8 @@ use crate::domain::conflict::Kind;
 const AUTO: &str = "run `nvm migrate` (comments the line out and adds the nvmrc init line)";
 const MANUAL_LOADER: &str = "remove or replace this loader by hand: nvmrc has its own function \
 (see `eval \"$(nvmrc init <shell>)\"`)";
+const COMPOUND: &str = "the line also runs other commands: move them to their own line(s), \
+then run `nvm migrate` (or delete only the loader by hand)";
 const STUB: &str = "the stub loads nvm.sh on first use, and an `nvm` stub after the init line \
 hides nvmrc: delete it";
 const UNSET: &str = "it removes a lazy stub once nvm.sh is loaded: delete it with the stub";
@@ -28,6 +30,7 @@ pub fn fix_text(kind: Kind, depth: usize) -> &'static str {
     match kind {
         Kind::Loader | Kind::Completion if depth == 0 => AUTO,
         Kind::Loader | Kind::Completion | Kind::LazyLoader => MANUAL_LOADER,
+        Kind::CompoundLoader => COMPOUND,
         Kind::LazyStub => STUB,
         Kind::Unset => UNSET,
         Kind::OmzPlugin => OMZ,

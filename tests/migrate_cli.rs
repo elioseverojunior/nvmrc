@@ -163,15 +163,31 @@ fn dry_run_changes_nothing() {
 }
 
 #[test]
-fn an_if_whose_body_would_be_emptied_is_refused() {
+fn a_loader_in_an_if_body_is_left_for_a_manual_fix() {
     let home = TempDir::new().unwrap();
     let bashrc = home.path().join(".bashrc");
-    // The block goes before the first loader, so the `if` below it is left
-    // with an empty body once its line is commented out.
-    let original = "[ -s \"$HOME/.nvm/nvm.sh\" ] && \\. \"$HOME/.nvm/nvm.sh\"\n\
-if [ -d \"$HOME/.nvm\" ]; then\n\
-[ -s \"$HOME/.nvm/bash_completion\" ] && \\. \"$HOME/.nvm/bash_completion\"\n\
+    // Commenting the body out would leave the `if` empty, and a block put
+    // before it would be conditional: the line is a manual finding.
+    let original = "if [ -d \"$HOME/.nvm\" ]; then\n\
+[ -s \"$HOME/.nvm/nvm.sh\" ] && \\. \"$HOME/.nvm/nvm.sh\"\n\
 fi\n";
+    fs::write(&bashrc, original).unwrap();
+    let output = nvm(home.path(), &["migrate", "--yes"]);
+    assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
+    assert_eq!(
+        text(&output.stdout),
+        "nvm migrate: nothing to migrate\n\
+nvm migrate: 1 manual finding(s) left: run `nvm doctor`\n"
+    );
+    assert_eq!(fs::read(&bashrc).unwrap(), original.as_bytes());
+}
+
+#[test]
+fn an_edit_that_fails_the_syntax_check_is_refused() {
+    let home = TempDir::new().unwrap();
+    let bashrc = home.path().join(".bashrc");
+    let original = "[ -s \"$HOME/.nvm/nvm.sh\" ] && \\. \"$HOME/.nvm/nvm.sh\"\n\
+echo \"never closed\n";
     fs::write(&bashrc, original).unwrap();
     let output = nvm(home.path(), &["migrate", "--yes"]);
     assert_eq!(output.status.code(), Some(1));

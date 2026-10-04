@@ -106,7 +106,7 @@ fn bass_sources_nvm_sh(code: &str) -> bool {
         })
 }
 
-fn sources_nvm_sh(code: &str) -> bool {
+pub(super) fn sources_nvm_sh(code: &str) -> bool {
     !bass_sources_nvm_sh(code) && source_targets(code).iter().any(|path| is_nvm_sh(path))
 }
 
@@ -117,7 +117,7 @@ fn is_nvm_sh(target: &str) -> bool {
         .is_some_and(|head| head.is_empty() || head.ends_with(['/', '}']))
 }
 
-fn sources_completion(code: &str) -> bool {
+pub(super) fn sources_completion(code: &str) -> bool {
     const ENDINGS: [&str; 4] = [
         "/bash_completion.d/nvm",
         "nvm/bash_completion",

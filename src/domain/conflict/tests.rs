@@ -1,5 +1,6 @@
 use super::Kind::{
-    self, Completion, LazyLoader, LazyStub, Loader, NvmDirExport, OmzPlugin, Unset, ZshNvm,
+    self, Completion, CompoundLoader, LazyLoader, LazyStub, Loader, NvmDirExport, OmzPlugin, Unset,
+    ZshNvm,
 };
 use super::{BEGIN_MARKER, END_MARKER, Hit, scan_text};
 
@@ -158,7 +159,7 @@ done\n";
 #[test]
 fn blog_patterns_d_and_e() {
     let pattern_d = "alias nvm='unalias nvm node npm && . \"$NVM_DIR\"/nvm.sh && nvm'\n";
-    assert_eq!(found(pattern_d), [(1, Loader)]);
+    assert_eq!(found(pattern_d), [(1, CompoundLoader)]);
     let pattern_e =
         "export PATH=\"$NVM_DIR/versions/node/$(cat $NVM_DIR/alias/default)/bin:$PATH\"\n";
     assert_eq!(found(pattern_e), []);
@@ -204,4 +205,45 @@ source ~/.nvm/nvm.sh\n"
 #[test]
 fn an_empty_text_has_no_hits() {
     assert_eq!(found(""), []);
+}
+
+#[test]
+fn a_loader_sharing_its_line_with_other_commands_is_a_compound_loader() {
+    let text = "export NVM_DIR=\"$HOME/.config/nvm\"; [ -s \"$NVM_DIR/nvm.sh\" ] && . \"$NVM_DIR/nvm.sh\"\n\
+export PATH=\"$HOME/bin:$PATH\"; source ~/.nvm/nvm.sh\n\
+source ~/.nvm/nvm.sh; source ~/.nvm/bash_completion; nvm use 18\n";
+    assert_eq!(
+        found(text),
+        [
+            (1, NvmDirExport),
+            (1, CompoundLoader),
+            (2, CompoundLoader),
+            (3, CompoundLoader)
+        ]
+    );
+}
+
+#[test]
+fn a_continued_loader_and_the_line_it_continues_are_lazy_loaders() {
+    let text = "[ -s \"$NVM_DIR/nvm.sh\" ] && \\\n  . \"$NVM_DIR/nvm.sh\"\n\
+. ~/.nvm/nvm.sh \\\n  --no-use\n\
+echo a \\\\\n. ~/.nvm/nvm.sh\n";
+    assert_eq!(found(text), [(2, LazyLoader), (3, LazyLoader), (6, Loader)]);
+}
+
+#[test]
+fn a_body_at_the_openers_indentation_is_a_lazy_loader() {
+    let text = "if [ -s \"$NVM_DIR/nvm.sh\" ]; then\n. \"$NVM_DIR/nvm.sh\"\nfi\n\
+case $- in\n*i*) . ~/.nvm/nvm.sh ;;\nesac\n. ~/.nvm/nvm.sh\n";
+    assert_eq!(found(text), [(2, LazyLoader), (5, LazyLoader), (7, Loader)]);
+}
+
+#[test]
+fn a_begin_marker_without_an_end_marker_hides_nothing() {
+    let text = format!("{BEGIN_MARKER}\nsource ~/.nvm/nvm.sh\n");
+    assert_eq!(found(&text), [(2, Loader)]);
+    let stray = format!(
+        "{BEGIN_MARKER}\nsource ~/.nvm/nvm.sh\n{BEGIN_MARKER}\neval \"$(nvmrc init zsh)\"\n{END_MARKER}\n"
+    );
+    assert_eq!(found(&stray), [(2, Loader)]);
 }

@@ -1,4 +1,4 @@
-use super::lexer::{Token, has_word, has_word_start, indentation, strip_comment, tokens};
+use super::lexer::{Token, ends_in_continuation, has_word, has_word_start, strip_comment, tokens};
 
 fn word(value: &str) -> Token {
     Token::Word {
@@ -86,11 +86,12 @@ fn tokens_unquote_and_mark_quoted_words() {
 }
 
 #[test]
-fn indentation_counts_leading_blanks() {
-    assert_eq!(indentation("x"), 0);
-    assert_eq!(indentation("  x"), 2);
-    assert_eq!(indentation("\tx"), 1);
-    assert_eq!(indentation(""), 0);
+fn a_line_ending_in_an_odd_number_of_backslashes_continues() {
+    assert!(ends_in_continuation("a && \\"));
+    assert!(ends_in_continuation("a \\\\\\"));
+    assert!(!ends_in_continuation("a \\\\"));
+    assert!(!ends_in_continuation("a \\ "));
+    assert!(!ends_in_continuation(""));
 }
 
 #[test]

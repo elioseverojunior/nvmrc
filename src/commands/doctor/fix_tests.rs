@@ -79,3 +79,15 @@ fn a_completion_fixed_by_hand_is_deleted() {
         delete
     );
 }
+
+#[test]
+fn a_loader_sharing_its_line_asks_to_split_the_line_and_suggests_no_patch() {
+    assert_eq!(
+        fix_text(Kind::CompoundLoader, 0),
+        "the line also runs other commands: move them to their own line(s), \
+then run `nvm migrate` (or delete only the loader by hand)"
+    );
+    let line = "export NVM_DIR=/x; . /x/nvm.sh";
+    let path = Path::new("/h/.bashrc");
+    assert_eq!(suggested_patch(Kind::CompoundLoader, 0, path, line), None);
+}

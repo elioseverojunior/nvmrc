@@ -1,9 +1,10 @@
 use super::kind::{Kind, Severity};
 
-const ALL: [Kind; 11] = [
+const ALL: [Kind; 12] = [
     Kind::Loader,
     Kind::Completion,
     Kind::LazyLoader,
+    Kind::CompoundLoader,
     Kind::LazyStub,
     Kind::Unset,
     Kind::OmzPlugin,
@@ -55,6 +56,7 @@ fn labels_name_what_was_found() {
     assert_eq!(Kind::Loader.label(), "nvm.sh loader");
     assert_eq!(Kind::Completion.label(), "nvm bash_completion");
     assert_eq!(Kind::LazyLoader.label(), "lazy loader");
+    assert_eq!(Kind::CompoundLoader.label(), "loader sharing its line");
     assert_eq!(Kind::OmzPlugin.label(), "oh-my-zsh nvm plugin");
     assert_eq!(Kind::NvmDirExport.label(), "NVM_DIR export");
 }
