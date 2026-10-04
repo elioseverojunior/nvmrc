@@ -6,6 +6,7 @@ rust-version = "1.85.0"
 description = "A native Rust port of nvm, the Node Version Manager"
 license = "MIT"
 repository = "https://github.com/elioseverojunior/nvmrc"
+readme = "README.md"
 keywords = ["nvm", "node", "nodejs", "version-manager", "shell"]
 categories = ["command-line-utilities", "development-tools"]
 # Ready for crates.io, but not published until the owner decides to.
