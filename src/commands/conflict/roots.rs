@@ -25,7 +25,8 @@ const ZSH_FILES: [&str; 4] = [".zshenv", ".zprofile", ".zshrc", ".zlogin"];
 /// - fish: `conf.d/*.fish` by name, then `config.fish`, in
 ///   `${XDG_CONFIG_HOME:-~/.config}/fish`.
 ///
-/// `$ENV` is expanded like a sourced path; one that cannot be is skipped.
+/// `$ENV` is expanded like a sourced path; one that cannot be is skipped. A
+/// symbolic link counts even when it cannot be followed.
 #[must_use]
 pub fn roots(context: &Context<'_>, shell: Option<Shell>) -> Vec<PathBuf> {
     let shells = shell.map_or(SHELLS.to_vec(), |shell| vec![shell]);
@@ -34,7 +35,10 @@ pub fn roots(context: &Context<'_>, shell: Option<Shell>) -> Vec<PathBuf> {
         .into_iter()
         .flat_map(|shell| candidates(context, shell))
     {
-        if !found.contains(&candidate) && context.fs.is_file(&candidate) {
+        // A link that cannot be followed (a loop, a dangling stow link) is
+        // kept: the scan reports it as not read instead of skipping it.
+        let present = context.fs.is_file(&candidate) || context.fs.read_link(&candidate).is_ok();
+        if !found.contains(&candidate) && present {
             found.push(candidate);
         }
     }

@@ -154,3 +154,17 @@ fn replace_file_gives_concurrent_writers_unique_temporary_files() {
     assert!(fs::read_to_string(&file).unwrap().starts_with("writer "));
     assert_eq!(names_in(root.path()), [".bashrc"]);
 }
+
+#[test]
+fn a_looping_link_is_not_called_dangling() {
+    let root = tempfile::tempdir().unwrap();
+    let link = root.path().join(".bashrc");
+    std::os::unix::fs::symlink(&link, &link).unwrap();
+    let error = StdFileSystem.replace_file(&link, "x\n", &accept);
+    let message = error.unwrap_err().to_string();
+    assert!(
+        message.contains("symbolic link that cannot be followed"),
+        "{message}"
+    );
+    assert!(!message.contains("dangling"), "{message}");
+}

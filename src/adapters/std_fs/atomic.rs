@@ -47,7 +47,7 @@ fn sync_directory(target: &Path) {
 fn resolve_target(path: &Path) -> io::Result<PathBuf> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
-            fs::canonicalize(path).map_err(|error| dangling(path, &error))
+            fs::canonicalize(path).map_err(|error| unfollowable(path, &error))
         }
         Ok(_) => Ok(path.to_path_buf()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(path.to_path_buf()),
@@ -55,9 +55,19 @@ fn resolve_target(path: &Path) -> io::Result<PathBuf> {
     }
 }
 
-fn dangling(link: &Path, error: &io::Error) -> io::Error {
-    let message = format!("{}: dangling symbolic link ({error})", link.display());
-    io::Error::new(error.kind(), message)
+/// The error for a link at `link` that `canonicalize` could not follow:
+/// "dangling" only when its target is missing (a loop, ELOOP, or a denied
+/// directory is not).
+fn unfollowable(link: &Path, error: &io::Error) -> io::Error {
+    let what = if error.kind() == io::ErrorKind::NotFound {
+        "dangling symbolic link"
+    } else {
+        "symbolic link that cannot be followed"
+    };
+    io::Error::new(
+        error.kind(),
+        format!("{}: {what} ({error})", link.display()),
+    )
 }
 
 /// The permissions of `target`, or those of a new file when it is missing.

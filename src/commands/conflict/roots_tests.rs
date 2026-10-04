@@ -142,12 +142,12 @@ fn every_shell_without_a_name_once_each_in_shell_order() {
 }
 
 #[test]
-fn a_linked_root_counts_and_a_dangling_link_does_not() {
+fn a_linked_root_counts_and_so_does_a_dangling_link_for_the_scan_to_report() {
     let fs = with_files(&["/Users/u/dotfiles/zsh/.zshrc"]);
     link(&fs, "dotfiles/zsh/.zshrc", "/Users/u/.zshrc");
     link(&fs, "dotfiles/zsh/.zprofile", "/Users/u/.zprofile");
     let found = roots_of(&fs, &home_env(), Some(Shell::Zsh));
-    assert_eq!(found, paths(&["/Users/u/.zshrc"]));
+    assert_eq!(found, paths(&["/Users/u/.zprofile", "/Users/u/.zshrc"]));
 }
 
 #[test]
@@ -160,4 +160,12 @@ fn without_home_only_absolute_variables_name_roots() {
     );
     let env = FakeEnv::default().with_var("ZDOTDIR", "/z");
     assert_eq!(roots_of(&fs, &env, Some(Shell::Zsh)), paths(&["/z/.zshrc"]));
+}
+
+#[test]
+fn a_link_that_leads_nowhere_is_still_a_root() {
+    let fs = FakeFileSystem::default();
+    link(&fs, "/Users/u/.bashrc", "/Users/u/.bashrc");
+    let found = roots_of(&fs, &home_env(), Some(Shell::Bash));
+    assert_eq!(found, paths(&["/Users/u/.bashrc"]));
 }

@@ -220,3 +220,16 @@ Result: no conflicts found; 1 file(s) not read"
     );
     assert_eq!(output.status, NvmExitCode::Failure);
 }
+
+#[test]
+fn a_looping_profile_link_is_reported_not_skipped() {
+    let fs = FakeFileSystem::default();
+    link(&fs, "/Users/u/.bashrc", "/Users/u/.bashrc");
+    let output = report(&fs, &home_env(), &[]);
+    assert!(
+        output.stdout.contains("/Users/u/.bashrc: not read:"),
+        "{}",
+        output.stdout
+    );
+    assert_eq!(output.status, NvmExitCode::Failure);
+}
