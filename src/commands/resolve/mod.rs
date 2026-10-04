@@ -1,22 +1,23 @@
 //! Shared by the commands that take a version or alias: resolve the name
 //! through the alias files, then match it against the installed versions.
 
-use std::path::PathBuf;
-
+use std::ffi::OsString;
 use std::fmt;
+use std::path::PathBuf;
 
 use crate::context::Context;
 use crate::domain::alias;
 use crate::domain::implicit::{derive, highest_in};
-use crate::domain::path_search::find_in_dirs;
+use crate::domain::path_edit::strip_path;
+use crate::domain::path_search::find_in_path;
 use crate::domain::version::{Flavor, Version, VersionPattern};
 use crate::error::CliError;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Resolved {
     Installed(Version),
-    /// The alias chain ended at `system` and a `node` exists on `PATH`
-    /// outside `$NVM_DIR`.
+    /// The alias chain ended at `system` and a `node` is left on `PATH` once
+    /// nvm's entries are stripped.
     System,
     /// No installed version matches. `resolved` is where the alias chain
     /// ended, which is the name itself when it is not an alias.
@@ -46,17 +47,30 @@ pub fn resolve_installed(context: &Context<'_>, name: &str) -> Result<Resolved, 
     Ok(Resolved::Missing { resolved })
 }
 
-/// The first `node` on `PATH` that does not live under `$NVM_DIR`.
+/// The first `node` on `PATH` once nvm's own entries are stripped from it
+/// (`nvm_has_system_node`): a directory that is merely inside `$NVM_DIR`, or
+/// whose text starts with it (`$NVM_DIR/../sys`), is the system's.
 ///
 /// # Errors
 /// Returns [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
 pub fn system_node(context: &Context<'_>) -> Result<Option<PathBuf>, CliError> {
+    Ok(find_in_path(
+        context.fs,
+        &path_without_nvm(context)?,
+        "node",
+    ))
+}
+
+/// `PATH` as `nvm deactivate` leaves it (`nvm_strip_path`): without the
+/// `$NVM_DIR/*/bin` and `$NVM_DIR/versions/*/*/bin` entries.
+///
+/// # Errors
+/// Returns [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
+pub fn path_without_nvm(context: &Context<'_>) -> Result<OsString, CliError> {
     let nvm_dir = context.nvm_dir()?;
-    let path_variable = context.env.var_os("PATH").unwrap_or_default();
-    let outside_nvm = std::env::split_paths(&path_variable)
-        .filter(|directory| !directory.starts_with(&nvm_dir))
-        .collect::<Vec<_>>();
-    Ok(find_in_dirs(context.fs, outside_nvm, "node"))
+    let path = context.env.var_os("PATH").unwrap_or_default();
+    let stripped = strip_path(&path.to_string_lossy(), "/bin", &nvm_dir.to_string_lossy());
+    Ok(OsString::from(stripped))
 }
 
 /// The version the system `node` reports, or `None` when there is no system
@@ -146,5 +160,7 @@ pub fn shown(context: &Context<'_>, name: &str) -> Result<Shown, CliError> {
     }
 }
 
+#[cfg(test)]
+mod system_tests;
 #[cfg(test)]
 mod tests;

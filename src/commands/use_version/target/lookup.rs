@@ -3,18 +3,15 @@
 //! `nvm_has_system_iojs`, `nvm_is_version_installed` and
 //! `nvm_ensure_version_installed`.
 
-use std::ffi::OsStr;
-
 use super::{SystemFlavor, SystemNode};
 use crate::commands::current;
 use crate::commands::install::place::version_path;
-use crate::commands::resolve::{Resolved, resolve_installed};
+use crate::commands::resolve::{Resolved, path_without_nvm, resolve_installed};
 use crate::commands::transcript::Transcript;
 use crate::commands::use_version::messages::{NO_SYSTEM_VERSION, not_yet_installed};
 use crate::context::Context;
 use crate::domain::alias;
 use crate::domain::current::Current;
-use crate::domain::path_edit::strip_path;
 use crate::domain::path_search::find_in_path;
 use crate::domain::version::Version;
 use crate::domain::version_prefix::with_v_prefix;
@@ -99,10 +96,8 @@ fn active(context: &Context<'_>) -> Result<Resolution, CliError> {
 /// # Errors
 /// [`CliError::NvmDirUnresolved`] when `$NVM_DIR` cannot be found.
 pub fn system_node(context: &Context<'_>) -> Result<Option<SystemNode>, CliError> {
-    let nvm_dir = context.nvm_dir()?;
-    let path = context.env.var_os("PATH").unwrap_or_default();
-    let stripped = strip_path(&path.to_string_lossy(), "/bin", &nvm_dir.to_string_lossy());
-    let find = |name: &str| find_in_path(context.fs, OsStr::new(&stripped), name);
+    let stripped = path_without_nvm(context)?;
+    let find = |name: &str| find_in_path(context.fs, &stripped, name);
     let node = find("node").map(|binary| SystemNode {
         flavor: SystemFlavor::Node,
         binary,
