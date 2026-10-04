@@ -724,3 +724,75 @@ flag "--arch <arch>" help="The image platform's architecture" required=#true {
   choices "amd64" "arm64"
 }
 '''
+
+[tasks."release:homebrew"]
+alias = ["rh"]
+description = "Render the Homebrew formula of the release from SHA256SUMS"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+dist="${usage_dist:?}"
+repository="${usage_repository:?}"
+output="${usage_output:?}"
+mkdir -p "$(dirname "$output")"
+version="$(mise run -q release:check)"
+sum() { # <target>: the SHA-256 of that archive, or fail
+  local file="nvmrc-$version-$1.tar.gz" digest
+  digest="$(awk -v file="$file" '$2 == file { print $1 }' "$dist/SHA256SUMS")"
+  [ -n "$digest" ] || { echo "release:homebrew: $file is not in SHA256SUMS" >&2; return 1; }
+  echo "$digest"
+}
+arm_mac="$(sum aarch64-apple-darwin)"
+intel_mac="$(sum x86_64-apple-darwin)"
+arm_linux="$(sum aarch64-unknown-linux-musl)"
+intel_linux="$(sum x86_64-unknown-linux-musl)"
+sed -e "s|@REPOSITORY@|$repository|g" -e "s|@VERSION@|$version|g" \
+  -e "s|@URL@|https://github.com/$repository/releases/download/v$version|g" \
+  -e "s|@SHA_AARCH64_APPLE_DARWIN@|$arm_mac|" -e "s|@SHA_X86_64_APPLE_DARWIN@|$intel_mac|" \
+  -e "s|@SHA_AARCH64_UNKNOWN_LINUX_MUSL@|$arm_linux|" \
+  -e "s|@SHA_X86_64_UNKNOWN_LINUX_MUSL@|$intel_linux|" \
+  packaging/homebrew/nvmrc.rb.in > "$output"
+echo "release:homebrew: wrote $output"
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--dist <dir>" help="The directory of release files" default="dist"
+flag "--repository <owner/name>" help="The GitHub repository of the release" default="elioseverojunior/nvmrc"
+flag "--output <file>" help="Where the formula is written" default="target/homebrew/nvmrc.rb"
+'''
+
+[tasks."release:snapshot"]
+alias = ["rs"]
+description = "Run the whole release locally into dist/: build, package, smoke, image"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)"
+host="$(rustup run "$channel" rustc -vV | sed -n 's/^host: //p')"
+rm -rf dist target/image
+mise run release:build --target "$host"
+for machine in x86_64 aarch64; do
+  mise run release:build --target "$machine-unknown-linux-musl" --container
+done
+mise run release:package
+mise run release:sums
+mise run release:smoke --arch amd64
+mise run release:smoke --arch arm64
+mise run release:image --arch amd64
+mise run release:image --arch arm64
+mise run release:notes
+ls -1 dist
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+'''
