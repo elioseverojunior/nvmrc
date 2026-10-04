@@ -3,6 +3,7 @@ pub mod alias_format;
 pub mod checksum;
 pub mod colors;
 pub mod compression;
+pub mod conflict;
 pub mod current;
 #[cfg(test)]
 pub(crate) mod fixtures;

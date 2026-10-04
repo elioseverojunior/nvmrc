@@ -30,10 +30,9 @@ use std::str::FromStr;
 
 use crate::error::CliError;
 
-/// The first line of the snippet.
-pub const BEGIN_MARKER: &str = "# >>> nvmrc init >>>";
-/// The last line of the snippet.
-pub const END_MARKER: &str = "# <<< nvmrc init <<<";
+/// The first and last lines of the snippet (defined with the conflict rules,
+/// which skip the block).
+pub use crate::domain::conflict::{BEGIN_MARKER, END_MARKER};
 /// How `nvm init` is called.
 pub const USAGE: &str = "Usage: nvm init <shell> [--no-use] [--install]";
 
