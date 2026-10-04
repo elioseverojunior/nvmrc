@@ -1,0 +1,2178 @@
+# nvmrc Plan 10: Release Engineering Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use
+> superpowers:subagent-driven-development (recommended) or
+> superpowers:executing-plans to implement this plan task-by-task. Steps use
+> checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Release nvmrc from a `v*` tag with provenance: native builds for
+Linux (glibc and static musl) and macOS on x86_64 and aarch64, deb, rpm, apk
+and Arch packages, a multi-arch GHCR image, a Nix flake and an opt-in
+Homebrew formula, every file signed with cosign and attested by GitHub.
+
+**Architecture:** Every release step is a `mise run release:*` task, so the
+laptop (`mise run release:snapshot`) and CI run the same code. The workflow
+`.github/workflows/release.yml` re-runs the CI gates, builds each target on
+a native runner (the owner's matrix shape), packages the static musl
+binaries with nfpm, smoke-tests every package and image in its own
+container, then signs and attests the exact bytes that the publish job
+uploads. GoReleaser is not used (ruling R1).
+
+**Tech Stack:** Rust 2024 (MSRV 1.85, toolchain 1.99 from
+`rust-toolchain.toml`), GitHub Actions, `elioseverojunior/rust-toolchain@v0`,
+mise (`jdx/mise-action@v5`), nfpm 2, syft 1, cosign 3, git-cliff 2, Docker
+Buildx, Nix (nixos-26.05), Homebrew.
+
+**Spec:** `docs/superpowers/specs/2026-10-02-nvmrc-design.md` (sections 1,
+2, 9 and 10; this plan adds section 13). It starts from `main` plus one
+commit on the branch `feat/plan-10-release` (`a768a1d`, the MSRV declared as
+`rust-version = "1.85"`).
+
+**Evidence.** Every file content below was run by the plan author on
+2026-10-04 in a scratch clone under `/private/tmp` (macOS arm64, Docker
+Desktop with amd64 emulation): the snapshot built the host and both musl
+targets, the 13 package smoke tests and both image smoke tests passed, the
+flake built in the `nixos/nix` container with 1395 unit tests, and
+`actionlint` (with shellcheck) and `hadolint` were clean. What could not run
+locally is named in each task (the glibc and macOS Intel builds, the first
+signed release, `nix build` on macOS).
+
+## Global Constraints
+
+- Rust edition 2024, `rust-version = "1.85"`; no API newer than 1.85. The
+  development toolchain is 1.99 (`rust-toolchain.toml`). On this machine
+  Homebrew's `cargo` is first on `PATH` and is not a rustup proxy: use
+  `rustup run 1.99 cargo ...` (or put `$HOME/.cargo/bin` first) whenever a
+  non-host target is built.
+- Every commit passes `cargo fmt --all --check`,
+  `cargo clippy --all-targets --all-features --locked -- -D warnings` and
+  `cargo test --locked`.
+- No new crate dependency. `Cargo.toml` is not edited.
+- Files under 300 lines (workflows included), functions and task bodies
+  under 30 lines, meaningful names without abbreviations.
+- Markdown is formatted and linted with `rumdl` (`rumdl fmt <file>`, then
+  `rumdl check .`; MD013 at 80 columns, tables included, code blocks
+  exempt). No wide tables: lists instead.
+- GitHub Actions: the loosest published tag, verified with `gh api` on
+  2026-10-04: `actions/checkout@v7`, `actions/upload-artifact@v7`,
+  `actions/download-artifact@v8`, `actions/attest@v4`,
+  `elioseverojunior/rust-toolchain@v0`, `jdx/mise-action@v5`,
+  `docker/setup-qemu-action@v4`, `docker/setup-buildx-action@v4`,
+  `docker/login-action@v4`, `docker/metadata-action@v6`,
+  `docker/build-push-action@v7`, `cachix/install-nix-action@v31`,
+  `taiki-e/install-action@v2`. Never a SHA. kebab-case job ids, step ids and
+  inputs; `SCREAMING_SNAKE_CASE` only for environment variables, `vars` and
+  `secrets`. Rust is installed only by `elioseverojunior/rust-toolchain@v0`, which
+  also does the caching (no other toolchain or cache action).
+- `permissions: {}` at the top of `release.yml`; each job asks for what it
+  needs. `contents: write`, `packages: write` and `artifact-metadata: write`
+  appear only in the `publish` job; `id-token: write` and
+  `attestations: write` only in `sign-and-attest` and `publish`.
+- mise: `mise.toml` is the single source of truth for tools and tasks. Keep
+  `[settings]` (with `idiomatic_version_file_enable_tools = []`), the `hk`
+  platform gate and the `setup` task verbatim. Every new task has an alias
+  that collides with no other, a description, `shell = "bash -c"`, a `'''`
+  body starting with `#!/usr/bin/env bash` + `set -Eeuo pipefail`, and a
+  `usage` with `flag "-v --verbose"`. Do not run `mise run setup`. rust is
+  never a mise tool (mise hangs on it).
+- Commits: Conventional Commits, GPG-signed with `git commit -S`, files added
+  by explicit pathspec (`git add <paths>`, never `-A`), no AI attribution and
+  no `Co-Authored-By` trailer. Never push: the owner pushes.
+- Never touch `~/.nvm` or real dotfiles. Experiments and throw-away output go
+  to `/private/tmp`; `dist/` and `result` are git-ignored and are removed
+  before each commit. No test scripts are kept in the repository: the smoke
+  checks are generated by the `release:smoke` task at run time.
+
+## Rulings
+
+Each ruling is restated in the task that implements it.
+
+- **R1, GoReleaser: no.** Verified with GoReleaser 2.18.2: its Rust builder
+  works (`goreleaser check` prints "you are using the experimental Rust
+  builder"), and with cargo-zigbuild it built all six targets from one Mac,
+  with the glibc floor set by the `.2.17` target suffix. But it builds
+  everything itself on one host, while the owner wants native runners and
+  provenance on the exact bytes shipped; importing binaries built elsewhere
+  needs `builder: prebuilt`, which is GoReleaser Pro only; and its Docker
+  step needs a Docker daemon, which macOS runners lack. Setting `tool:
+  "true"` makes the OSS Rust builder copy binaries already present in
+  `target/<triple>/release/` (verified), but that is undocumented behaviour
+  of an experimental builder. So the release uses the tools GoReleaser
+  would have called: nfpm (its packager, same configuration format), syft,
+  cosign and the `gh` CLI, each a pinned mise tool, behind mise tasks. If
+  native runners ever stop being available, the zigbuild route above is the
+  fallback (record kept in this plan, not in the repository).
+- **R2, Windows: out.** The shell channel is an inherited file descriptor
+  (`NVMRC_SCRIPT_FD`), `nvm-exec` replaces itself with `exec`, and installs
+  set Unix permissions; the spec scopes v1 to Linux and macOS. Today a
+  Windows build fails on an incidental `unused variable` lint; Task 1 makes
+  it fail first with `nvmrc supports Unix only (Linux and macOS); see
+  docs/deviations.md`. No Windows target in any matrix; README and
+  `docs/deviations.md` say so.
+- **R3, targets and runners.** `x86_64-unknown-linux-gnu` on
+  `ubuntu-22.04` and `aarch64-unknown-linux-gnu` on `ubuntu-22.04-arm`: a
+  native 22.04 build needs glibc 2.34 at most (measured: `GLIBC_2.34` is
+  the newest symbol), which covers RHEL 9, Amazon Linux 2023, Debian 12 and
+  Ubuntu 22.04; `release:build` fails a glibc build that needs more.
+  `x86_64-unknown-linux-musl` on `ubuntu-24.04` and
+  `aarch64-unknown-linux-musl` on `ubuntu-24.04-arm` with `musl-tools`
+  (static, verified in Debian containers on both architectures).
+  `x86_64-apple-darwin` on `macos-15-intel` (macos-13 is retired;
+  macos-15-intel is the last Intel image, supported until August 2027; the
+  fallback is building it on `macos-latest`, verified locally from arm64)
+  and `aarch64-apple-darwin` on `macos-latest`. Arm64 Linux runners are
+  available to private repositories since January 2026.
+- **R4, the `.cargo/config.toml` overrides go.** `[target.x86_64-unknown-
+  linux-gnu]` (clang + mold), `[target.aarch64-unknown-linux-gnu]`
+  (`aarch64-linux-gnu-gcc`) and `[env]` (`CC_aarch64_unknown_linux_gnu`,
+  `HOST_CC`) broke three verified builds: the musl build in the `rust:1.99`
+  image (`linker clang not found`, the host build scripts use the x86_64
+  override), a native aarch64 build (`ring` asks for
+  `aarch64-linux-gnu-gcc`) and the Nix build (same error). The release
+  profile (fat LTO, `codegen-units = 1`, `panic = "abort"`,
+  `strip = "symbols"`) stays in that file and applies to every release
+  build; the macOS `-dead_strip_dylibs` flags stay.
+- **R5, packages.** deb, rpm, apk and Arch (`.pkg.tar.zst`) for amd64 and
+  arm64, all built by nfpm from the static musl binaries, so they have no
+  dependencies and install on any release of those distributions (Amazon
+  Linux 2023, Fedora, UBI 9 and RHEL, Debian, Ubuntu, Alpine, Arch). The
+  binaries go to `/usr/bin`; `README.md` to `/usr/share/doc/nvmrc/`; the
+  license to `/usr/share/doc/nvmrc/copyright` (deb) and
+  `/usr/share/licenses/nvmrc/LICENSE` (rpm, apk, Arch). Metadata: name
+  `nvmrc`, maintainer and vendor from `git config user.*` (`Elio S. Jr
+  <elioseverojunior@gmail.com>`, open question Q4), homepage the GitHub
+  repository, license MIT, section `utils`. The packages are not signed
+  with a distribution key (apk needs `--allow-untrusted`); their integrity
+  comes from cosign and the attestations. No apt or yum repository.
+- **R6, the `nvm` name.** No `conflicts`/`replaces`/`provides`: no package
+  of these distributions ships `/usr/bin/nvm` (nvm.sh is a shell function;
+  Homebrew's `nvm` formula installs `nvm.sh` and `nvm-exec` under its
+  prefix, not in `bin`), and the package managers already refuse a file
+  owned by another package. The real hazard is an `nvm` function that
+  nvm.sh defines in an interactive shell, which shadows `/usr/bin/nvm`;
+  that is what `nvmrc doctor` and `nvm migrate` handle, and the README says
+  so next to the packages.
+- **R7, Docker.** `FROM scratch` with the static musl binaries and the CA
+  bundle copied from `alpine:3`, `USER 65534:65534`, `NVM_DIR=/nvm`, no
+  `ENTRYPOINT`: `docker run --rm ghcr.io/elioseverojunior/nvmrc:<version>
+  nvmrc --version` works, and so does `nvm ls-remote` (verified, TLS
+  included). Its purpose is distribution: `COPY --from=... /usr/bin/nvm*
+  /usr/local/bin/` into another image. It is not a Node.js image (no shell,
+  no libc, so no installed node would run). About 12 MB per platform.
+  Built from prebuilt binaries only, so both platforms build on any host
+  without emulation; running the foreign platform needs QEMU (Docker
+  Desktop has it; CI runs each platform natively). OCI labels and
+  annotations from `docker/metadata-action@v6`; BuildKit provenance
+  (`mode=max`) and SBOM; signed with cosign and attested to GHCR.
+- **R8, Homebrew: a formula, opt-in.** Without GoReleaser, the standard
+  Homebrew artefact is a formula: `on_macos`/`on_linux` with
+  `on_arm`/`on_intel` URLs (the macOS archives and the static Linux ones),
+  rendered from `SHA256SUMS` by `release:homebrew`, works on Linuxbrew, and
+  needs no quarantine hook (formulae download with curl). It is pushed to
+  the tap named by the repository variable `NVMRC_HOMEBREW_TAP`
+  (`owner/name`) with the secret `HOMEBREW_TAP_TOKEN`; while the variable is
+  unset the steps are skipped. GoReleaser's `brews` are deprecated in favour
+  of casks (v2.10), which does not apply here.
+- **R9, Nix.** `flake.nix` in the repository (`buildRustPackage`, version
+  read from `Cargo.toml`, `cargoTestFlags = [ "--lib" ]` because the
+  end-to-end suites need real shells and a writable HOME that the sandbox
+  does not give). GoReleaser's `nix`/NUR publisher is dropped with R1. CI
+  builds the flake on Linux and macOS.
+- **R10, Arch.** nfpm's `archlinux` format costs one line; smoke-tested in
+  `archlinux:latest` on amd64 only (there is no official arm64 image).
+- **R11, version and changelog.** `Cargo.toml` is the source of truth;
+  `nvm --version` prints `nvm <version>` from it. The tag is `v<version>`;
+  `release:check` fails otherwise, and every smoke test compares
+  `nvm --version` with it. A release commit bumps `Cargo.toml` and
+  `Cargo.lock` together. Notes come from git-cliff over Conventional
+  Commits (`cliff.toml`; the repository had no changelog tool, and
+  GitHub's generated notes are PR-based while this repository commits to
+  `main`).
+- **R12, provenance and signing.** `actions/attest@v4`
+  (`actions/attest-build-provenance@v4` is only a wrapper around it): one
+  SLSA provenance attestation over every file listed in `SHA256SUMS`, one
+  over each extracted binary (so `/usr/bin/nvm` from a package verifies),
+  one SBOM attestation (SPDX JSON of `Cargo.lock`: the binaries are
+  stripped, so a scan of them finds nothing, verified), and one for the
+  image pushed to GHCR. cosign keyless (GitHub OIDC): `sign-blob` of every
+  release file, `SHA256SUMS` included, into `<file>.sigstore.json`;
+  bundles are not signed; `cosign sign` of the image digest. The signing
+  identity is the workflow:
+  `https://github.com/elioseverojunior/nvmrc/.github/workflows/release.yml@refs/tags/v<version>`,
+  issuer `https://token.actions.githubusercontent.com`. Signing happens
+  after the smoke tests, so nothing untested is signed.
+- **R13, private repository.** The repository is private today. GitHub
+  attests private repositories only on Enterprise Cloud, and cosign's
+  public Rekor log would record the repository name. So a publishing run
+  fails early in a private repository ("make it public first"), and a dry
+  run there skips cosign and lets the attest steps fail without failing
+  the job. Making it public is open question Q5.
+- **R14, gates before release.** `ci.yml` gains `workflow_call`; the
+  release's `gates` job calls it, so fmt, clippy (Linux, macOS), tests
+  (every shell), MSRV, cargo-deny, cargo-audit, rumdl and the Nix build run
+  again on the tagged commit, and every build job `needs` them.
+- **R15, toolchain action.** `elioseverojunior/rust-toolchain@v0` replaces
+  `rustup toolchain install` and `Swatinem/rust-cache` everywhere (inputs
+  checked against its `action.yml`: it reads `rust-toolchain.toml`,
+  bootstraps rustup when missing, merges `targets`, exports
+  `RUSTUP_TOOLCHAIN`). Release builds use `cache: false` (the default): a
+  release starts from an empty `target/`, so nothing a previous run left
+  can reach a signed archive. CI jobs use `cache: true` with
+  `cache-key-hash: ${{ hashFiles('**/Cargo.lock') }}` and a per-job
+  `cache-key-suffix`. The MSRV job uses `msrv-install: true` and
+  `cargo +1.85 check`.
+- **R16, tools in CI.** `jdx/mise-action@v5` installs mise and only the
+  tools a job names (`install_args`), with
+  `MISE_TASK_RUN_AUTO_INSTALL=false` so a task never fetches the rest, and
+  `MISE_TRUSTED_CONFIG_PATHS=${{ github.workspace }}`. cosign comes from
+  mise (aqua, checksum-verified), so `sigstore/cosign-installer` is not
+  needed (its newest tags are point releases only: `v4.1.2`, no `v4`); the
+  release is created with the `gh` CLI preinstalled on the runners, so
+  `softprops/action-gh-release` is not needed either.
+- **R17, YAGNI.** No shell completions (the CLI has no `clap_complete`), no
+  man page (none exists), no crates.io publication (`publish = false`
+  stays), no GoReleaser, zig or cargo-zigbuild in `mise.toml`.
+
+## The owner's example workflow, point by point
+
+- Kept: tag `v*` plus `workflow_dispatch`; a native-runner build matrix; a
+  separate sign-and-attest job that downloads everything with
+  `merge-multiple`; keyless `cosign sign-blob --bundle`; provenance with
+  GitHub attestations; publishing only from a tag.
+- Changed: top-level permissions become `{}` with per-job grants (R13,
+  Global Constraints); `macos-13` becomes `macos-15-intel` (R3); the
+  missing aarch64 Linux targets are added, glibc and musl (R3); Windows is
+  dropped (R2); actions move to the loosest published tags, and
+  `cosign-installer` and `action-gh-release` are replaced by mise and `gh`
+  (R16); the example's toolchain step becomes the owner's action (R15); each
+  archive holds `nvmrc`, `nvm`, `nvm-exec`, `LICENSE` and `README.md` and
+  is named `nvmrc-<version>-<target>.tar.gz`; `SHA256SUMS` is signed and is
+  the attestation subject list; bundles are `<file>.sigstore.json` and are
+  never signed themselves; the `.cargo/config.toml` overrides go (R4); a
+  dry run builds, smoke-tests, signs and attests but publishes nothing
+  (R13 for the private-repository exception).
+- Added: CI gates before building (R14), packages and their smoke tests
+  (R5), the image (R7), the SBOM (R12), the version check (R11), the
+  Homebrew formula (R8).
+
+## File map
+
+- Create: `.github/workflows/release.yml`, `packaging/nfpm.yaml`,
+  `packaging/homebrew/nvmrc.rb.in`, `Dockerfile.release`, `cliff.toml`,
+  `flake.nix`, `flake.lock` (generated).
+- Modify: `src/lib.rs` (guard), `.cargo/config.toml`, `Dockerfile` (dev
+  image), `.github/workflows/ci.yml`, `mise.toml`, `mise.lock` (generated),
+  `.gitignore`, `README.md`, `docs/deviations.md`,
+  `docs/superpowers/specs/2026-10-02-nvmrc-design.md`.
+
+Sizes: S is under 30 minutes, M under 90.
+
+---
+
+### Task 1: Refuse to compile on anything but Unix (S)
+
+**Files:**
+
+- Modify: `src/lib.rs:1-2`
+- Modify: `docs/deviations.md` (section "Platforms")
+
+**Interfaces:**
+
+- Consumes: nothing.
+- Produces: the exact compiler message
+  `nvmrc supports Unix only (Linux and macOS); see docs/deviations.md`,
+  quoted by Task 10's README.
+- [ ] **Step 1: Show that a Windows build fails today for no stated
+  reason**
+
+Needs the Windows standard library and a cross linker for one check; zig
+and cargo-zigbuild come from mise for this command only.
+
+Run:
+
+```bash
+rustup target add --toolchain 1.99 x86_64-pc-windows-gnu
+PATH="$HOME/.cargo/bin:$PATH" mise exec zig@0.17 aqua:rust-cross/cargo-zigbuild@0.23 -- \
+  cargo zigbuild --locked --lib --target x86_64-pc-windows-gnu 2>&1 | grep '^error' | head -n 3
+```
+
+Expected (an incidental lint, not a decision):
+
+```text
+error: unused variable: `target`
+error: could not compile `nvmrc` (lib) due to 1 previous error
+```
+
+- [ ] **Step 2: Add the guard at the top of `src/lib.rs`**
+
+`src/lib.rs` starts with `//! nvmrc: a native Rust port of nvm.` and a
+blank line. Insert after them:
+
+```rust
+// nvmrc runs on Unix only (Linux and macOS): the shell channel is an inherited
+// file descriptor, `nvm-exec` replaces itself with `exec`, and installs set
+// Unix permissions. See "Platforms" in docs/deviations.md.
+#[cfg(not(unix))]
+compile_error!("nvmrc supports Unix only (Linux and macOS); see docs/deviations.md");
+```
+
+The existing `#[cfg(not(unix))]` fallbacks in `src/adapters/` stay: they
+are never compiled now, and removing them is out of this plan's scope.
+
+- [ ] **Step 3: Run the check again**
+
+Run: the command of Step 1.
+
+Expected (the guard is the first error):
+
+```text
+error: nvmrc supports Unix only (Linux and macOS); see docs/deviations.md
+error: unused variable: `target`
+error: could not compile `nvmrc` (lib) due to 2 previous errors
+```
+
+- [ ] **Step 4: Record it in `docs/deviations.md`**
+
+In the section `## Platforms`, replace the line
+`v1 runs on Linux and macOS (x86_64 and arm64). Not handled:` with:
+
+```markdown
+v1 runs on Linux and macOS (x86_64 and arm64). Windows is not supported:
+the shell channel is an inherited file descriptor, `nvm-exec` replaces
+itself with `exec`, and installs set Unix permissions, so building for
+Windows stops with a compile error naming this file. Not handled:
+```
+
+- [ ] **Step 5: Gates**
+
+Run:
+
+```bash
+cargo fmt --all --check
+cargo clippy --all-targets --all-features --locked -- -D warnings
+cargo test --locked
+rumdl fmt docs/deviations.md && rumdl check .
+```
+
+Expected: no output from fmt, clippy clean, every `test result: ok`,
+`rumdl` reports no issues.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/lib.rs docs/deviations.md
+git commit -S -m "feat: refuse to compile on platforms other than Unix"
+```
+
+---
+
+### Task 2: Drop the Linux linker overrides (S)
+
+**Files:**
+
+- Modify: `.cargo/config.toml:20-28` (comment), `:36-40` (`[env]`),
+  `:115-121` (the two Linux `[target.*]` tables)
+- Modify: `Dockerfile:5-13` (dev image)
+- Modify: `README.md` (one sentence in "Install")
+
+**Interfaces:**
+
+- Consumes: nothing.
+- Produces: a configuration under which `cargo build --release --target
+  <any Linux triple>` works with the platform `cc` alone. Tasks 4, 5 and 9
+  rely on it.
+- [ ] **Step 1: Show the musl build failing in the stock Rust image**
+
+Run (from the repository root; `--platform linux/amd64` makes the failure
+the same on every host):
+
+```bash
+docker run --rm --platform linux/amd64 -v "$PWD:/work" -w /work \
+  -e CARGO_TARGET_DIR=/work/target/container docker.io/library/rust:1.99 sh -c \
+  'apt-get update -qq && apt-get install -y -qq musl-tools >/dev/null &&
+   rustup target add x86_64-unknown-linux-musl >/dev/null &&
+   cargo build --release --locked --bins --target x86_64-unknown-linux-musl' 2>&1 |
+  grep -m 1 '^error'
+```
+
+Expected: ``error: linker `clang` not found``.
+
+- [ ] **Step 2: Edit `.cargo/config.toml`**
+
+Replace the comment paragraph that starts with
+`` # `target-cpu=native` is deliberately NOT here. `` (nine lines, just above
+`rustflags = ["-D", "warnings"]`) with:
+
+```toml
+# `target-cpu=native` is deliberately NOT here: release binaries are built on
+# CI runners and must run on any CPU of their architecture. Native tuning is a
+# per-machine choice for a developer's own `RUSTFLAGS`. Cargo REPLACES this
+# list with a `[target.<triple>] rustflags` list, so every such list below
+# repeats `-D warnings`.
+```
+
+Delete the whole `[env]` table (its two settings and two comments, and the
+blank line after it).
+
+Replace everything from `# Linux x86_64 — use mold if available for faster
+linking` to the end of the file (both Linux `[target.*]` tables) with, and
+end the file with a newline:
+
+```toml
+# Linux has no linker override on purpose. Release builds run on stock CI
+# runners (glibc and musl, x86_64 and aarch64) and in the Nix sandbox, where
+# neither clang + mold nor aarch64-linux-gnu-gcc exists; the platform `cc`
+# links every Linux target. A developer who wants mold sets it in
+# `~/.cargo/config.toml`.
+```
+
+- [ ] **Step 3: Run Step 1 again**
+
+Run: the command of Step 1 without the final `grep`, piped to
+`tail -n 1`; then
+`file target/container/x86_64-unknown-linux-musl/release/nvm`.
+
+Expected: `Finished `release` profile [optimized] target(s) in ...` and
+`ELF 64-bit LSB pie executable, x86-64, ..., static-pie linked, ...
+stripped`. Then `rm -rf target/container`.
+
+- [ ] **Step 4: Drop the linkers from the dev image**
+
+In `Dockerfile`, replace the comment and the `RUN apt-get ...` block with:
+
+```dockerfile
+# The end-to-end tests of `nvm init` run in every shell it supports and skip
+# the ones that are missing, so fish, zsh, ksh and dash are installed next to
+# bash. Package versions are not pinned (see DL3008 in .hadolint.yaml).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends dash fish ksh zsh \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+- [ ] **Step 5: README**
+
+In `README.md`, "Install", delete the sentence
+`On x86_64 Linux the linker settings need` ... `cross-building for aarch64
+Linux needs `gcc-aarch64-linux-gnu`.` (one sentence, at the end of the
+"Requirements" bullet). Task 10 rewrites the rest of the section.
+
+- [ ] **Step 6: Gates, the dev image included**
+
+Run: `cargo clippy --all-targets --all-features --locked -- -D warnings &&
+cargo test --locked && mise run lint:docker && mise run docker:test`
+
+Expected: clippy clean, tests pass on macOS, hadolint silent, and the
+Debian image (built without clang, mold or the aarch64 cross gcc) reports
+23 `test result: ok` lines and no `FAILED` (verified by the plan author).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add .cargo/config.toml Dockerfile README.md
+git commit -S -m "build: drop the Linux linker overrides that break native and musl builds"
+```
+
+---
+
+### Task 3: CI on the owner's toolchain action, callable by the release (S)
+
+**Files:**
+
+- Modify: `.github/workflows/ci.yml` (whole file below; the `nix` job is
+  added in Task 4)
+
+**Interfaces:**
+
+- Consumes: Task 2 (no clang or mold to install any more).
+- Produces: `ci.yml` with `on.workflow_call`, called by Task 9's `gates`
+  job.
+- [ ] **Step 1: Replace `.github/workflows/ci.yml`**
+
+Every `rustup toolchain install` and `Swatinem/rust-cache@v2` step becomes
+`elioseverojunior/rust-toolchain@v0` (it reads `rust-toolchain.toml`);
+the clang and mold installs go; the MSRV job installs 1.85 with
+`msrv-install`.
+
+```yaml
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  # release.yml re-runs every gate on the commit it releases.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: elioseverojunior/rust-toolchain@v0
+      - run: cargo fmt --all --check
+
+  clippy:
+    name: clippy (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: elioseverojunior/rust-toolchain@v0
+        with:
+          cache: true
+          cache-key-hash: ${{ hashFiles('**/Cargo.lock') }}
+          cache-key-suffix: clippy
+      - run: cargo clippy --all-targets --all-features --locked -- -D warnings
+
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      # The end-to-end tests of `nvm init` and the contract run in every
+      # shell nvmrc supports and skip the missing ones: on Linux all are
+      # installed; macOS has bash, zsh, sh, dash and ksh already.
+      - name: Install every shell
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends dash fish ksh zsh
+      - uses: elioseverojunior/rust-toolchain@v0
+        with:
+          cache: true
+          cache-key-hash: ${{ hashFiles('**/Cargo.lock') }}
+          cache-key-suffix: test
+      - run: cargo test --locked
+
+  msrv:
+    name: msrv (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Installs the toolchain of rust-toolchain.toml and, next to it, the
+      # rust-version of Cargo.toml, reachable as `cargo +1.85`.
+      - uses: elioseverojunior/rust-toolchain@v0
+        with:
+          msrv-install: true
+          cache: true
+          cache-key-hash: ${{ hashFiles('**/Cargo.lock') }}
+          cache-key-suffix: msrv
+      - run: cargo +1.85 check --all-targets --locked
+
+  supply-chain:
+    name: cargo deny and cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: elioseverojunior/rust-toolchain@v0
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny,cargo-audit
+      - run: cargo deny check
+      - run: cargo audit
+
+  docs:
+    name: markdown (rumdl)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: pipx run rumdl check .
+```
+
+- [ ] **Step 2: Lint**
+
+Run: `actionlint .github/workflows/ci.yml`
+
+Expected: no output, exit 0 (shellcheck runs when installed).
+
+- [ ] **Step 3: Check the action's inputs once more**
+
+Run:
+
+```bash
+gh api repos/elioseverojunior/rust-toolchain/contents/action.yml --jq .content | base64 -d |
+  grep -E '^  (toolchain|targets|cache|cache-key-hash|cache-key-suffix|msrv-install):'
+```
+
+Expected: those six input names. The CI run itself happens when the owner
+pushes the branch.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add .github/workflows/ci.yml
+git commit -S -m "ci: install Rust with elioseverojunior/rust-toolchain and allow workflow_call"
+```
+
+---
+
+### Task 4: Nix flake (S)
+
+**Files:**
+
+- Create: `flake.nix`, `flake.lock` (generated)
+- Modify: `.github/workflows/ci.yml` (append the `nix` job),
+  `.gitignore` (`/result`)
+
+**Interfaces:**
+
+- Consumes: Task 2 (without it the aarch64 build asks for
+  `aarch64-linux-gnu-gcc`, verified).
+- Produces: `packages.<system>.nvmrc` and `packages.<system>.default` for
+  `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`, `aarch64-darwin`.
+
+Nix is not installed on this machine; the `nixos/nix` image runs it (the
+build below is native aarch64-linux on Apple silicon). macOS builds of the
+flake run only in CI.
+
+- [ ] **Step 1: Show there is no flake**
+
+Run:
+
+```bash
+docker run --rm -v "$PWD:/w" -w /w nixos/nix:latest \
+  nix --extra-experimental-features 'nix-command flakes' build .#nvmrc 2>&1 | tail -n 1
+```
+
+Expected: an error that `/w` does not contain a `flake.nix`.
+
+- [ ] **Step 2: Create `flake.nix`**
+
+```nix
+{
+  description = "nvmrc: a native Rust port of nvm, the Node Version Manager";
+
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
+
+  outputs =
+    { self, nixpkgs }:
+    let
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
+      forAllSystems = nixpkgs.lib.genAttrs systems;
+      # Cargo.toml is the source of truth for the name and the version.
+      manifest = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package;
+    in
+    {
+      packages = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          nvmrc = pkgs.rustPlatform.buildRustPackage {
+            pname = manifest.name;
+            inherit (manifest) version;
+            src = self;
+            cargoLock.lockFile = ./Cargo.lock;
+            # The unit tests only: the end-to-end suites run real shells and
+            # a temporary HOME, which the build sandbox does not provide; CI
+            # runs them on every push.
+            cargoTestFlags = [ "--lib" ];
+            meta = {
+              inherit (manifest) description;
+              homepage = manifest.repository;
+              license = pkgs.lib.licenses.mit;
+              mainProgram = "nvmrc";
+              platforms = systems;
+            };
+          };
+          default = self.packages.${system}.nvmrc;
+        }
+      );
+    };
+}
+```
+
+- [ ] **Step 3: Lock, build, check**
+
+Nix only sees files git knows, so add the flake first (intent only).
+
+Run:
+
+```bash
+git add -N flake.nix
+docker run --rm -v "$PWD:/w" -w /w nixos/nix:latest sh -c '
+  git config --global --add safe.directory /w
+  nix --extra-experimental-features "nix-command flakes" flake lock
+  nix --extra-experimental-features "nix-command flakes" build .#nvmrc -L 2>&1 | grep "test result: ok. [1-9]"
+  ./result/bin/nvm --version
+  nix --extra-experimental-features "nix-command flakes" flake check 2>&1 | grep "all checks passed"
+  rm -f result'
+```
+
+Expected: `flake.lock` is created (nixpkgs `nixos-26.05`, on 2026-10-04 rev
+`825e2028c29b702a4a5f085f08095d12099784f2`),
+`nvmrc> test result: ok. 1395 passed; 0 failed; ...`, `nvm 0.1.0`,
+`all checks passed!`.
+
+- [ ] **Step 4: Ignore the build link**
+
+Append `/result` to `.gitignore`.
+
+- [ ] **Step 5: Add the CI job**
+
+Append to `.github/workflows/ci.yml`:
+
+```yaml
+  nix:
+    name: nix build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - run: nix flake check
+      - run: nix build .#nvmrc
+      - name: The Nix build prints the version of Cargo.toml
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+          test "$(./result/bin/nvm --version)" = "nvm $version"
+```
+
+Run: `actionlint .github/workflows/ci.yml` — no output.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add flake.nix flake.lock .gitignore .github/workflows/ci.yml
+git commit -S -m "build(nix): add a flake that builds nvmrc with buildRustPackage"
+```
+
+---
+
+### Task 5: Release tools, version check, build and notes tasks (M)
+
+**Files:**
+
+- Modify: `mise.toml` (`[tools]`, and a new `# === Release ===` section at
+  the end), `mise.lock` (generated), `.gitignore` (`/dist`)
+- Create: `cliff.toml`
+
+**Interfaces:**
+
+- Consumes: Task 2.
+- Produces, used by Tasks 6 to 9:
+  - `mise run -q release:check [--tag <tag>]`: prints the version
+    (`0.1.0`) on stdout; exit 1 when the tag (given, or the one at
+    `HEAD`) is not `v<version>`.
+  - `mise run release:build --target <triple> [--container]`: writes
+    `dist/nvmrc-<version>-<triple>.tar.gz` holding
+    `nvmrc-<version>-<triple>/{nvmrc,nvm,nvm-exec,LICENSE,README.md}`.
+  - `mise run release:notes [--output target/RELEASE_NOTES.md]`.
+- [ ] **Step 1: Show the tasks are missing**
+
+Run: `mise run release:check`
+
+Expected: a mise error that there is no task `release:check`.
+
+- [ ] **Step 2: Add the tools**
+
+In `[tools]`, keep alphabetical order and add four lines, so the table
+reads:
+
+```toml
+[tools]
+actionlint = { version = "latest" }
+cargo-deny = { version = "0.20" }
+cosign = { version = "3" }
+gh = { version = "latest" }
+git-cliff = { version = "2" }
+gitleaks = { version = "latest" }
+hadolint = { version = "latest" }
+jq = { version = "latest" }
+nfpm = { version = "2" }
+rumdl = { version = "latest" }
+syft = { version = "1" }
+yq = { version = "latest" }
+```
+
+Then lock and install them (this is the lock step of the `setup` task, run
+alone; `setup` itself is not run):
+
+```bash
+MISE_DISABLE_TOOLS= mise lock
+mise install cosign git-cliff nfpm syft
+```
+
+Expected: `Lockfile written to .../mise.lock`; `mise.lock` gains
+`[[tools.cosign]]`, `[[tools.git-cliff]]`, `[[tools.nfpm]]` and
+`[[tools.syft]]` entries (verified: cosign 3.1.3, git-cliff 2.14.2, nfpm
+2.47.0, syft 1.54.0, all through aqua).
+
+- [ ] **Step 3: Add the first three tasks**
+
+Append to the end of `mise.toml`:
+
+```toml
+# === Release ===
+# The release pipeline is .github/workflows/release.yml; every step it runs is
+# one of these tasks, so a snapshot on a laptop runs the same code.
+[tasks."release:check"]
+alias = ["rc"]
+description = "Print the release version; fail when the tag and Cargo.toml differ"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+# Cargo.toml is the source of truth: `nvm --version` prints this version.
+version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+tag="${usage_tag:-$(git describe --tags --exact-match 2>/dev/null || true)}"
+if [ -n "$tag" ] && [ "$tag" != "v$version" ]; then
+  echo "release:check: tag $tag does not match Cargo.toml version $version (want v$version)" >&2
+  exit 1
+fi
+echo "$version"
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--tag <tag>" help="The tag being released (default: the tag at HEAD, if any)"
+'''
+
+[tasks."release:build"]
+alias = ["rb"]
+description = "Build the three binaries for one target and archive them in dist/"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+target="${usage_target:?}"
+version="$(mise run -q release:check)"
+channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)"
+out="target/$target/release"
+if [ "${usage_container:-false}" = "true" ]; then
+  # A Linux target from any host: the official rust image of the pinned channel.
+  case "$target" in x86_64-*) platform=linux/amd64 ;; *) platform=linux/arm64 ;; esac
+  docker run --rm --platform "$platform" -v "$PWD:/work" -w /work \
+    -e CARGO_TARGET_DIR=/work/target/container "docker.io/library/rust:$channel" sh -c \
+    "apt-get update -qq && apt-get install -y -qq musl-tools >/dev/null && rustup target add $target && cargo build --release --locked --bins --target $target"
+  out="target/container/$target/release"
+else
+  rustup run "$channel" cargo build --release --locked --bins --target "$target"
+fi
+case "$target" in
+  *-linux-gnu) # The glibc floor promised by the README.
+    newest="$(objdump -T "$out/nvm" | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1)"
+    [ "$(printf '%s\nGLIBC_2.34\n' "$newest" | sort -V | tail -n 1)" = GLIBC_2.34 ] ||
+      { echo "release:build: $target needs $newest, above GLIBC_2.34" >&2; exit 1; } ;;
+esac
+name="nvmrc-$version-$target"
+mkdir -p "dist/$name"
+cp "$out/nvmrc" "$out/nvm" "$out/nvm-exec" LICENSE README.md "dist/$name/"
+COPYFILE_DISABLE=1 tar -C dist -czf "dist/$name.tar.gz" "$name"
+rm -rf "dist/${name:?}"
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--target <triple>" help="The Rust target triple to build" required=#true
+flag "--container" help="Build inside the rust image (a Linux target from macOS)"
+'''
+
+[tasks."release:notes"]
+alias = ["rn"]
+description = "Render the release notes from the Conventional Commits with git-cliff"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+output="${usage_output:?}"
+mkdir -p "$(dirname "$output")"
+range=--unreleased
+git describe --tags --exact-match >/dev/null 2>&1 && range=--latest
+git cliff "$range" --strip header -o "$output"
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--output <file>" help="Where the notes are written" default="target/RELEASE_NOTES.md"
+'''
+```
+
+`release:build` runs cargo through `rustup run <channel>` so the
+Homebrew `cargo` never builds a release, and `--container` builds a Linux
+target in the `rust:<channel>` image from any host. Its glibc check runs on
+glibc builds only, which only CI does.
+
+- [ ] **Step 4: Create `cliff.toml`**
+
+```toml
+# git-cliff configuration: release notes from Conventional Commits.
+# `mise run release:notes` renders the notes of the release being built.
+[changelog]
+header = ""
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }} ({{ commit.id | truncate(length=7, end="") }})
+{%- endfor %}
+{% endfor %}
+"""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+commit_parsers = [
+  { message = "^feat", group = "<!-- 0 -->Features" },
+  { message = "^fix", group = "<!-- 1 -->Fixes" },
+  { message = "^perf", group = "<!-- 2 -->Performance" },
+  { message = "^docs", group = "<!-- 3 -->Documentation" },
+  { message = "^(build|ci)", group = "<!-- 4 -->Build and CI" },
+  { message = "^(refactor|style|test|chore)", skip = true },
+]
+tag_pattern = "v[0-9].*"
+```
+
+- [ ] **Step 5: Ignore `dist/`**
+
+Append `/dist` to `.gitignore`.
+
+- [ ] **Step 6: Run the tasks**
+
+Run:
+
+```bash
+mise run -q release:check
+mise run -q release:check --tag v0.2.0; echo "status=$?"
+mise run release:build --target aarch64-apple-darwin
+tar -tzf dist/nvmrc-0.1.0-aarch64-apple-darwin.tar.gz
+mise run release:build --target aarch64-unknown-linux-musl --container
+mise run release:notes && head -n 4 target/RELEASE_NOTES.md
+```
+
+Expected: `0.1.0`; then
+`release:check: tag v0.2.0 does not match Cargo.toml version 0.1.0 (want
+v0.1.0)` and `status=1`; the archive lists
+`nvmrc-0.1.0-aarch64-apple-darwin/` with `nvm-exec`, `LICENSE`, `nvmrc`,
+`nvm`, `README.md`; the musl build ends with
+`dist/nvmrc-0.1.0-aarch64-unknown-linux-musl.tar.gz` present; the notes
+start with a blank line and `### Features` followed by
+`- **error:** Add nvm exit-code contract and typed errors (771422d)`.
+(On an Intel Mac use `x86_64-apple-darwin` and the x86_64 musl target.)
+
+- [ ] **Step 7: Clean and commit**
+
+```bash
+rm -rf dist target/container target/RELEASE_NOTES.md
+git add mise.toml mise.lock cliff.toml .gitignore
+git commit -S -m "build(release): add the version check, build and notes tasks"
+```
+
+---
+
+### Task 6: Packages, SBOM, checksums and smoke tests (M)
+
+**Files:**
+
+- Create: `packaging/nfpm.yaml`
+- Modify: `mise.toml` (three tasks after `release:notes`)
+
+**Interfaces:**
+
+- Consumes: `release:check`, `release:build` (Task 5); both musl archives
+  in `dist/`.
+- Produces:
+  - `mise run release:package [--dist dist]`: `nvmrc_<v>-1_<amd64|arm64>.deb`,
+    `nvmrc-<v>-1.<x86_64|aarch64>.rpm`, `nvmrc_<v>-r1_<x86_64|aarch64>.apk`,
+    `nvmrc-<v>-1-<x86_64|aarch64>.pkg.tar.zst` in `dist/`.
+  - `mise run release:sums [--dist dist]`: `dist/nvmrc-<v>.spdx.json` and
+    `dist/SHA256SUMS` (every top-level file of `dist/` except itself and
+    `*.sigstore.json`, `shasum -a 256` format, sorted).
+  - `mise run release:smoke --arch <amd64|arm64> [--dist dist]`: one
+    `ok: <os id> <version id> <machine>` line per distribution.
+- [ ] **Step 1: Create `packaging/nfpm.yaml`**
+
+`expand: true` is what makes nfpm expand `${NVMRC_BIN_DIR}` in a `src`
+(without it: `Glob failed: ${NVMRC_BIN_DIR}/nvmrc: no matching files`,
+verified).
+
+```yaml
+# nfpm configuration of the deb, rpm, apk and Arch packages. `mise run
+# release:package` runs it once per format and architecture with NFPM_ARCH
+# (amd64, arm64), NVMRC_VERSION and NVMRC_BIN_DIR (the unpacked static musl
+# archive) set. Docs: https://nfpm.goreleaser.com/configuration/
+name: nvmrc
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${NVMRC_VERSION}
+release: "1"
+section: utils
+priority: optional
+maintainer: Elio S. Jr <elioseverojunior@gmail.com>
+description: A native Rust port of nvm, the Node Version Manager
+vendor: Elio S. Jr
+homepage: https://github.com/elioseverojunior/nvmrc
+license: MIT
+contents:
+  - src: ${NVMRC_BIN_DIR}/nvmrc
+    dst: /usr/bin/nvmrc
+    expand: true
+    file_info: {mode: 0755}
+  - src: ${NVMRC_BIN_DIR}/nvm
+    dst: /usr/bin/nvm
+    expand: true
+    file_info: {mode: 0755}
+  - src: ${NVMRC_BIN_DIR}/nvm-exec
+    dst: /usr/bin/nvm-exec
+    expand: true
+    file_info: {mode: 0755}
+  - src: README.md
+    dst: /usr/share/doc/nvmrc/README.md
+  - src: LICENSE
+    dst: /usr/share/doc/nvmrc/copyright
+    packager: deb
+  - src: LICENSE
+    dst: /usr/share/licenses/nvmrc/LICENSE
+    packager: rpm
+  - src: LICENSE
+    dst: /usr/share/licenses/nvmrc/LICENSE
+    packager: apk
+  - src: LICENSE
+    dst: /usr/share/licenses/nvmrc/LICENSE
+    packager: archlinux
+archlinux:
+  packager: Elio S. Jr <elioseverojunior@gmail.com>
+```
+
+- [ ] **Step 2: Add the tasks**
+
+Append after `release:notes` in `mise.toml`:
+
+```toml
+[tasks."release:package"]
+alias = ["rp"]
+description = "Build the deb, rpm, apk and Arch packages from the musl archives"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+dist="${usage_dist:?}"
+version="$(mise run -q release:check)"
+for arch in amd64 arm64; do
+  case "$arch" in amd64) machine=x86_64 ;; arm64) machine=aarch64 ;; esac
+  name="nvmrc-$version-$machine-unknown-linux-musl"
+  unpacked="$(mktemp -d)"
+  tar -xzf "$dist/$name.tar.gz" -C "$unpacked"
+  for format in deb rpm apk archlinux; do
+    NFPM_ARCH="$arch" NVMRC_VERSION="$version" NVMRC_BIN_DIR="$unpacked/$name" \
+      nfpm package -f packaging/nfpm.yaml -p "$format" -t "$dist/"
+  done
+  rm -rf "$unpacked"
+done
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--dist <dir>" help="Where the archives are and the packages go" default="dist"
+'''
+
+[tasks."release:sums"]
+alias = ["rsum"]
+description = "Write the source SBOM and SHA256SUMS of every release file"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+dist="${usage_dist:?}"
+version="$(mise run -q release:check)"
+# The binaries are stripped, so a scan of them finds nothing: the SBOM is
+# the dependency graph of Cargo.lock that they were built from.
+syft scan file:Cargo.lock -o "spdx-json=$dist/nvmrc-$version.spdx.json"
+cd "$dist"
+find . -maxdepth 1 -type f ! -name SHA256SUMS ! -name '*.sigstore.json' |
+  sed 's|^\./||' | LC_ALL=C sort | xargs shasum -a 256 > SHA256SUMS
+cat SHA256SUMS
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--dist <dir>" help="The directory of release files" default="dist"
+'''
+
+[tasks."release:smoke"]
+alias = ["rsm"]
+description = "Install every package in its distribution's container and run it"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+dist="$(cd "${usage_dist:?}" && pwd)"
+arch="${usage_arch:?}"
+version="$(mise run -q release:check)"
+case "$arch" in amd64) machine=x86_64 ;; arm64) machine=aarch64 ;; esac
+checks="$(mktemp)"
+trap 'rm -f "$checks"' EXIT
+cat > "$checks" <<'CHECKS'
+set -eu
+want="nvm $1"; shell="$2"
+test "$(nvm --version)" = "$want" && test "$(nvmrc --version)" = "$want"
+test -x /usr/bin/nvm-exec
+nvmrc doctor
+status=0; nvm ls >/dev/null || status=$?
+test "$status" -eq 3
+test "$("$shell" -c "eval \"\$(nvmrc init $shell)\"; nvm --version")" = "$want"
+echo "ok: $(. /etc/os-release && echo "$ID $VERSION_ID") $(uname -m)"
+CHECKS
+smoke() { # <image> <install command> <shell>
+  docker run --rm --platform "linux/$arch" -v "$dist:/pkgs:ro" -v "$checks:/checks.sh:ro" \
+    "$1" sh -c "$2 >/dev/null && sh /checks.sh $version $3"
+}
+smoke debian:stable-slim "dpkg -i /pkgs/nvmrc_*_$arch.deb" bash
+smoke ubuntu:latest "dpkg -i /pkgs/nvmrc_*_$arch.deb" bash
+smoke amazonlinux:2023 "rpm -i /pkgs/nvmrc-*.$machine.rpm" bash
+smoke fedora:latest "rpm -i /pkgs/nvmrc-*.$machine.rpm" bash
+smoke registry.access.redhat.com/ubi9/ubi-minimal "rpm -i /pkgs/nvmrc-*.$machine.rpm" bash
+smoke alpine:latest "apk add --allow-untrusted /pkgs/nvmrc_*_$machine.apk" sh
+# archlinux publishes no arm64 image.
+[ "$arch" = arm64 ] || smoke archlinux:latest "pacman -U --noconfirm /pkgs/nvmrc-*-$machine.pkg.tar.zst" bash
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--dist <dir>" help="The directory of release files" default="dist"
+flag "--arch <arch>" help="The package architecture" required=#true {
+  choices "amd64" "arm64"
+}
+'''
+```
+
+The smoke checks: both names print `nvm <version>`, `nvm-exec` is
+installed, `nvmrc doctor` exits 0 in a clean container, `nvm ls` with
+nothing installed exits 3 (as nvm.sh), and
+`<shell> -c 'eval "$(nvmrc init <shell>)"; nvm --version'` prints the same
+through the shell function (bash, or sh on Alpine, which has no bash).
+
+- [ ] **Step 3: Build both musl archives, then package and smoke-test**
+
+Run:
+
+```bash
+mise run release:build --target x86_64-unknown-linux-musl --container
+mise run release:build --target aarch64-unknown-linux-musl --container
+mise run release:package
+mise run release:sums
+mise run release:smoke --arch arm64
+mise run release:smoke --arch amd64
+```
+
+Expected: nfpm prints eight `created package: dist/...` lines; `SHA256SUMS`
+lists 11 files (2 archives, 8 packages, the SBOM); the smoke runs print
+(versions as of 2026-10-04):
+
+```text
+ok: debian 13 aarch64
+ok: ubuntu 26.04 aarch64
+ok: amzn 2023 aarch64
+ok: fedora 44 aarch64
+ok: rhel 9.8 aarch64
+ok: alpine 3.24.2 aarch64
+ok: debian 13 x86_64
+ok: ubuntu 26.04 x86_64
+ok: amzn 2023 x86_64
+ok: fedora 44 x86_64
+ok: rhel 9.8 x86_64
+ok: alpine 3.24.2 x86_64
+ok: arch 20260927.0.600689 x86_64
+```
+
+`rhel 9.8` is UBI 9. The non-native architecture runs under Docker
+Desktop's emulation; in CI each architecture runs on its own runner.
+
+- [ ] **Step 4: Check the sums**
+
+Run: `(cd dist && shasum -a 256 -c SHA256SUMS | grep -vc ': OK$')`
+
+Expected: `0`.
+
+- [ ] **Step 5: Clean and commit**
+
+```bash
+rm -rf dist target/container
+git add packaging/nfpm.yaml mise.toml
+git commit -S -m "build(release): package deb, rpm, apk and Arch from the static binaries"
+```
+
+---
+
+### Task 7: The release image (S)
+
+**Files:**
+
+- Create: `Dockerfile.release`
+- Modify: `mise.toml` (two tasks after `release:smoke`; `lint:docker`
+  lints both Dockerfiles)
+
+**Interfaces:**
+
+- Consumes: the musl archives (Task 5).
+- Produces:
+  - `mise run release:image:context [--dist dist] [--context target/image]`:
+    `target/image/linux/<amd64|arm64>/{nvmrc,nvm,nvm-exec}`.
+  - `mise run release:image --arch <amd64|arm64>`: builds
+    `nvmrc:smoke-<arch>` and prints `ok: image linux/<arch>: nvm <version>`.
+  - `Dockerfile.release`, built by Task 9 for both platforms from
+    `target/image`.
+- [ ] **Step 1: Create `Dockerfile.release`**
+
+```dockerfile
+# syntax=docker/dockerfile:1
+# The release image: the static musl binaries of a release, nothing else.
+# Built from prebuilt binaries only (no RUN), so both platforms build on any
+# host without emulation. The context is laid out by `mise run release:image`
+# as linux/<arch>/{nvmrc,nvm,nvm-exec}.
+FROM docker.io/library/alpine:3 AS certificates
+
+FROM scratch
+ARG TARGETPLATFORM
+# TLS roots for `nvm ls-remote` and `nvm install` downloads.
+COPY --from=certificates /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY $TARGETPLATFORM/nvmrc $TARGETPLATFORM/nvm $TARGETPLATFORM/nvm-exec /usr/bin/
+ENV NVM_DIR=/nvm
+USER 65534:65534
+```
+
+- [ ] **Step 2: Add the tasks and lint both Dockerfiles**
+
+Append after `release:smoke`:
+
+```toml
+[tasks."release:image:context"]
+alias = ["ric"]
+description = "Lay out the image build context from the musl archives"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+dist="${usage_dist:?}"
+context="${usage_context:?}"
+version="$(mise run -q release:check)"
+for arch in amd64 arm64; do
+  case "$arch" in amd64) machine=x86_64 ;; arm64) machine=aarch64 ;; esac
+  name="nvmrc-$version-$machine-unknown-linux-musl"
+  mkdir -p "$context/linux/$arch"
+  tar -xzf "$dist/$name.tar.gz" -C "$context/linux/$arch" --strip-components=1 \
+    "$name/nvmrc" "$name/nvm" "$name/nvm-exec"
+done
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--dist <dir>" help="The directory of release files" default="dist"
+flag "--context <dir>" help="Where the image build context is laid out" default="target/image"
+'''
+
+[tasks."release:image"]
+alias = ["ri"]
+description = "Build the release image for one platform and run `nvmrc --version` in it"
+depends = ["release:image:context"]
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+arch="${usage_arch:?}"
+version="$(mise run -q release:check)"
+docker buildx build --quiet --platform "linux/$arch" --load \
+  -t "nvmrc:smoke-$arch" -f Dockerfile.release target/image >/dev/null
+got="$(docker run --rm --platform "linux/$arch" "nvmrc:smoke-$arch" nvmrc --version)"
+[ "$got" = "nvm $version" ] || { echo "release:image: linux/$arch printed '$got'" >&2; exit 1; }
+echo "ok: image linux/$arch: $got"
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--arch <arch>" help="The image platform's architecture" required=#true {
+  choices "amd64" "arm64"
+}
+'''
+```
+
+In `[tasks."lint:docker"]`, set
+`description = "Lint the Dockerfiles with hadolint"` and change the command
+to `hadolint Dockerfile Dockerfile.release`.
+
+- [ ] **Step 3: Run**
+
+Run (after the two musl builds of Task 6, Step 3):
+
+```bash
+mise run lint:docker
+mise run release:image --arch arm64
+mise run release:image --arch amd64
+docker run --rm nvmrc:smoke-arm64 nvm ls-remote --lts | tail -n 1
+docker image ls nvmrc --format '{{.Tag}} {{.Size}}'
+```
+
+Expected: hadolint silent; `ok: image linux/arm64: nvm 0.1.0`,
+`ok: image linux/amd64: nvm 0.1.0`; an LTS row such as
+`v24.21.0   (Latest LTS: Krypton)` (TLS works as user 65534); two images of
+about 12 MB.
+
+- [ ] **Step 4: Clean and commit**
+
+```bash
+docker rmi nvmrc:smoke-amd64 nvmrc:smoke-arm64
+rm -rf dist target/container target/image
+git add Dockerfile.release mise.toml
+git commit -S -m "build(release): add the scratch image of the static binaries"
+```
+
+---
+
+### Task 8: Homebrew formula and the local snapshot (S)
+
+**Files:**
+
+- Create: `packaging/homebrew/nvmrc.rb.in`
+- Modify: `mise.toml` (two tasks at the end)
+
+**Interfaces:**
+
+- Consumes: every task above; `dist/SHA256SUMS`.
+- Produces:
+  - `mise run release:homebrew [--dist dist] [--repository owner/name]
+    [--output target/homebrew/nvmrc.rb]`: fails with
+    `release:homebrew: <archive> is not in SHA256SUMS` when one of the four
+    archives is missing.
+  - `mise run release:snapshot`: the whole release into `dist/`, without
+    signing or publishing.
+- [ ] **Step 1: Create the formula template**
+
+```ruby
+# Generated by `mise run release:homebrew` from SHA256SUMS; do not edit.
+class Nvmrc < Formula
+  desc "Native Rust port of nvm, the Node Version Manager"
+  homepage "https://github.com/@REPOSITORY@"
+  version "@VERSION@"
+  license "MIT"
+
+  on_macos do
+    on_arm do
+      url "@URL@/nvmrc-@VERSION@-aarch64-apple-darwin.tar.gz"
+      sha256 "@SHA_AARCH64_APPLE_DARWIN@"
+    end
+    on_intel do
+      url "@URL@/nvmrc-@VERSION@-x86_64-apple-darwin.tar.gz"
+      sha256 "@SHA_X86_64_APPLE_DARWIN@"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "@URL@/nvmrc-@VERSION@-aarch64-unknown-linux-musl.tar.gz"
+      sha256 "@SHA_AARCH64_UNKNOWN_LINUX_MUSL@"
+    end
+    on_intel do
+      url "@URL@/nvmrc-@VERSION@-x86_64-unknown-linux-musl.tar.gz"
+      sha256 "@SHA_X86_64_UNKNOWN_LINUX_MUSL@"
+    end
+  end
+
+  def install
+    bin.install "nvmrc", "nvm", "nvm-exec"
+  end
+
+  test do
+    assert_equal "nvm #{version}", shell_output("#{bin}/nvm --version").strip
+  end
+end
+```
+
+- [ ] **Step 2: Add the tasks**
+
+Append:
+
+```toml
+[tasks."release:homebrew"]
+alias = ["rh"]
+description = "Render the Homebrew formula of the release from SHA256SUMS"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+dist="${usage_dist:?}"
+repository="${usage_repository:?}"
+output="${usage_output:?}"
+mkdir -p "$(dirname "$output")"
+version="$(mise run -q release:check)"
+sum() { # <target>: the SHA-256 of that archive, or fail
+  local file="nvmrc-$version-$1.tar.gz" digest
+  digest="$(awk -v file="$file" '$2 == file { print $1 }' "$dist/SHA256SUMS")"
+  [ -n "$digest" ] || { echo "release:homebrew: $file is not in SHA256SUMS" >&2; return 1; }
+  echo "$digest"
+}
+arm_mac="$(sum aarch64-apple-darwin)"
+intel_mac="$(sum x86_64-apple-darwin)"
+arm_linux="$(sum aarch64-unknown-linux-musl)"
+intel_linux="$(sum x86_64-unknown-linux-musl)"
+sed -e "s|@REPOSITORY@|$repository|g" -e "s|@VERSION@|$version|g" \
+  -e "s|@URL@|https://github.com/$repository/releases/download/v$version|g" \
+  -e "s|@SHA_AARCH64_APPLE_DARWIN@|$arm_mac|" -e "s|@SHA_X86_64_APPLE_DARWIN@|$intel_mac|" \
+  -e "s|@SHA_AARCH64_UNKNOWN_LINUX_MUSL@|$arm_linux|" \
+  -e "s|@SHA_X86_64_UNKNOWN_LINUX_MUSL@|$intel_linux|" \
+  packaging/homebrew/nvmrc.rb.in > "$output"
+echo "release:homebrew: wrote $output"
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--dist <dir>" help="The directory of release files" default="dist"
+flag "--repository <owner/name>" help="The GitHub repository of the release" default="elioseverojunior/nvmrc"
+flag "--output <file>" help="Where the formula is written" default="target/homebrew/nvmrc.rb"
+'''
+
+[tasks."release:snapshot"]
+alias = ["rs"]
+description = "Run the whole release locally into dist/: build, package, smoke, image"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)"
+host="$(rustup run "$channel" rustc -vV | sed -n 's/^host: //p')"
+rm -rf dist target/image
+mise run release:build --target "$host"
+for machine in x86_64 aarch64; do
+  mise run release:build --target "$machine-unknown-linux-musl" --container
+done
+mise run release:package
+mise run release:sums
+mise run release:smoke --arch amd64
+mise run release:smoke --arch arm64
+mise run release:image --arch amd64
+mise run release:image --arch arm64
+mise run release:notes
+ls -1 dist
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+'''
+```
+
+- [ ] **Step 3: Run the snapshot**
+
+Run: `mise run release:snapshot`
+
+Expected (about 3 minutes with warm images): the 13 `ok:` lines of Task 6,
+the two `ok: image` lines, and the final listing of `dist/`: the host
+archive, both musl archives, the eight packages, the SBOM and
+`SHA256SUMS`.
+
+- [ ] **Step 4: The formula refuses a missing archive, then renders**
+
+A local snapshot has one macOS archive, so the formula must fail:
+
+Run: `mise run -q release:homebrew; echo "status=$?"`
+
+Expected: `release:homebrew: nvmrc-0.1.0-x86_64-apple-darwin.tar.gz is
+not in SHA256SUMS` (on an Intel Mac, the aarch64 one) and `status=1`.
+
+Then, with a stand-in line for the missing archive (in a copy):
+
+```bash
+cp -R dist /private/tmp/nvmrc-dist && missing=x86_64-apple-darwin
+echo "0000000000000000000000000000000000000000000000000000000000000000  nvmrc-0.1.0-$missing.tar.gz" >> /private/tmp/nvmrc-dist/SHA256SUMS
+mise run -q release:homebrew --dist /private/tmp/nvmrc-dist && ruby -c target/homebrew/nvmrc.rb
+rm -rf /private/tmp/nvmrc-dist
+```
+
+Expected: `release:homebrew: wrote target/homebrew/nvmrc.rb` and
+`Syntax OK`.
+
+- [ ] **Step 5: Clean and commit**
+
+```bash
+rm -rf dist target/container target/image target/homebrew target/RELEASE_NOTES.md
+docker rmi nvmrc:smoke-amd64 nvmrc:smoke-arm64
+git add packaging/homebrew/nvmrc.rb.in mise.toml
+git commit -S -m "build(release): render the Homebrew formula and run the release locally"
+```
+
+---
+
+### Task 9: The release workflow (M)
+
+**Files:**
+
+- Create: `.github/workflows/release.yml` (298 lines)
+
+**Interfaces:**
+
+- Consumes: `ci.yml` with `workflow_call` (Task 3) and the tasks
+  `release:check`, `release:build`, `release:package`, `release:sums`,
+  `release:smoke`, `release:image`, `release:image:context`,
+  `release:notes`, `release:homebrew`.
+- Produces: jobs `gates`, `version` (outputs `version`, `publish`), `build`
+  (6 targets), `package`, `smoke` (amd64, arm64), `sign-and-attest`,
+  `publish`; artifacts `build-<target>`, `release-files`, `signed-files`;
+  the input `dry-run` (boolean, default `true`); the repository variable
+  `NVMRC_HOMEBREW_TAP` and secret `HOMEBREW_TAP_TOKEN`.
+
+Job graph: `gates` and `version` → `build` (matrix) → `package` → `smoke`
+(packages and image, per architecture, native) → `sign-and-attest` →
+`publish` (only when `version.outputs.publish == 'true'`: a tag push, or a
+manual run on a tag with `dry-run` off).
+
+- [ ] **Step 1: Create `.github/workflows/release.yml`**
+
+```yaml
+name: release
+
+# A `v*` tag releases; a manual run is a dry run (all but publishing) by
+# default. Steps run `mise run release:*` tasks, as `release:snapshot` does.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Build, package, smoke-test, sign and attest; publish nothing
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  # Each job installs only the tools it names; `mise run` must not fetch the rest.
+  MISE_TASK_RUN_AUTO_INSTALL: "false"
+
+jobs:
+  gates:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  version:
+    name: version and tag
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      publish: ${{ steps.check.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          install: false
+      - id: check
+        env:
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+          PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          tag=""
+          [ "$GITHUB_REF_TYPE" = tag ] && tag="$GITHUB_REF_NAME"
+          version="$(mise run -q release:check ${tag:+--tag "$tag"})"
+          publish=false
+          [ -n "$tag" ] && [ "$DRY_RUN" != true ] && publish=true
+          if [ "$publish" = true ] && [ "$PRIVATE" = true ]; then
+            echo "::error::artifact attestations need a public repository; make it public first"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: build (${{ matrix.target }})
+    needs: [gates, version]
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        include:
+          # glibc builds run on 22.04 so they need glibc 2.34 at most.
+          - { target: x86_64-unknown-linux-gnu, runner: ubuntu-22.04 }
+          - { target: aarch64-unknown-linux-gnu, runner: ubuntu-22.04-arm }
+          - { target: x86_64-unknown-linux-musl, runner: ubuntu-24.04 }
+          - { target: aarch64-unknown-linux-musl, runner: ubuntu-24.04-arm }
+          - { target: x86_64-apple-darwin, runner: macos-15-intel }
+          - { target: aarch64-apple-darwin, runner: macos-latest }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the musl C toolchain
+        if: endsWith(matrix.target, '-musl')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends musl-tools
+      # No cache: nothing an earlier run left can reach a signed archive.
+      - uses: elioseverojunior/rust-toolchain@v0
+        with:
+          targets: ${{ matrix.target }}
+      - uses: jdx/mise-action@v5
+        with:
+          install: false
+      - run: mise run release:build --target "$TARGET"
+        env:
+          TARGET: ${{ matrix.target }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: build-${{ matrix.target }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  package:
+    name: packages, SBOM and checksums
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: build-*
+          path: dist
+          merge-multiple: true
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: nfpm syft
+      - run: mise run release:package
+      - run: mise run release:sums
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-files
+          path: dist/*
+          if-no-files-found: error
+
+  smoke:
+    name: package and image smoke tests (${{ matrix.arch }})
+    needs: package
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-files
+          path: dist
+      - uses: jdx/mise-action@v5
+        with:
+          install: false
+      - run: mise run release:smoke --arch "$PACKAGE_ARCH"
+        env:
+          PACKAGE_ARCH: ${{ matrix.arch }}
+      - run: mise run release:image --arch "$PACKAGE_ARCH"
+        env:
+          PACKAGE_ARCH: ${{ matrix.arch }}
+
+  sign-and-attest:
+    name: sign and attest
+    needs: [version, smoke]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      # Sigstore's public log would record a private repository's name, and
+      # GitHub attests a private repository only on Enterprise Cloud: a dry
+      # run there skips cosign and lets attestation fail without failing.
+      PRIVATE_DRY_RUN: ${{ github.event.repository.private && needs.version.outputs.publish != 'true' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-files
+          path: dist
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: cosign
+      - name: Sign every release file, SHA256SUMS included (keyless)
+        if: env.PRIVATE_DRY_RUN != 'true'
+        run: |
+          for file in dist/*; do
+            cosign sign-blob --yes --bundle "$file.sigstore.json" "$file"
+          done
+      - name: Unpack the binaries, which are attested one by one
+        run: |
+          mkdir -p binaries
+          for archive in dist/*.tar.gz; do tar -xzf "$archive" -C binaries; done
+      - uses: actions/attest@v4
+        continue-on-error: ${{ env.PRIVATE_DRY_RUN == 'true' }}
+        with:
+          subject-checksums: dist/SHA256SUMS
+      - uses: actions/attest@v4
+        continue-on-error: ${{ env.PRIVATE_DRY_RUN == 'true' }}
+        with:
+          subject-path: |
+            binaries/*/nvmrc
+            binaries/*/nvm
+            binaries/*/nvm-exec
+      - uses: actions/attest@v4
+        continue-on-error: ${{ env.PRIVATE_DRY_RUN == 'true' }}
+        with:
+          subject-checksums: dist/SHA256SUMS
+          sbom-path: dist/nvmrc-${{ needs.version.outputs.version }}.spdx.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: signed-files
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: publish the release, the image and the formula
+    needs: [version, sign-and-attest]
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          name: signed-files
+          path: dist
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: cosign git-cliff
+      - run: mise run release:notes
+      - name: Create the GitHub release with every signed file
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          case "$VERSION" in *-*) prerelease=--prerelease ;; esac
+          gh release create "$GITHUB_REF_NAME" --verify-tag $prerelease \
+            --title "nvmrc $VERSION" --notes-file target/RELEASE_NOTES.md dist/*
+      - run: mise run release:image:context
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+          labels: |
+            org.opencontainers.image.title=nvmrc
+            org.opencontainers.image.description=A native Rust port of nvm, the Node Version Manager
+            org.opencontainers.image.licenses=MIT
+      - id: push
+        uses: docker/build-push-action@v7
+        with:
+          context: target/image
+          file: Dockerfile.release
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: mode=max
+          sbom: true
+      - run: cosign sign --yes "$IMAGE@$DIGEST"
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+      - uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      # The tap is off until the owner sets the NVMRC_HOMEBREW_TAP variable
+      # (owner/name) and the HOMEBREW_TAP_TOKEN secret (contents: write there).
+      - if: vars.NVMRC_HOMEBREW_TAP != ''
+        run: mise run release:homebrew --repository "$GITHUB_REPOSITORY"
+      - if: vars.NVMRC_HOMEBREW_TAP != ''
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ vars.NVMRC_HOMEBREW_TAP }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - if: vars.NVMRC_HOMEBREW_TAP != ''
+        working-directory: tap
+        run: |
+          mkdir -p Formula
+          cp ../target/homebrew/nvmrc.rb Formula/nvmrc.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/nvmrc.rb
+          git commit -m "nvmrc $VERSION"
+          git push
+```
+
+- [ ] **Step 2: Lint and size**
+
+Run: `actionlint && wc -l .github/workflows/release.yml`
+
+Expected: no actionlint output (shellcheck included), `298`.
+
+- [ ] **Step 3: Check every tag the workflow uses still exists**
+
+Run:
+
+```bash
+for ref in actions/checkout:v7 actions/upload-artifact:v7 actions/download-artifact:v8 \
+  actions/attest:v4 elioseverojunior/rust-toolchain:v0 jdx/mise-action:v5 \
+  docker/setup-qemu-action:v4 docker/setup-buildx-action:v4 docker/login-action:v4 \
+  docker/metadata-action:v6 docker/build-push-action:v7 cachix/install-nix-action:v31 \
+  taiki-e/install-action:v2; do
+  gh api "repos/${ref%%:*}/git/ref/tags/${ref##*:}" --jq .ref >/dev/null && echo "ok ${ref}"
+done
+```
+
+Expected: 13 `ok` lines.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add .github/workflows/release.yml
+git commit -S -m "ci(release): build natively, package, smoke-test, sign, attest and publish"
+```
+
+The first run is the owner's (the branch is not pushed by this plan):
+Actions, then release, then "Run workflow" with `dry-run` checked. In the
+private repository it builds all six targets, packages, smoke-tests,
+skips cosign and reports the attest steps as failed-but-allowed (R13).
+
+---
+
+### Task 10: README, deviations, spec and the final gates (M)
+
+**Files:**
+
+- Modify: `README.md` ("Install", a new "Verifying a release", "Commands",
+  "Development"), `docs/superpowers/specs/2026-10-02-nvmrc-design.md`
+  (status line, new section 13)
+
+**Interfaces:**
+
+- Consumes: everything above. Names quoted here must match: archive
+  `nvmrc-<version>-<target>.tar.gz`, `SHA256SUMS`,
+  `SHA256SUMS.sigstore.json`, `nvmrc-<version>.spdx.json`, image
+  `ghcr.io/elioseverojunior/nvmrc`, variable `NVMRC_HOMEBREW_TAP`.
+
+- [ ] **Step 1: Rewrite "Install" in `README.md`**
+
+Replace the whole section, from `## Install` up to `## Shell integration`,
+with:
+
+````markdown
+## Install
+
+Releases are built from a `v*` tag by `.github/workflows/release.yml`, on
+native runners, and every file is signed and attested (see "Verifying a
+release"). The version is the one `nvm --version` prints.
+
+- Archives, `nvmrc-<version>-<target>.tar.gz`, each with `nvmrc`, `nvm`,
+  `nvm-exec`, `LICENSE` and `README.md`:
+  - macOS: `aarch64-apple-darwin`, `x86_64-apple-darwin`.
+  - Linux, static (any distribution): `x86_64-unknown-linux-musl`,
+    `aarch64-unknown-linux-musl`.
+  - Linux, glibc 2.34 or newer: `x86_64-unknown-linux-gnu`,
+    `aarch64-unknown-linux-gnu`.
+- Packages, built from the static binaries (no dependencies; the binaries
+  go to `/usr/bin`). They are not signed with a distribution key: check
+  them as "Verifying a release" shows.
+  - Debian, Ubuntu: `sudo dpkg -i nvmrc_<version>-1_<amd64|arm64>.deb`
+  - Fedora, RHEL, Amazon Linux 2023:
+    `sudo rpm -i nvmrc-<version>-1.<x86_64|aarch64>.rpm`
+  - Alpine:
+    `apk add --allow-untrusted nvmrc_<version>-r1_<x86_64|aarch64>.apk`
+  - Arch: `sudo pacman -U nvmrc-<version>-1-<x86_64|aarch64>.pkg.tar.zst`
+- Docker (linux/amd64, linux/arm64): the image holds the static binaries
+  and CA certificates only, no shell and no libc, so it is for one-off
+  commands and for copying the binaries into another image:
+  `docker run --rm ghcr.io/elioseverojunior/nvmrc:<version> nvmrc --version`,
+  or in a Dockerfile
+  `COPY --from=ghcr.io/elioseverojunior/nvmrc:<version> /usr/bin/nvm* /usr/local/bin/`.
+- Nix: `nix profile install github:elioseverojunior/nvmrc`, or
+  `nix run github:elioseverojunior/nvmrc -- --version`.
+- Homebrew: each release renders a formula; it is pushed to the tap named
+  by the repository variable `NVMRC_HOMEBREW_TAP` once the owner sets it.
+  None is published yet.
+- From source: `cargo install --locked --git
+  https://github.com/elioseverojunior/nvmrc` installs the three binaries
+  into `~/.cargo/bin` (the crate is not on crates.io: `publish = false`),
+  or `cargo build --release --locked` from a clone puts them in
+  `target/release/`. Rust 1.85 or newer (MSRV); development uses the 1.99
+  toolchain of `rust-toolchain.toml`. The release profile (fat LTO,
+  `strip = "symbols"`, `panic = "abort"`) lives in `.cargo/config.toml`;
+  with rustup, the `llvm-tools` component that `rust-toolchain.toml`
+  declares provides the `rust-objcopy` that stripping uses.
+- Windows is not supported; building for it stops with a compile error.
+- An `nvm` function left by nvm.sh in a shell startup file shadows the
+  `nvm` binary in interactive shells: `nvmrc doctor` finds it and
+  `nvm migrate` replaces it (see "Moving from nvm.sh").
+- For tools that run `$NVM_DIR/nvm-exec` by path, link it:
+  `ln -s "$(command -v nvm-exec)" "$NVM_DIR/nvm-exec"`.
+````
+
+- [ ] **Step 2: Add "Verifying a release" after "Install"**
+
+````markdown
+## Verifying a release
+
+Every file of a release is attested by GitHub (SLSA build provenance), each
+binary inside the archives is attested on its own, and the SBOM
+(`nvmrc-<version>.spdx.json`, the dependency graph of `Cargo.lock`) is
+attested as such. With the GitHub CLI:
+
+```sh
+gh attestation verify nvmrc-0.1.0-x86_64-unknown-linux-musl.tar.gz --repo elioseverojunior/nvmrc
+gh attestation verify /usr/bin/nvm --repo elioseverojunior/nvmrc
+gh attestation verify oci://ghcr.io/elioseverojunior/nvmrc:0.1.0 --repo elioseverojunior/nvmrc
+gh attestation verify nvmrc_0.1.0-1_amd64.deb --repo elioseverojunior/nvmrc \
+  --predicate-type https://spdx.dev/Document/v2.3
+```
+
+Every file is also signed with Sigstore by the release workflow (keyless;
+the bundle is `<file>.sigstore.json`). With cosign, check `SHA256SUMS`,
+then the files against it, and the image:
+
+```sh
+identity='^https://github\.com/elioseverojunior/nvmrc/\.github/workflows/release\.yml@refs/tags/v'
+issuer=https://token.actions.githubusercontent.com
+cosign verify-blob --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity-regexp "$identity" --certificate-oidc-issuer "$issuer" SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS
+cosign verify ghcr.io/elioseverojunior/nvmrc:0.1.0 \
+  --certificate-identity-regexp "$identity" --certificate-oidc-issuer "$issuer"
+```
+````
+
+None of these can run before the first published release; the commands
+are the ones the workflow's identities and file names produce.
+
+- [ ] **Step 3: Commands and Development**
+
+In "Commands", replace
+`number, `self-install`/`self-update` (v2), legacy platforms (v2).` with
+`number, `self-install`/`self-update` (v2), legacy platforms (v2),
+Windows.`
+
+At the end of "Development", before
+`Commits follow Conventional Commits`, add:
+
+```markdown
+Releasing: set `version` in `Cargo.toml`, run `cargo check` (it updates
+`Cargo.lock`), commit both (`chore(release): v0.2.0`), then
+`git tag -s v0.2.0 -m "nvmrc 0.2.0"` and push the tag. The workflow
+refuses a tag that is not `v` plus the `Cargo.toml` version
+(`mise run release:check`). A manual run of the release workflow is a dry
+run by default, and `mise run release:snapshot` runs the same build,
+packaging and smoke tests locally into `dist/` (Docker required).
+```
+
+- [ ] **Step 4: Spec**
+
+Replace the status line
+`Status: Implemented (Plans 1 to 9); deviations in docs/deviations.md`
+with
+`Status: Implemented (Plans 1 to 10); deviations in docs/deviations.md`,
+and append after section 12:
+
+```markdown
+## 13. Release engineering (Plan 10)
+
+A release comes from a `v*` tag equal to `v` plus the `Cargo.toml` version,
+which is what `nvm --version` prints. `.github/workflows/release.yml`
+re-runs every CI gate, builds on native runners (Linux glibc on Ubuntu
+22.04 for a glibc 2.34 floor, Linux static musl, macOS Intel and Apple
+silicon; x86_64 and aarch64 each), packages the static binaries as deb,
+rpm, apk and Arch packages and as a `scratch` image for linux/amd64 and
+linux/arm64, smoke-tests each package in its distribution's container,
+signs every file with cosign (keyless) and attests provenance and the SBOM
+with GitHub artifact attestations, then publishes the GitHub release, the
+GHCR image and, once configured, a Homebrew formula. Every step is a
+`mise run release:*` task. `flake.nix` builds nvmrc with Nix. Windows is
+out of scope: the crate does not compile there.
+```
+
+- [ ] **Step 5: Format and lint the Markdown**
+
+Run:
+
+```bash
+rumdl fmt README.md docs/deviations.md docs/superpowers/specs/2026-10-02-nvmrc-design.md
+rumdl check .
+```
+
+Expected: no issues.
+
+- [ ] **Step 6: The final gates**
+
+Run each; every one must pass:
+
+```bash
+cargo fmt --all --check
+cargo clippy --all-targets --all-features --locked -- -D warnings
+cargo test --locked
+mise run test:msrv
+mise run deny
+mise run audit
+mise run lint
+mise run release:snapshot
+```
+
+Expected: all green; the snapshot prints the 13 package and 2 image `ok:`
+lines. Then
+`rm -rf dist target/container target/image target/RELEASE_NOTES.md` and
+`docker rmi nvmrc:smoke-amd64 nvmrc:smoke-arm64`.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add README.md docs/superpowers/specs/2026-10-02-nvmrc-design.md
+git commit -S -m "docs: describe the release artefacts, their verification and the release steps"
+```
+
+- [ ] **Step 8: Hand-off**
+
+Report the commits (`git log --oneline a768a1d..`), the gate results, and
+what only the owner can do: push the branch, run the dry run, make the
+repository public (Q5), create the tap and its token (Q1), then tag the
+first release. After it, run the README's verification commands against
+it: `gh attestation verify` and `cosign verify-blob` cannot be exercised
+before a signed release exists.
+
+---
+
+## What stays unverified until CI or the first release
+
+- The glibc builds on `ubuntu-22.04`/`ubuntu-22.04-arm` and the glibc 2.34
+  check (the floor was measured in an `ubuntu:22.04` arm64 container).
+- The `macos-15-intel` build (x86_64-apple-darwin was built locally from
+  arm64 with the native Apple linker).
+- `musl-tools` on the `ubuntu-24.04` runners (verified in `rust:1.99`, a
+  Debian image, on both architectures).
+- `nix build` on macOS (Linux verified in `nixos/nix`).
+- cosign keyless signing, the four attestations, the GHCR push and the
+  Homebrew push: they need GitHub's OIDC token, a public repository and,
+  for the tap, the owner's repository and token.
+
+## Open questions for the owner
+
+- Q1: the Homebrew tap: which repository (`elioseverojunior/homebrew-tap`?)
+  goes in `NVMRC_HOMEBREW_TAP`, and a fine-grained token with
+  `contents: write` on it as `HOMEBREW_TAP_TOKEN`. Until then the steps are
+  skipped.
+- Q2: the image name `ghcr.io/elioseverojunior/nvmrc` (it follows
+  `github.repository`); a different namespace means editing `IMAGE` in the
+  `publish` job and the README.
+- Q3: the signing identity: keyless, tied to
+  `.github/workflows/release.yml@refs/tags/v*` of this repository. A
+  long-lived cosign key, or a different workflow path, changes the README's
+  `--certificate-identity-regexp`.
+- Q4: the package maintainer and vendor: `Elio S. Jr
+  <elioseverojunior@gmail.com>` (from `git config`), or another address
+  (`packaging/nfpm.yaml`, two lines).
+- Q5: when the repository becomes public: until then a publishing run
+  fails on purpose (R13).
+- Q6: apt/yum repositories, signed packages and crates.io are not in this
+  plan; say if they should be.
+
+## Self-review
+
+- **Spec and request coverage:** native builds with provenance for Linux
+  and macOS, x86_64 and aarch64 (Tasks 5, 9; R3, R12); Windows ruled out
+  with a guard and docs (Task 1, R2); deb (Debian, Ubuntu), rpm (Fedora,
+  RHEL/UBI 9, Amazon Linux 2023), apk (Alpine, static musl) and Arch
+  (Task 6, R5, R10); Nix (Task 4, R9); Docker multi-arch with
+  `docker run ... nvmrc --version` (Task 7, R7); Homebrew opt-in with a
+  documented variable (Task 8, R8); GoReleaser answered (R1); SBOM, cosign,
+  attestations, least privilege, tag trigger and dry run (Task 9, R12, R13);
+  version and changelog (Task 5, R11); gates before release (R14); the
+  owner's toolchain action in every workflow (Tasks 3, 9; R15); the owner's
+  example point by point; actionlint, rumdl, hadolint and the smoke tests
+  as runnable verifications; spec section 13 (Task 10).
+- **Placeholder scan:** none; every file is given in full, every command has
+  its expected output, the formula's `@...@` tokens are the template's
+  substitution points, filled by `release:homebrew`.
+- **Name consistency:** task names (`release:check`, `release:build`,
+  `release:notes`, `release:package`, `release:sums`, `release:smoke`,
+  `release:image:context`, `release:image`, `release:homebrew`,
+  `release:snapshot`), their aliases (`rc`, `rb`, `rn`, `rp`, `rsum`,
+  `rsm`, `ric`, `ri`, `rh`, `rs`, none used by another task), environment
+  variables (`NFPM_ARCH`, `NVMRC_VERSION`, `NVMRC_BIN_DIR`,
+  `PACKAGE_ARCH`, `MISE_TASK_RUN_AUTO_INSTALL`,
+  `MISE_TRUSTED_CONFIG_PATHS`), artefacts and job ids are spelt the same in
+  the tasks, the workflow and the README.
+- **Size:** `release.yml` 298 lines, `ci.yml` under 130; every task body is
+  under 30 lines. `mise.toml` was already over 300 lines because of the
+  verbatim `setup` task; it is configuration, and the global rules keep
+  every task in it.
