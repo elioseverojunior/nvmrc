@@ -14,12 +14,13 @@ use: same commands, same flags, same on-disk layout, same exit codes.
 Delivery is phased.
 
 - **v1:** domain model, `install` from pre-built binaries (with checksum),
-  `use`, `deactivate`, `init`, `ls`, `ls-remote`, `alias`, `unalias`,
-  `current`, `which`, `exec`, `run`, `uninstall`, `cache`, `version`,
-  io.js support, `.nvmrc` handling, the minimum-version floor from the
-  `spike` work, shell-conflict detection and migration.
-- **v2 (out of scope here):** install from source (`-s`), legacy platforms
-  (SmartOS, AIX, BSD, ARM variants), `self-install` and `self-update`.
+  install from source (`-s`) when there is no binary, `use`, `deactivate`,
+  `init`, `ls`, `ls-remote`, `alias`, `unalias`, `current`, `which`, `exec`,
+  `run`, `uninstall`, `cache`, `version`, io.js support, `.nvmrc` handling,
+  the minimum-version floor from the `spike` work, shell-conflict detection
+  and migration.
+- **v2 (out of scope here):** legacy platforms (SmartOS, AIX, BSD, ARM
+  variants), `self-install` and `self-update`.
 
 Non-goals: a POSIX shell interpreter, async I/O, a plugin system, a
 multi-crate workspace.
@@ -97,8 +98,8 @@ domain/    pure rules, no I/O
   nvmrc.rs      upward .nvmrc search, CR stripping
   conflict.rs   rules and findings for shell conflicts
   migration.rs  plan and edit model
-ports/     traits: FileSystem, Http, Env, Clock, Process, LineScanner
-adapters/  real implementations (std::fs, ureq, std::env, ripgrep scanner)
+ports/     traits: FileSystem, Http, Env, Clock, Process, Prompt, ...
+adapters/  real implementations (std::fs, ureq, std::env, std::process)
 shell/     eval script generation and `init <shell>`
 ```
 
@@ -107,7 +108,8 @@ under 30 lines), DIP and dependency injection (commands receive `&dyn` ports),
 DRY (one exit-code enum, one rule table), KISS and YAGNI (no workspace, no
 async, blocking HTTP).
 
-Errors use `thiserror` per module and `anyhow` only in the binaries. One
+Errors use `thiserror`; there is no `anyhow`: the binaries only turn the
+CLI's result into an exit code. One
 `From<CliError> for ExitCode` conversion is the only place that maps errors to
 exit codes; only `main` calls `std::process::exit`.
 
@@ -163,8 +165,9 @@ trait.
 8. Apply `--alias`, `--default`, npm upgrade, default packages.
 9. Release the lock.
 
-Without a binary build the install fails with a clear error (equivalent to
-`NVM_NO_SOURCE_FALLBACK=1`) until v2 adds source builds. The remote index is
+Without a binary build the install falls back to a source build, as nvm.sh
+does, unless `-b` or `NVM_NO_SOURCE_FALLBACK=1` forbids it (then exit 2). The
+remote index is
 `index.tab` from the mirror, cached under `.cache/`, with an offline mode.
 
 ## 5. Version floor (from the `spike` work)
@@ -183,19 +186,25 @@ Exit codes in `nvm.sh` are not a single enum; helper functions reuse numbers.
 Only the public contract of each subcommand is fixed. Confirmed so far:
 
 - 0 success; 1 generic failure.
+- 2 missing target: a binary download that failed with no source fallback,
+  `nvm alias lts/<missing>`, `nvm reinstall-packages` of the current version.
 - 3 invalid or unknown version.
+- 4 `--reinstall-packages-from` the version being installed.
+- 5 `--reinstall-packages-from` a version that is not installed.
 - 6 conflicting options (`-s` with `-b`, `--default` with `--alias`).
 - 7 below the version floor, or invalid floor.
 - 8 alias loop.
 - 11 incompatible prefix settings (`nvm use` refusing an npm `prefix`).
 - 33 third-party install hook claimed success but failed.
 - 55 unsupported option.
-- 127 command not found.
+- 127 usage error, unknown command, command not found, or no system version.
 
-Codes 2, 4, 5, 10 and 42 are pending: each is pinned by the acceptance test
-of the scenario that produces it, not guessed. Messages go to stderr with the
-same text as `nvm.sh` wherever a test compares it. Structured logs use
-`tracing`, enabled by `NVMRC_LOG`.
+Every code above is pinned by an acceptance scenario of
+`tests/compat/codes.rs`. 10 is internal to nvm.sh (`nvm_die_on_prefix`; `nvm use`
+turns it into 11) and 42 only comes from `nvm debug`, which nvmrc does not
+have: nvmrc produces neither. Messages go to stderr with the same text as
+`nvm.sh` wherever a test compares it. There are no structured logs (no
+`tracing`, no `NVMRC_LOG`).
 
 ## 7. Shell conflict detection and migration
 
@@ -255,12 +264,15 @@ TDD throughout: failing test, minimal code, refactor.
    cycles, `.nvmrc` CR stripping, conflict rules, migration idempotence.
 2. Command tests with `FakeFileSystem`, `FakeHttp` and `FakeEnv`; scenarios
    from `nvm/test/fast` ported to Rust.
-3. Compatibility contract: the `nvm/test` scenarios (fast, installation,
-   sourcing) run against the Rust `nvm` binary in a temporary `$NVM_DIR`.
+3. Compatibility contract: the `nvm/test` scenarios that can be expressed as
+   commands (`test/fast`, `test/sourcing`) run against the Rust `nvm`
+   function in a temporary `$NVM_DIR` (`tests/compat_cli.rs`), with nvm.sh's
+   output inline; an ignored test re-captures them from a given `nvm.sh`.
 4. A local HTTP server imitating the mirror (`index.tab`, `SHASUMS256.txt`, a
    fixture tarball); no dependency on nodejs.org.
-5. Security tests: mirror injection characters (exit 2) and `..` path
-   components in aliases and versions.
+5. Security tests: mirror injection characters (`ls-remote` and `install` exit
+   3, as nvm.sh's public commands do; `nvm_get_mirror`'s 2 stays internal) and
+   `..` path components in aliases and versions.
 
 Test scripts and output directories are generated, used and removed; they are
 not kept in the repository.
@@ -275,10 +287,11 @@ Linux matrix. Commits follow Conventional Commits and are GPG-signed.
 
 ## 10. Dependencies (v1)
 
-`clap`, `thiserror`, `anyhow`, `ureq` (blocking HTTP) and `tracing` (no
-ripgrep crates: the conflict rules are hand-written, see 7.4). Checksums and
-archive extraction crates are chosen in the implementation plan. MSRV is
-1.85 as declared in `Cargo.toml`.
+`clap`, `thiserror`, `ureq` (blocking HTTP, platform certificate verifier),
+`sha2` (checksums), `flate2` and `lzma-rust2` (gzip and xz) and `tar`;
+`tempfile` for tests. No `anyhow`, no `tracing` and no ripgrep crates (the
+conflict rules are hand-written, see 7.4). MSRV is 1.85 as declared in
+`Cargo.toml`, checked in CI.
 
 ## 11. Implementation order (v1)
 
@@ -296,7 +309,8 @@ archive extraction crates are chosen in the implementation plan. MSRV is
 
 ## 12. Open items
 
-- Pin the pending exit codes (2, 4, 5, 10, 42) through acceptance tests.
-- Choose the checksum and archive crates during planning.
-- Decide whether `nvm-exec` stays a separate binary or becomes a subcommand
-  plus a symlink.
+None open. The pending exit codes are pinned (section 6); the checksum and
+archive crates are chosen (section 10); `nvm-exec` stays a separate binary,
+because tools call it by path as `$NVM_DIR/nvm-exec` (the README says to link
+it there), and on Unix it replaces itself with the command, as the upstream
+script's `exec "$@"`.
