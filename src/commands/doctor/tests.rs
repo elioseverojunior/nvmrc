@@ -62,38 +62,43 @@ fn the_install_script_lines_are_a_loader_and_a_completion_migrate_fixes() {
     assert_eq!(output.status, NvmExitCode::Failure);
 }
 
+const STUB_FIX: &str = "      fix: the stub loads nvm.sh on first use, and an `nvm` stub after \
+the init line hides nvmrc: delete it";
+
+/// The block of the user's `.zshrc`, then the one of `lazy-functions.zsh`.
+const USERS_FILE_BLOCKS: [&str; 16] = [
+    "/Users/u/.zshrc -> /Users/u/dotfiles/zsh/.zshrc",
+    "  3: oh-my-zsh nvm plugin  nvm",
+    "      fix: remove `nvm` from `plugins=(...)`; it does nothing while the nvmrc binary is \
+on PATH but depends on it",
+    "",
+    "/Users/u/dotfiles/zsh/scripts/lazy-functions.zsh",
+    "  1: lazy stub  nvm() {",
+    STUB_FIX,
+    "  2: nvm unset  unfunction nvm node npm npx yarn pnpm 2>/dev/null",
+    "      fix: it removes a lazy stub once nvm.sh is loaded: delete it with the stub",
+    "  3: lazy loader  [ -s \"${nvm_prefix}/nvm.sh\" ] && \\. \"${nvm_prefix}/nvm.sh\"",
+    "      fix: remove or replace this loader by hand: nvmrc has its own function (see \
+`eval \"$(nvmrc init <shell>)\"`)",
+    "      patch: replace the line with: eval \"$(nvmrc init zsh)\"",
+    "  6: lazy stub  npm() { nvm >/dev/null 2>&1; command npm \"$@\" }",
+    STUB_FIX,
+    "",
+    "Info:",
+];
+
 #[test]
 fn the_users_tree_shows_the_stubs_the_plugin_hint_and_the_links() {
     let output = report(&users_dotfiles(), &users_env(), &["--shell", "zsh"]);
-    let stub = "      fix: the stub redefines `nvm` after the init line: delete it, or move the \
-init line after it";
-    let expected = [
-        "nvm doctor: scanned 7 file(s)",
-        "",
-        "/Users/u/.zshrc -> /Users/u/dotfiles/zsh/.zshrc",
-        "  3: oh-my-zsh nvm plugin  nvm",
-        "      fix: remove `nvm` from `plugins=(...)`; it does nothing while the nvmrc binary is \
-on PATH but depends on it",
-        "",
-        "/Users/u/dotfiles/zsh/scripts/lazy-functions.zsh",
-        "  1: lazy stub  nvm() {",
-        stub,
-        "  2: nvm unset  unfunction nvm node npm npx yarn pnpm 2>/dev/null",
-        stub,
-        "  3: lazy loader  [ -s \"${nvm_prefix}/nvm.sh\" ] && \\. \"${nvm_prefix}/nvm.sh\"",
-        "      fix: remove or replace this loader by hand: nvmrc has its own function (see \
-`eval \"$(nvmrc init <shell>)\"`)",
-        "      patch: replace the line with: eval \"$(nvmrc init zsh)\"",
-        "  6: lazy stub  npm() { nvm >/dev/null 2>&1; command npm \"$@\" }",
-        stub,
-        "",
-        "Info:",
+    let mut expected = vec!["nvm doctor: scanned 7 file(s)", ""];
+    expected.extend(USERS_FILE_BLOCKS);
+    expected.extend([
         "  /Users/u/.zshenv:3: NVM_DIR export: kept by `nvm migrate`",
         "  /Users/u/.oh-my-zsh/oh-my-zsh.sh:2: not followed: unset $plugin",
         "  /Users/u/dotfiles/zsh/scripts/lazy-functions.zsh:3: not followed: unset $nvm_prefix",
         "",
         "Result: 4 conflict(s)",
-    ];
+    ]);
     assert_eq!(output.stdout, expected.join("\n"));
     assert_eq!(output.status, NvmExitCode::Failure);
 }
@@ -171,6 +176,7 @@ fn a_missing_sourced_file_is_info_not_an_error() {
     );
     assert_eq!(output.status, NvmExitCode::Success);
 }
+
 #[test]
 fn nvm_sh_and_its_completion_are_reported_as_loaders_and_never_scanned() {
     let fs = FakeFileSystem::default()

@@ -65,9 +65,9 @@ fn a_manual_loader_gets_a_patch_line_and_no_migrate_count() {
     assert!(text.ends_with("Result: 1 conflict(s)"));
 }
 
-#[test]
-fn info_lists_the_kept_exports_then_the_notes() {
-    let report = Report {
+/// An `NVM_DIR` export, a path that cannot be followed, a file not read.
+fn exports_and_notes() -> Report {
+    Report {
         files: vec![file(
             "/h/.zshenv",
             "/h/.zshenv",
@@ -91,9 +91,13 @@ fn info_lists_the_kept_exports_then_the_notes() {
                 reason: NoteReason::Unreadable("denied".to_owned()),
             },
         ],
-    };
+    }
+}
+
+#[test]
+fn info_lists_the_kept_exports_then_the_notes() {
     assert_eq!(
-        render(&report),
+        render(&exports_and_notes()),
         "nvm doctor: scanned 1 file(s)\n\n\
 Info:\n  /h/.zshenv:1: NVM_DIR export: kept by `nvm migrate`\n  \
 /h/.zshenv:2: not followed: unset $X\n  /h/gone: not read: denied\n\n\

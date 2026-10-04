@@ -44,6 +44,22 @@ pub(super) fn strip_comment(line: &str) -> &str {
     line
 }
 
+/// Where the text of a quote left open at the end of `code` starts (the byte
+/// after the opening quote); `None` when every quote is closed.
+pub(super) fn open_quote_contents(code: &str) -> Option<usize> {
+    let mut quote = Quote::None;
+    let mut escaped = false;
+    let mut contents = None;
+    for (index, character) in code.char_indices() {
+        let opening = quote == Quote::None;
+        (quote, escaped) = step(quote, escaped, character);
+        if opening && quote != Quote::None {
+            contents = Some(index + character.len_utf8());
+        }
+    }
+    contents.filter(|_| quote != Quote::None)
+}
+
 /// The quote state after `character`; `escaped` is whether it is escaped.
 fn step(quote: Quote, escaped: bool, character: char) -> (Quote, bool) {
     if escaped {

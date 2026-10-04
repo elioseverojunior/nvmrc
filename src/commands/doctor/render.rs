@@ -47,7 +47,7 @@ fn hit_lines(file: &FileFindings, hit: &Hit) -> String {
         hit.text.trim(),
         fix_text(hit.kind, file.depth)
     );
-    if let Some(patch) = suggested_patch(hit.kind, file.depth, &file.path) {
+    if let Some(patch) = suggested_patch(hit.kind, file.depth, &file.path, &hit.text) {
         let _ = write!(lines, "\n      patch: {patch}");
     }
     lines

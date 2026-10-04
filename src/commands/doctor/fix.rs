@@ -8,8 +8,10 @@ use crate::domain::conflict::Kind;
 const AUTO: &str = "run `nvm migrate` (comments the line out and adds the nvmrc init line)";
 const MANUAL_LOADER: &str = "remove or replace this loader by hand: nvmrc has its own function \
 (see `eval \"$(nvmrc init <shell>)\"`)";
-const STUB: &str = "the stub redefines `nvm` after the init line: delete it, or move the init \
-line after it";
+const STUB: &str = "the stub loads nvm.sh on first use, and an `nvm` stub after the init line \
+hides nvmrc: delete it";
+const UNSET: &str = "it removes a lazy stub once nvm.sh is loaded: delete it with the stub";
+const DELETE_COMPLETION: &str = "delete the line: nvm's bash_completion needs nvm.sh";
 const OMZ: &str = "remove `nvm` from `plugins=(...)`; it does nothing while the nvmrc binary \
 is on PATH but depends on it";
 const ZSH_NVM: &str = "remove zsh-nvm";
@@ -26,7 +28,8 @@ pub fn fix_text(kind: Kind, depth: usize) -> &'static str {
     match kind {
         Kind::Loader | Kind::Completion if depth == 0 => AUTO,
         Kind::Loader | Kind::Completion | Kind::LazyLoader => MANUAL_LOADER,
-        Kind::LazyStub | Kind::Unset => STUB,
+        Kind::LazyStub => STUB,
+        Kind::Unset => UNSET,
         Kind::OmzPlugin => OMZ,
         Kind::ZshNvm => ZSH_NVM,
         Kind::Bass => BASS,
@@ -36,11 +39,16 @@ pub fn fix_text(kind: Kind, depth: usize) -> &'static str {
     }
 }
 
-/// The one-line patch suggested for a loader fixed by hand, `None` for the
-/// kinds that have none.
+/// The one-line patch suggested for a loader fixed by hand (`text` is its
+/// line), `None` for the kinds that have none. A completion without nvm.sh
+/// on its line is deleted: nvmrc has no completion to put in its place.
 #[must_use]
-pub fn suggested_patch(kind: Kind, depth: usize, path: &Path) -> Option<String> {
-    let by_hand = matches!(kind, Kind::LazyLoader) || (depth > 0 && kind == Kind::Loader);
+pub fn suggested_patch(kind: Kind, depth: usize, path: &Path, text: &str) -> Option<String> {
+    let loader_or_completion = matches!(kind, Kind::Loader | Kind::Completion);
+    let by_hand = kind == Kind::LazyLoader || (depth > 0 && loader_or_completion);
+    if by_hand && !text.contains("nvm.sh") {
+        return Some(DELETE_COMPLETION.to_owned());
+    }
     by_hand.then(|| {
         let shell = shell_of(path);
         let line = if shell == "fish" {

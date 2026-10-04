@@ -106,16 +106,23 @@ fn migrate_rewrites_the_profile_and_undo_restores_it_byte_for_byte() {
     assert_eq!(backups(home.path(), ".bash_profile").len(), 1);
 }
 
-#[test]
-fn a_symlinked_profile_keeps_its_link_and_permissions() {
-    let home = TempDir::new().unwrap();
-    let repository = home.path().join("dotfiles/bash");
+/// A stow-like `~/.bash_profile` linked to `dotfiles/bash/.bash_profile`
+/// (mode 0640): the repository directory, the target and the link.
+fn stowed_profile(home: &Path) -> (PathBuf, PathBuf, PathBuf) {
+    let repository = home.join("dotfiles/bash");
     fs::create_dir_all(&repository).unwrap();
     let target = repository.join(".bash_profile");
     fs::write(&target, PROFILE).unwrap();
     fs::set_permissions(&target, fs::Permissions::from_mode(0o640)).unwrap();
-    let link = home.path().join(".bash_profile");
+    let link = home.join(".bash_profile");
     symlink("dotfiles/bash/.bash_profile", &link).unwrap();
+    (repository, target, link)
+}
+
+#[test]
+fn a_symlinked_profile_keeps_its_link_and_permissions() {
+    let home = TempDir::new().unwrap();
+    let (repository, target, link) = stowed_profile(home.path());
     let migrated = nvm(home.path(), &["migrate", "--yes"]);
     assert_eq!(
         migrated.status.code(),

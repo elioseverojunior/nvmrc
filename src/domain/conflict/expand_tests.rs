@@ -72,37 +72,38 @@ fn zdotdir_wins_over_home_when_set() {
     );
 }
 
+const UNRESOLVABLE_ROWS: &[(&str, &str)] = &[
+    (
+        "$(brew --prefix nvm)/nvm.sh",
+        "command substitution $(brew --prefix nvm)",
+    ),
+    (
+        "`brew --prefix nvm`/nvm.sh",
+        "command substitution `brew --prefix nvm`/nvm.sh",
+    ),
+    ("${0:A:h}/x.zsh", "unsupported ${0:A:h}"),
+    ("$f", "unset $f"),
+    ("$FOO/x", "unset $FOO"),
+    ("${FOO}/x", "unset $FOO"),
+    (
+        "${NVM_DIR:-$HOME/.nvm}/nvm.sh",
+        "unsupported ${NVM_DIR:-$HOME/.nvm}",
+    ),
+    ("${#HOME}", "unsupported ${#HOME}"),
+    ("${list[@]}", "unsupported ${list[@]}"),
+    ("$1/x", "unsupported $1/x"),
+    ("$@", "unsupported $@"),
+    ("x$", "unsupported $"),
+    ("${HOME", "unsupported ${HOME"),
+    ("~user/x", "unsupported ~user/x"),
+    ("$HOME/conf.d/*.zsh", "glob /home/me/conf.d/*.zsh"),
+    ("$HOME/file?.sh", "glob /home/me/file?.sh"),
+    ("$HOME/[ab].sh", "glob /home/me/[ab].sh"),
+];
+
 #[test]
 fn anything_left_unexpanded_is_unresolvable_with_a_reason() {
-    let rows = [
-        (
-            "$(brew --prefix nvm)/nvm.sh",
-            "command substitution $(brew --prefix nvm)",
-        ),
-        (
-            "`brew --prefix nvm`/nvm.sh",
-            "command substitution `brew --prefix nvm`/nvm.sh",
-        ),
-        ("${0:A:h}/x.zsh", "unsupported ${0:A:h}"),
-        ("$f", "unset $f"),
-        ("$FOO/x", "unset $FOO"),
-        ("${FOO}/x", "unset $FOO"),
-        (
-            "${NVM_DIR:-$HOME/.nvm}/nvm.sh",
-            "unsupported ${NVM_DIR:-$HOME/.nvm}",
-        ),
-        ("${#HOME}", "unsupported ${#HOME}"),
-        ("${list[@]}", "unsupported ${list[@]}"),
-        ("$1/x", "unsupported $1/x"),
-        ("$@", "unsupported $@"),
-        ("x$", "unsupported $"),
-        ("${HOME", "unsupported ${HOME"),
-        ("~user/x", "unsupported ~user/x"),
-        ("$HOME/conf.d/*.zsh", "glob /home/me/conf.d/*.zsh"),
-        ("$HOME/file?.sh", "glob /home/me/file?.sh"),
-        ("$HOME/[ab].sh", "glob /home/me/[ab].sh"),
-    ];
-    for (token, reason) in rows {
+    for &(token, reason) in UNRESOLVABLE_ROWS {
         assert_eq!(
             expand_path(token, &environment),
             unresolvable(reason),

@@ -35,7 +35,7 @@ fn strip_comment_cuts_a_hash_that_starts_a_word_outside_quotes() {
 }
 
 #[test]
-fn tokens_split_words_and_operators_and_unquote() {
+fn tokens_split_words_and_operators() {
     assert_eq!(
         tokens("nvm() {"),
         [
@@ -57,7 +57,10 @@ fn tokens_split_words_and_operators_and_unquote() {
             word("then"),
         ]
     );
-    assert_eq!(tokens("  'nvm' \"node\""), [quoted("nvm"), quoted("node")]);
+}
+
+#[test]
+fn tokens_split_runs_of_operators() {
     assert_eq!(
         tokens("a&&b|c"),
         [
@@ -69,6 +72,11 @@ fn tokens_split_words_and_operators_and_unquote() {
             word("c"),
         ]
     );
+}
+
+#[test]
+fn tokens_unquote_and_mark_quoted_words() {
+    assert_eq!(tokens("  'nvm' \"node\""), [quoted("nvm"), quoted("node")]);
     assert_eq!(tokens("\\{ x"), [quoted("{"), word("x")]);
     assert_eq!(
         tokens("echo \"a \\\" b\""),

@@ -1,6 +1,8 @@
 //! The path a line sources (digest section 6): the token after the command
 //! word `source`, `.` or `\.`, which starts the line or follows a blank or one
-//! of `;&|{(`, and is followed by a blank.
+//! of `;&|{(`, and is followed by a blank. It must stand where a command
+//! does: after an operator, a reserved word like `then`, or assignments, so
+//! the `.` of `find . -name` is an argument.
 //!
 //! The token is a `"..."`, `'...'` or unquoted run up to a blank or one of
 //! `;&|)`, its parts concatenated with the quotes removed (`"$NVM_DIR"/nvm.sh`
@@ -11,10 +13,14 @@
 use std::iter::Peekable;
 use std::str::Chars;
 
-use super::lexer::strip_comment;
+use super::lexer::{Token, is_word_character, open_quote_contents, strip_comment, tokens};
 
 /// The command words that read a file into the shell.
 const COMMANDS: [&str; 3] = ["source", "\\.", "."];
+/// The reserved words and prefixes a command may follow.
+const COMMAND_KEYWORDS: [&str; 11] = [
+    "then", "do", "else", "if", "elif", "while", "until", "{", "!", "builtin", "command",
+];
 /// What may stand right before a command word.
 const COMMAND_PREFIXES: [char; 5] = [';', '&', '|', '{', '('];
 /// What ends an unquoted token besides a blank.
@@ -40,10 +46,43 @@ pub(super) fn source_targets(code: &str) -> Vec<String> {
 
 /// Whether a command word may start at byte `start` of `code`.
 fn starts_command(code: &str, start: usize) -> bool {
-    code[..start]
+    let before = &code[..start];
+    before
         .chars()
         .next_back()
-        .is_none_or(|before| before.is_whitespace() || COMMAND_PREFIXES.contains(&before))
+        .is_none_or(|character| character.is_whitespace() || COMMAND_PREFIXES.contains(&character))
+        && in_command_position(before)
+}
+
+/// Whether a word after `before` is a command, not an argument: only reserved
+/// words like `then`, `builtin` and assignments stand between it and the
+/// last operator. Inside a quote left open (an `eval "..."` or an alias) the
+/// command starts at the quote.
+fn in_command_position(before: &str) -> bool {
+    let command_text = open_quote_contents(before).map_or(before, |start| &before[start..]);
+    let words = tokens(command_text);
+    let simple_command = words
+        .iter()
+        .rposition(|token| matches!(token, Token::Operator(_)))
+        .map_or(0, |operator| operator + 1);
+    words[simple_command..].iter().all(precedes_a_command)
+}
+
+/// A reserved word that a command follows, or an assignment `NAME=value`.
+fn precedes_a_command(token: &Token) -> bool {
+    let Token::Word { value, quoted } = token else {
+        return false;
+    };
+    (!quoted && COMMAND_KEYWORDS.contains(&value.as_str()))
+        || value
+            .split_once('=')
+            .is_some_and(|(name, _)| is_variable_name(name))
+}
+
+fn is_variable_name(name: &str) -> bool {
+    !name.starts_with(|character: char| character.is_ascii_digit())
+        && !name.is_empty()
+        && name.chars().all(is_word_character)
 }
 
 /// The end of the command word starting at `start`, when one does and a

@@ -27,10 +27,15 @@ fn a_loader_in_a_sourced_file_or_a_lazy_loader_is_fixed_by_hand() {
 
 #[test]
 fn the_other_kinds_have_their_own_advice() {
-    let stub = "the stub redefines `nvm` after the init line: delete it, or move the init \
-line after it";
-    assert_eq!(fix_text(Kind::LazyStub, 1), stub);
-    assert_eq!(fix_text(Kind::Unset, 1), stub);
+    assert_eq!(
+        fix_text(Kind::LazyStub, 1),
+        "the stub loads nvm.sh on first use, and an `nvm` stub after the init line \
+hides nvmrc: delete it"
+    );
+    assert_eq!(
+        fix_text(Kind::Unset, 1),
+        "it removes a lazy stub once nvm.sh is loaded: delete it with the stub"
+    );
     assert!(fix_text(Kind::OmzPlugin, 0).starts_with("remove `nvm` from `plugins=(...)`; it does"));
     assert_eq!(fix_text(Kind::ZshNvm, 0), "remove zsh-nvm");
     assert_eq!(fix_text(Kind::Bass, 0), "remove the bass line");
@@ -40,7 +45,8 @@ line after it";
 
 #[test]
 fn only_loaders_fixed_by_hand_get_a_patch_in_the_shell_of_the_file() {
-    let patch = |kind, depth, path| suggested_patch(kind, depth, Path::new(path));
+    let loader = "[ -s \"${nvm_prefix}/nvm.sh\" ] && \\. \"${nvm_prefix}/nvm.sh\"";
+    let patch = |kind, depth, path| suggested_patch(kind, depth, Path::new(path), loader);
     assert_eq!(patch(Kind::Loader, 0, "/h/.bashrc"), None);
     assert_eq!(patch(Kind::LazyStub, 1, "/h/lazy.zsh"), None);
     let by_hand = |shell: &str| {
@@ -54,5 +60,22 @@ fn only_loaders_fixed_by_hand_get_a_patch_in_the_shell_of_the_file() {
     assert_eq!(
         patch(Kind::LazyLoader, 1, "/h/nvm.fish"),
         Some("replace the line with: nvmrc init fish | source".to_owned())
+    );
+}
+
+/// The user's `lazy-functions.zsh:18`: a completion has no init line to
+/// replace it with, nvmrc ships none.
+#[test]
+fn a_completion_fixed_by_hand_is_deleted() {
+    let completion = "  [ -s \"${nvm_prefix}/etc/bash_completion.d/nvm\" ] && \\. \"${nvm_prefix}/etc/bash_completion.d/nvm\"";
+    let delete = Some("delete the line: nvm's bash_completion needs nvm.sh".to_owned());
+    let path = Path::new("/h/lazy-functions.zsh");
+    assert_eq!(
+        suggested_patch(Kind::LazyLoader, 1, path, completion),
+        delete
+    );
+    assert_eq!(
+        suggested_patch(Kind::Completion, 1, path, completion),
+        delete
     );
 }
