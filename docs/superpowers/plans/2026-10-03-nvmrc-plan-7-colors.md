@@ -6448,6 +6448,16 @@ Each is pinned by a test and is for the Plan 9 compatibility contract.
   starts** (`NVM_COLORS`, `NVM_HAS_COLORS`, `NVM_NO_COLORS`, `MANPATH`,
   `NODE_PATH`, `NVM_SYMLINK_CURRENT`, `PREFIX`): the binary cannot tell an
   exported variable from an unexported one.
+- **`NVM_COLORS` is read by character, not by byte.** nvm.sh reads it with
+  `awk substr`, which counts bytes; a multibyte letter (`éygre`) is therefore
+  one role in the port and two positions in nvm.sh. Only invalid settings are
+  affected.
+- **The alias row printed by `nvm install --alias=<name>` and `--default` is
+  not colored** (`ColorPolicy::off`); nvm.sh runs `nvm alias`, which colors it
+  on a terminal.
+- **`nvm set-colors rgbcm --help` sets the colors**; nvm.sh shows its help (the
+  port's help hijack rule of Plan 6: arguments after a subcommand are
+  ordinary).
 - **The bash 3.2 alias colors are not reproduced** (a bug of that shell:
   `command awk` ends a background job); the port follows bash 5 and zsh.
 
