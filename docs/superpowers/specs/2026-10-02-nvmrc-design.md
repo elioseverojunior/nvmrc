@@ -1,7 +1,7 @@
 # nvmrc — Native Rust port of nvm
 
 Date: 2026-10-02
-Status: Draft for review
+Status: Implemented (Plans 1 to 9); deviations in docs/deviations.md
 Reference implementation: `elioseverojunior/nvm` (`nvm.sh`, 5,456 lines,
 about 129 functions, plus `nvm-exec`, `install.sh`, `bash_completion`).
 

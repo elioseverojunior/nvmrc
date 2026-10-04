@@ -136,7 +136,7 @@ own:
 - An unreadable file is exit 1.
 - A file the syntax checker already refuses is left alone; a missing checker
   writes with a warning.
-- fish is verified only in the Docker image.
+- fish is verified in the Docker image and in CI (installed from apt).
 - `doctor`, `migrate` and `__conflict` are additions.
 
 ## Platforms

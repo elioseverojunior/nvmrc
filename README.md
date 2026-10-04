@@ -6,7 +6,7 @@ scripts, CI and tools call) and `nvm-exec`.
 
 nvmrc uses the same `$NVM_DIR` layout as nvm, so versions installed by either
 tool work with both. It follows nvm.sh's commands, options, messages and exit
-codes, checked against nvm.sh's own test scenarios (`tests/compat/`); the
+codes, checked against the test scenarios of the author's fork of nvm (`tests/compat/`); the
 deviations are in [docs/deviations.md](docs/deviations.md).
 
 ## Install
@@ -86,19 +86,21 @@ is never touched.
 
 Read as nvm.sh does:
 
-- `NVM_DIR`, `NVM_BIN`, `NVM_INC`, `NVM_CD_FLAGS`
+- `NVM_DIR`
 - `NVM_COLORS`, `NVM_NO_COLORS`, `NVM_HAS_COLORS`, `NO_COLOR`, `TERM`
-- `NVM_MIN_VERSION` (and `$NVM_DIR/min-version`)
 - `NVM_NODEJS_ORG_MIRROR`, `NVM_IOJS_ORG_MIRROR`, `NVM_AUTH_HEADER`
 - `NVM_SYMLINK_CURRENT`, `NVM_INSTALL_LOCK_TIMEOUT`,
   `NVM_INSTALL_LOCK_STALE`, `NVM_INSTALL_THIRD_PARTY_HOOK`,
-  `NVM_NO_SOURCE_FALLBACK`, `NVM_MAKE_JOBS`, `NVM_DEBUG`
+  `NVM_NO_SOURCE_FALLBACK`, `NVM_MAKE_JOBS`
 - `NODE_VERSION` (for `nvm-exec`), `NODE_PATH`, `MANPATH`, `PREFIX`,
   `npm_config_prefix`/`NPM_CONFIG_PREFIX`, `CC`/`CXX` (source builds),
   `HOME`, `PWD`, `PATH`
 
-For `doctor` and `migrate`: `SHELL`, `ENV`, `ZDOTDIR`, `XDG_CONFIG_HOME`,
+For `doctor` and `migrate`: `ENV`, `ZDOTDIR`, `XDG_CONFIG_HOME`,
 `NVM_LAZY_LOAD` (a conflict rule).
+
+The version floor (`NVM_MIN_VERSION`, `$NVM_DIR/min-version`) comes from
+the author's fork of nvm, not from nvm-sh/nvm.
 
 nvmrc's own: `NVMRC_SCRIPT_FD`, `NVMRC_SHELL_KIND`, `NVMRC_SHELL`.
 

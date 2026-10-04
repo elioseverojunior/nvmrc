@@ -2,7 +2,7 @@
 color = true
 experimental = true
 idiomatic_version_file = true
-idiomatic_version_file_enable_tools = ["rust"]
+idiomatic_version_file_enable_tools = []
 legacy_version_file = false
 lockfile = true
 not_found_auto_install = true
