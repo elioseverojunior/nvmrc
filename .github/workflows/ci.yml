@@ -101,9 +101,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: elioseverojunior/rust-toolchain@53d2299d557a901de7517771d4ce9e89b70d4439 # v0.8.0-5
-      - uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
         with:
-          tool: cargo-deny,cargo-audit
+          cargo-tools: cargo-deny@0.20.2,cargo-audit@0.22.2
+          cache: true
+          cache-key-hash: ${{ hashFiles('**/Cargo.lock') }}
+          cache-key-suffix: supply-chain
       - run: cargo deny check
       - run: cargo audit
 
