@@ -38,6 +38,8 @@ jobs:
     outputs:
       version: ${{ steps.check.outputs.version }}
       publish: ${{ steps.check.outputs.publish }}
+      # false in a private repository: checksums only (docs/release.md).
+      provenance: ${{ steps.check.outputs.provenance }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -159,8 +161,8 @@ jobs:
     name: sign and attest
     needs: [version, smoke]
     # A dry run stops after the smoke tests: a signature or an attestation
-    # only ever names a published, tagged release.
-    if: needs.version.outputs.publish == 'true'
+    # only ever names a published, tagged release of a public repository.
+    if: needs.version.outputs.publish == 'true' && needs.version.outputs.provenance == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -178,15 +180,7 @@ jobs:
         with:
           install_args: cosign
           cache: false
-      - name: Sign every release file, SHA256SUMS included (keyless)
-        run: |
-          for file in dist/*; do
-            cosign sign-blob --yes --bundle "$file.sigstore.json" "$file"
-          done
-      - name: Unpack the binaries, which are attested one by one
-        run: |
-          mkdir -p binaries
-          for archive in dist/*.tar.gz; do tar -xzf "$archive" -C binaries; done
+      - run: mise run release:sign
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-checksums: dist/SHA256SUMS
@@ -208,8 +202,11 @@ jobs:
 
   publish:
     name: publish the release, the image and the formula
-    needs: [version, sign-and-attest]
-    if: needs.version.outputs.publish == 'true'
+    needs: [version, smoke, sign-and-attest]
+    # A private repository skips sign-and-attest and publishes the unsigned files.
+    if: >-
+      !cancelled() && needs.version.outputs.publish == 'true' && needs.smoke.result == 'success'
+      && (needs.sign-and-attest.result == 'success' || needs.version.outputs.provenance != 'true')
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -219,6 +216,7 @@ jobs:
       artifact-metadata: write
     env:
       IMAGE: ghcr.io/${{ github.repository }}
+      PROVENANCE: ${{ needs.version.outputs.provenance }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -226,13 +224,13 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: signed-files
+          name: ${{ needs.version.outputs.provenance == 'true' && 'signed-files' || 'release-files' }}
           path: dist
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           install_args: cosign git-cliff
           cache: false
-      - run: mise run release:notes
+      - run: mise run release:notes --provenance "$PROVENANCE"
       # A draft until the last step: a failure leaves no public release
       # without its image or formula, and a re-run updates the draft.
       - run: mise run release:github:draft
@@ -269,13 +267,14 @@ jobs:
           annotations: ${{ steps.meta.outputs.annotations }}
           provenance: mode=max
           sbom: true
-      - name: Run the pushed image, by digest, then sign it
+      - name: Run the pushed image, by digest, then sign it when public
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
         run: |
           mise run release:image:run --image "$IMAGE@$DIGEST" --arch amd64
-          cosign sign --yes "$IMAGE@$DIGEST"
-      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+          if [ "$PROVENANCE" = true ]; then cosign sign --yes "$IMAGE@$DIGEST"; fi
+      - if: needs.version.outputs.provenance == 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.push.outputs.digest }}

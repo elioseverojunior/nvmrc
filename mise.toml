@@ -54,7 +54,6 @@ ARCH = "{{exec(command='uname -m')}}"
 PROJECT_NAME = '''{{ exec(command='basename "$(git config --get remote.origin.url || echo ' ~ config_root ~ ')" .git') }}'''
 
 [hooks]
-enter = { task = "setup" }
 postinstall = '''
 echo "Installed: $MISE_INSTALLED_TOOLS"
 '''
@@ -541,7 +540,7 @@ flag "--tag <tag>" help="The tag being released (default: the run's tag, else a 
 
 [tasks."release:check:ci"]
 alias = ["rcci"]
-description = "Print the release workflow's version and publish outputs; refuse an unsafe publish"
+description = "Print the release workflow's version, publish and provenance outputs; refuse an unsafe publish"
 run = '''
 #!/usr/bin/env bash
 
@@ -554,15 +553,18 @@ version="$(mise run -q release:check)"
 publish=false
 # Only a run of a tag publishes, and a manual run only when it is not a dry run.
 [ "${GITHUB_REF_TYPE:-}" = tag ] && [ "${usage_dry_run:?}" != true ] && publish=true
+# A private repository publishes, but with checksums only: GitHub attests only
+# public repositories here, and keyless cosign would name the repository in
+# Sigstore's public logs (docs/release.md, "A private repository").
+provenance=true
+[ "${usage_private:?}" != true ] || provenance=false
 if [ "$publish" = true ]; then
-  [ "${usage_private:?}" != true ] ||
-    fail "artifact attestations need a public repository; make it public first"
   # A tag on a commit that never merged must not release; a dry run may.
   branch="${usage_default_branch:?}"
   git merge-base --is-ancestor "${GITHUB_SHA:-HEAD}" "origin/$branch" ||
     fail "$GITHUB_REF_NAME is not on $branch: tag a commit of $branch"
 fi
-printf 'version=%s\npublish=%s\n' "$version" "$publish"
+printf 'version=%s\npublish=%s\nprovenance=%s\n' "$version" "$publish" "$provenance"
 '''
 shell = "bash -c"
 usage = '''
@@ -670,11 +672,21 @@ mkdir -p "$(dirname "$output")"
 range=--unreleased
 git describe --tags --exact-match --match 'v*' HEAD >/dev/null 2>&1 && range=--latest
 git cliff "$range" --strip header -o "$output"
+# The notes claim only the provenance the release has (docs/release.md).
+if [ "${usage_provenance:?}" = true ]; then
+  note="Every file is signed with Sigstore (keyless) and attested by GitHub."
+else
+  note="This release has no signatures and no provenance attestations: the"
+  note="$note repository is private. Check the downloaded files with"
+  note="$note \`shasum -a 256 --check --ignore-missing SHA256SUMS\`."
+fi
+printf '\n### Verifying\n\n%s\n' "$note" >> "$output"
 '''
 shell = "bash -c"
 usage = '''
 flag "-v --verbose" help="Enable verbose (debug) output"
 flag "--output <file>" help="Where the notes are written" default="target/RELEASE_NOTES.md"
+flag "--provenance <bool>" help="true when the release is signed and attested" default="false"
 '''
 
 [tasks."release:package"]
@@ -915,6 +927,33 @@ flag "--image <reference>" help="The image: a local tag, or a pushed image by di
 flag "--arch <arch>" help="The image platform's architecture" required=#true {
   choices "amd64" "arm64"
 }
+'''
+
+[tasks."release:sign"]
+alias = ["rsg"]
+description = "Sign every release file keyless with cosign; unpack the binaries to attest"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+dist="${usage_dist:?}"
+binaries="${usage_binaries:?}"
+# Keyless: the Fulcio certificate names release.yml at the tag, and the
+# signature goes to Sigstore's public Rekor log. Public repositories only.
+for file in "$dist"/*; do
+  cosign sign-blob --yes --bundle "$file.sigstore.json" "$file"
+done
+mkdir -p "$binaries"
+for archive in "$dist"/*.tar.gz; do tar -xzf "$archive" -C "$binaries"; done
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--dist <dir>" help="The release files to sign" default="dist"
+flag "--binaries <dir>" help="Where the archives are unpacked for attestation" default="binaries"
 '''
 
 [tasks."release:homebrew"]
