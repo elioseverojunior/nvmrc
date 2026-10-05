@@ -13,13 +13,15 @@ verify a release are in the [README](../README.md).
   build any branch.
 - A manual run is a dry run by default: it builds, packages and runs the
   smoke tests, and stops there. Only a run that publishes signs and attests,
-  so every signature and attestation names a tagged release.
-- Publishing is ordered so a failure never leaves a public release half
+  so every signature and attestation names a tagged release; a private
+  repository publishes without either (see "A private repository").
+- Publishing is ordered so a failure never leaves a published release half
   done: the GitHub release is created as a draft
   (`mise run release:github:draft`), then the image is pushed, run by
-  digest, signed and attested, then the formula goes to the tap, and the
-  last step makes the release public. A re-run of the job updates the draft
-  (files replaced with `--clobber`) and finds the formula already committed.
+  digest, signed and attested (in a public repository only), then the
+  formula goes to the tap, and the last step publishes the draft. A re-run
+  of the job updates the draft (files replaced with `--clobber`) and finds
+  the formula already committed.
 - The packages depend on `ca-certificates`; the smoke tests install them
   with each distribution's package manager and run `nvm ls-remote` over
   HTTPS in the container.
@@ -32,14 +34,52 @@ verify a release are in the [README](../README.md).
 - The Homebrew tap and its token are not configured, so publishing a formula
   is disabled: the steps run only when the repository variable
   `NVMRC_HOMEBREW_TAP` is set.
+- nvmrc is never published to crates.io, by the owner's decision:
+  `Cargo.toml` keeps `publish = false`, and `release:check` fails without it.
 
-## The repository must be public
+## A private repository
 
-The repository is private today. GitHub artifact attestations need a public
-repository (private ones only on Enterprise Cloud), and cosign's public
-Sigstore log would record the repository name. So the workflow refuses to
-publish until the repository is public. A manual dry run never signs or
-attests, so it runs the same way in a private repository.
+The repository stays private, and a tag still publishes: the GitHub release
+with the archives, packages, SBOM and `SHA256SUMS`, the GHCR image (a
+private package, like the repository) and, once configured, the Homebrew
+formula. Only people who can read the repository can download them, so the
+formula's URLs need a token until the repository is public.
+
+A private release has checksums only, no signatures and no provenance
+attestations. `mise run release:check:ci` prints `provenance=false` when
+`github.event.repository.private` is true; the `sign-and-attest` job and
+the image's `cosign sign` and `actions/attest` steps are then skipped, the
+release is published from the unsigned files, and `mise run release:notes
+--provenance false` says so in the notes. The ruling:
+
+- `actions/attest` would fail: GitHub artifact attestations in a private
+  repository need GitHub Enterprise Cloud (the action's README).
+- cosign 3.1.3 (`mise.lock`) can sign without the Rekor log: a signing
+  config from `cosign signing-config create --with-default-services
+  --no-default-rekor` has no transparency log (`--tlog-upload=false` is
+  deprecated in its favour), the bundle carries a timestamp instead, and
+  `cosign verify-blob --insecure-ignore-tlog` accepts it. But keyless
+  signing still asks Fulcio for a certificate, and Fulcio appends every
+  certificate it issues to its public certificate transparency log; for a
+  workflow that certificate names the repository, `release.yml` and the
+  tag. Keyless signing would therefore publish the repository name anyway.
+- A key pair kept in a secret would avoid both logs, but it is a key the
+  owner has to keep and rotate, and it proves less than the workflow
+  identity. It is not set up.
+
+So a private release is verified with its checksums only, downloaded over
+authenticated HTTPS:
+
+```sh
+gh release download v0.1.0 --repo elioseverojunior/nvmrc
+shasum -a 256 --check --ignore-missing SHA256SUMS # macOS and Linux
+```
+
+This shows the files match the release's `SHA256SUMS`, not who built them:
+anyone who can write to the release can replace both. Provenance
+attestations and signatures are unavailable until the repository is public.
+Nothing in the workflow changes then: the first tag after the switch is
+signed and attested; earlier private releases stay unsigned.
 
 ## Protecting the tags
 
@@ -72,6 +112,7 @@ The image's CA certificates come from `alpine:3.24.2`, pinned by version
 tag in `Dockerfile.release`: a newer Alpine is a reviewed bump, not a
 silent change. The digest is not pinned, so a rebuilt tag is taken as is;
 instead the release job runs the image it pushed, by digest, before it
-signs and attests that digest. Builds are not bit-for-bit reproducible
-(archive and package timestamps differ between runs); the attestations
-name the exact bytes that were published.
+signs and attests that digest (in a public repository). Builds are not
+bit-for-bit reproducible (archive and package timestamps differ between
+runs); the attestations and checksums name the exact bytes that were
+published.

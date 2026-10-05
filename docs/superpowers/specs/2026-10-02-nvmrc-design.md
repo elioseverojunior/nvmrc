@@ -327,6 +327,8 @@ rpm, apk and Arch packages and as a `scratch` image for linux/amd64 and
 linux/arm64, smoke-tests each package in its distribution's container,
 signs every file with cosign (keyless) and attests provenance and the SBOM
 with GitHub artifact attestations, then publishes the GitHub release, the
-GHCR image and, once configured, a Homebrew formula. Every step is a
+GHCR image and, once configured, a Homebrew formula. While the repository is
+private, a release publishes the same files with checksums only, unsigned
+and unattested (`docs/release.md`). No crate goes to crates.io. Every step is a
 `mise run release:*` task. `flake.nix` builds nvmrc with Nix. Windows is
 out of scope: the crate does not compile there.

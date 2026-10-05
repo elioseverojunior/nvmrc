@@ -12,12 +12,14 @@ codes, checked against the test scenarios of the author's fork of nvm
 ## Install
 
 Releases are built from a `v*` tag by `.github/workflows/release.yml`, on
-native runners, and every file is signed and attested (see "Verifying a
-release"). The version is the one `nvm --version` prints.
+native runners. The version is the one `nvm --version` prints.
 
-The repository is private today. Attestations and the public Sigstore log
-need a public repository, so the release workflow refuses to publish until
-it is public: there is no published release yet, and the channels below
+The repository is private, and a release publishes its files anyway: the
+GitHub release, the GHCR image and, once configured, the Homebrew formula,
+each readable only by those who can read the repository. While it is
+private, a release has checksums only: provenance attestations and
+signatures are unavailable until the repository is public (see "Verifying
+a release"). There is no published release yet, and the channels below
 describe what a release will contain.
 
 - Archives, `nvmrc-<version>-<target>.tar.gz`, each with `nvmrc`, `nvm`,
@@ -52,7 +54,7 @@ describe what a release will contain.
   None is published yet.
 - From source: `cargo install --locked --git
   https://github.com/elioseverojunior/nvmrc` installs the three binaries
-  into `~/.cargo/bin` (the crate is not on crates.io: `publish = false`),
+  into `~/.cargo/bin` (nvmrc is never published to crates.io),
   or `cargo build --release --locked` from a clone puts them in
   `target/release/`. Rust 1.85 or newer (MSRV); development uses the 1.99
   toolchain of `rust-toolchain.toml`. The release profile (fat LTO,
@@ -68,8 +70,19 @@ describe what a release will contain.
 
 ## Verifying a release
 
-Every file of a release is attested by GitHub (SLSA build provenance), each
-binary inside the archives is attested on its own, and the SBOM
+A release made while the repository is private is checked with its
+checksums only, from a download over authenticated HTTPS; it proves the
+files match the release's `SHA256SUMS`, not who built them
+([docs/release.md](docs/release.md) has the ruling):
+
+```sh
+gh release download v0.1.0 --repo elioseverojunior/nvmrc
+shasum -a 256 --check --ignore-missing SHA256SUMS # macOS and Linux
+```
+
+Once the repository is public, every file of a release is attested by
+GitHub (SLSA build provenance), each binary inside the archives is
+attested on its own, and the SBOM
 (`nvmrc-<version>.spdx.json`, the dependency graph of `Cargo.lock`) is
 attested as such. Only a tagged release is signed or attested; the checks
 below also pin the release workflow and the tag, so nothing a manual run
