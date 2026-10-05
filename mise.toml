@@ -31,7 +31,7 @@ yq = { version = "latest" }
 # arm64 with the compound "<os>/<arch>" form — mise parses both halves, and this
 # is the whole platform gate. The separate `arch` key does NOT filter (verified:
 # arch = ["ppc64"] still resolves on an x64 host); it documents intent only.
-"aqua:hk" = { version = "latest", os = [
+"hk" = { version = "latest", os = [
     "linux",
     "windows",
     "macos/arm64",
@@ -196,10 +196,16 @@ if [ "$have_brew" = yes ]; then
       pin="$(lookup "$key" "$pins")"
       stable="$(lookup "$f" "$stables")"
       if [ -n "$stable" ] && { [ "$pin" = "latest" ] || [ "$pin" = "$stable" ]; }; then
-        brew install "$f"
-        brewed="$brewed $key"
-        installed_any=yes
-        echo "brew $key $stable (installed)"
+        # A tool is handed to brew (disable_tools) only once brew REPORTS it
+        # installed. A failed or partial `brew install` must fall back to mise,
+        # never leave the tool disabled in mise and absent from brew.
+        if brew install "$f" && [ -n "$(brew list --versions "$f" 2>/dev/null)" ]; then
+          brewed="$brewed $key"
+          installed_any=yes
+          echo "brew $key $stable (installed)"
+        else
+          echo "mise $key $pin (brew install $f did not leave it installed)"
+        fi
       else
         echo "mise $key $pin${stable:+ (Homebrew has $stable)}"
       fi
