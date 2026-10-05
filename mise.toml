@@ -77,12 +77,10 @@ set -eo pipefail
 # current — honouring it blindly would silently break the pinning this file
 # exists to guarantee. On any mismatch the pin wins and mise installs the tool.
 #
-# The candidates are every tool [tools] pins (from `mise ls`, keyed by its short
-# name: `aqua:hk` -> hk, `github:owner/repo` -> repo) plus BREW_TOOLS, a seed of
-# formula names that may be offered even when nothing derives them. Versions are
-# read back from [tools] so mise.toml stays the single source of truth; a seed
-# entry nothing pins is skipped.
-BREW_TOOLS="git-cliff gitleaks gh jq rustup scorecard uv yq"
+# The candidates are every tool [tools] pins, taken from `mise ls --current
+# --json` and keyed by its short name (`aqua:hk` -> hk, `github:owner/repo` ->
+# repo); there is no hand-kept list. Versions are read back from [tools] so
+# mise.toml stays the single source of truth.
 
 root="$(git rev-parse --show-toplevel)"
 local_cfg="$root/mise.local.toml"
@@ -103,8 +101,7 @@ tools_json="$(MISE_DISABLE_TOOLS= mise ls --current --json)"
 pins="$(printf '%s\n' "$tools_json" | jq -r 'to_entries[] | "\(.key) \(.value[0].requested_version)"' | sort)"
 
 # "<formula> <mise key>" per line. `mise ls --current` merges the global config,
-# so only keys whose source lives in this repo count. The first spelling of a
-# formula wins, so a pinned key beats the BREW_TOOLS seed of the same name.
+# so only keys whose source lives in this repo count.
 # Nothing here asks brew yet: this runs on every `cd`, and `brew formulae` is
 # deferred to a cache miss below.
 candidates="$(
@@ -112,7 +109,6 @@ candidates="$(
     printf '%s\n' "$tools_json" \
       | jq -r --arg root "$root/" 'to_entries[] | select((.value[0].source.path // "") | startswith($root)) | .key' \
       | awk '{ name = $0; sub(/^.*:/, "", name); sub(/^.*\//, "", name); print name, $0 }'
-    for f in $BREW_TOOLS; do echo "$f $f"; done
   } | awk '!seen[$1]++' | sort
 )"
 candidate_names="$(printf '%s\n' "$candidates" | awk 'NF { print $1 }')"
