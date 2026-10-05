@@ -71,7 +71,7 @@ So a private release is verified with its checksums only, downloaded over
 authenticated HTTPS:
 
 ```sh
-gh release download v0.1.0 --repo elioseverojunior/nvmrc
+gh release download v0.0.1 --repo elioseverojunior/nvmrc
 shasum -a 256 --check --ignore-missing SHA256SUMS # macOS and Linux
 ```
 

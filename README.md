@@ -76,7 +76,7 @@ files match the release's `SHA256SUMS`, not who built them
 ([docs/release.md](docs/release.md) has the ruling):
 
 ```sh
-gh release download v0.1.0 --repo elioseverojunior/nvmrc
+gh release download v0.0.1 --repo elioseverojunior/nvmrc
 shasum -a 256 --check --ignore-missing SHA256SUMS # macOS and Linux
 ```
 
@@ -91,11 +91,11 @@ or another workflow attested passes. With the GitHub CLI:
 ```sh
 release=(--repo elioseverojunior/nvmrc
   --signer-workflow elioseverojunior/nvmrc/.github/workflows/release.yml
-  --source-ref refs/tags/v0.1.0)
-gh attestation verify nvmrc-0.1.0-x86_64-unknown-linux-musl.tar.gz "${release[@]}"
+  --source-ref refs/tags/v0.0.1)
+gh attestation verify nvmrc-0.0.1-x86_64-unknown-linux-musl.tar.gz "${release[@]}"
 gh attestation verify /usr/bin/nvm "${release[@]}"
-gh attestation verify oci://ghcr.io/elioseverojunior/nvmrc:0.1.0 "${release[@]}"
-gh attestation verify nvmrc_0.1.0-1_amd64.deb "${release[@]}" \
+gh attestation verify oci://ghcr.io/elioseverojunior/nvmrc:0.0.1 "${release[@]}"
+gh attestation verify nvmrc_0.0.1-1_amd64.deb "${release[@]}" \
   --predicate-type https://spdx.dev/Document/v2.3
 ```
 
@@ -109,7 +109,7 @@ issuer=https://token.actions.githubusercontent.com
 cosign verify-blob --bundle SHA256SUMS.sigstore.json \
   --certificate-identity-regexp "$identity" --certificate-oidc-issuer "$issuer" SHA256SUMS
 shasum -a 256 --check --ignore-missing SHA256SUMS # macOS and Linux
-cosign verify ghcr.io/elioseverojunior/nvmrc:0.1.0 \
+cosign verify ghcr.io/elioseverojunior/nvmrc:0.0.1 \
   --certificate-identity-regexp "$identity" --certificate-oidc-issuer "$issuer"
 ```
 
