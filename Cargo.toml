@@ -9,7 +9,8 @@ repository = "https://github.com/elioseverojunior/nvmrc"
 readme = "README.md"
 keywords = ["nvm", "node", "nodejs", "version-manager", "shell"]
 categories = ["command-line-utilities", "development-tools"]
-# Ready for crates.io, but not published until the owner decides to.
+# Never published to crates.io, by the owner's decision (docs/release.md);
+# `cargo publish` refuses while this is false.
 publish = false
 
 [dependencies]

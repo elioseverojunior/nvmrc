@@ -520,6 +520,9 @@ set -Eeuo pipefail
 
 # Cargo.toml is the source of truth: `nvm --version` prints this version.
 version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+# nvmrc is never published to crates.io (docs/release.md).
+grep -qx 'publish = false' Cargo.toml ||
+  { echo "release:check: Cargo.toml must keep publish = false" >&2; exit 1; }
 tag="${usage_tag:-}"
 # In a workflow run of a tag, that tag; else a v* tag pointing at HEAD itself.
 [ -n "$tag" ] || [ "${GITHUB_REF_TYPE:-}" != tag ] || tag="$GITHUB_REF_NAME"
