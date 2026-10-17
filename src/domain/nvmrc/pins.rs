@@ -86,7 +86,7 @@ pub fn parse_pins(contents: &str) -> Result<Pins, PinError> {
 }
 
 /// `major.minor.patch` of digits only: no `v`, prerelease or range.
-fn exact_version(text: &str) -> Option<Version> {
+pub(crate) fn exact_version(text: &str) -> Option<Version> {
     let parts: Vec<&str> = text.split('.').collect();
     let digits_only = parts
         .iter()

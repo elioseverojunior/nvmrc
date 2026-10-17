@@ -180,7 +180,7 @@ pub(super) fn dispatch(command: &Command, context: &Context<'_>) -> Result<Outpu
         Command::SetColors { args } => commands::set_colors::run(context, args),
         Command::Exec { args } => commands::exec::run(context, args),
         Command::Run { args } => commands::run::run(context, args),
-        Command::Init { args } => commands::init::run(args),
+        Command::Init { args } => commands::init::run(context, args),
         Command::Doctor { args } => commands::doctor::run(context, args),
         Command::Migrate { args } => commands::migrate::run(context, args),
         Command::Auto { args } => commands::auto::run(context, args),

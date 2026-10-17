@@ -156,6 +156,10 @@ pub enum CliError {
     /// Options that cannot be combined, with the message to print.
     #[error("{0}")]
     InvalidOptions(String),
+    /// A version argument that is not an exact version, with the message to
+    /// print.
+    #[error("{0}")]
+    InvalidVersionArgument(String),
     /// A variable a command would rewrite that is set but is not UTF-8.
     #[error("${0} is not valid UTF-8, so nvm cannot change it.")]
     NotText(String),
@@ -181,7 +185,10 @@ impl CliError {
     #[must_use]
     pub fn exit_code(&self) -> NvmExitCode {
         match self {
-            Self::Version(_) | Self::Pins(_) | Self::NotInstalled => NvmExitCode::InvalidVersion,
+            Self::Version(_)
+            | Self::Pins(_)
+            | Self::InvalidVersionArgument(_)
+            | Self::NotInstalled => NvmExitCode::InvalidVersion,
             Self::NvmDirUnresolved
             | Self::NotText(_)
             | Self::VersionNotInstalled(_)
@@ -266,6 +273,10 @@ mod tests {
     fn errors_of_the_commands_map_to_their_exit_codes() {
         assert_exit_codes([
             (CliError::NotInstalled, NvmExitCode::InvalidVersion),
+            (
+                CliError::InvalidVersionArgument("x".into()),
+                NvmExitCode::InvalidVersion,
+            ),
             (CliError::NvmDirUnresolved, NvmExitCode::Failure),
             (CliError::NotText("PATH".into()), NvmExitCode::Failure),
             (

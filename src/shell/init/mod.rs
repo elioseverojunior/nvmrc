@@ -37,7 +37,7 @@ use conflict_check::conflict_check;
 /// which skip the block).
 pub use crate::domain::conflict::{BEGIN_MARKER, END_MARKER};
 /// How `nvm init` is called.
-pub const USAGE: &str = "Usage: nvm init <shell> [--no-use] [--install]";
+pub const USAGE: &str = "Usage: nvm init <shell> [--no-use] [--install]\n       nvm init [--node[=<version>]] [--npm[=<version>]] [--yarn[=<version>] | --pnpm[=<version>]]";
 
 /// The shells whose `nvm` function `nvm init` prints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
