@@ -1,0 +1,129 @@
+use super::*;
+
+struct Rules(NodeRules);
+
+impl Rules {
+    fn with(edit: impl FnOnce(&mut NodeRules)) -> Self {
+        let mut rules = NodeRules {
+            minimum: None,
+            allow: None,
+            deny: None,
+            lts_only: None,
+            minimum_release_age_days: None,
+        };
+        edit(&mut rules);
+        Self(rules)
+    }
+
+    fn deny(mut self, versions: &[&str]) -> Self {
+        self.0.deny = Some(versions.iter().map(|text| (*text).to_owned()).collect());
+        self
+    }
+}
+
+fn minimum(text: &str) -> Rules {
+    Rules::with(|rules| rules.minimum = Some(text.into()))
+}
+
+fn allow(range: &str) -> Rules {
+    Rules::with(|rules| rules.allow = Some(range.into()))
+}
+
+fn lts_only(value: bool) -> Rules {
+    Rules::with(|rules| rules.lts_only = Some(value))
+}
+
+fn age(days: u32) -> Rules {
+    Rules::with(|rules| rules.minimum_release_age_days = Some(days))
+}
+
+fn layer(source: Source, rules: Rules) -> NodeLayer {
+    NodeLayer::from_rules(source, &rules.0).unwrap()
+}
+
+fn central(rules: Rules) -> NodeLayer {
+    layer(Source::CentralPolicy("/p.json".into()), rules)
+}
+
+fn flag(rules: Rules) -> NodeLayer {
+    layer(Source::Flag("--min-node"), rules)
+}
+
+fn variable(rules: Rules) -> NodeLayer {
+    layer(Source::Variable("NVM_MIN_VERSION"), rules)
+}
+
+fn repository(rules: Rules) -> NodeLayer {
+    layer(
+        Source::RepositoryPolicy("/w/.nvmrc-policy.json".into()),
+        rules,
+    )
+}
+
+#[test]
+fn the_highest_minimum_wins_and_names_its_source() {
+    let (policy, _) = merge(vec![central(minimum("20.11.1")), variable(minimum("22"))]);
+    let winner = policy.minimum.unwrap();
+    assert_eq!(winner.value.to_string(), "v22.0.0");
+    assert_eq!(winner.source, Source::Variable("NVM_MIN_VERSION"));
+}
+
+#[test]
+fn a_lower_override_loses_with_a_warning() {
+    let (policy, warnings) = merge(vec![central(minimum("20.11.1")), flag(minimum("16"))]);
+    assert_eq!(policy.minimum.unwrap().value.to_string(), "v20.11.1");
+    assert_eq!(
+        warnings,
+        vec![
+            "nvm: --min-node v16.0.0 is looser than v20.11.1 from policy /p.json; using v20.11.1."
+        ]
+    );
+}
+
+#[test]
+fn allow_ranges_all_apply_and_deny_lists_add_up() {
+    let (policy, _) = merge(vec![
+        central(allow(">=20 <25").deny(&["20.12.0"])),
+        repository(allow("^22").deny(&["22.3.0"])),
+    ]);
+    assert_eq!(policy.allow.len(), 2);
+    assert_eq!(policy.deny.len(), 2);
+}
+
+#[test]
+fn lts_only_is_on_when_any_source_sets_it_and_an_explicit_false_warns() {
+    let (policy, warnings) = merge(vec![central(lts_only(true)), repository(lts_only(false))]);
+    assert!(policy.lts_only.is_some());
+    assert_eq!(warnings.len(), 1);
+}
+
+#[test]
+fn the_largest_release_age_wins() {
+    let (policy, warnings) = merge(vec![central(age(14)), repository(age(7))]);
+    assert_eq!(policy.minimum_release_age_days.unwrap().value, 14);
+    assert_eq!(warnings.len(), 1);
+}
+
+#[test]
+fn the_central_policy_never_warns_about_itself() {
+    let (_, warnings) = merge(vec![central(minimum("18")), repository(minimum("20"))]);
+    assert!(warnings.is_empty());
+}
+
+#[test]
+fn sources_display_as_users_know_them() {
+    assert_eq!(Source::Flag("--min-node").to_string(), "--min-node");
+    assert_eq!(
+        Source::CentralPolicy("https://sec/p.json".into()).to_string(),
+        "policy https://sec/p.json"
+    );
+    assert_eq!(
+        Source::RepositoryPolicy("/w/.nvmrc-policy.json".into()).to_string(),
+        "repository policy /w/.nvmrc-policy.json"
+    );
+    assert_eq!(
+        Source::MinVersionFile("/n/min-version".into()).to_string(),
+        "/n/min-version"
+    );
+    assert!(!Source::CentralPolicy(String::new()).is_override());
+}
