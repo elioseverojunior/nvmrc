@@ -225,6 +225,23 @@ or `NVMRC_POLICY`, nothing changes (pinned by
   `an_allowed_use_save_still_writes_nvmrc` in
   `src/commands/use_version/tests.rs`)
 
+### npm, yarn and pnpm
+
+nvmrc additions; nvm.sh ignores `npm=`, `yarn=` and `pnpm=` lines in
+`.nvmrc`.
+
+- The lines change what `install`, `use`, `exec`, `run` and `deactivate` do:
+  `install` fetches the pinned tools; `use`, `exec` and `run` put them on
+  `PATH` and drop other projects' entries; `deactivate` removes them.
+- A pin error, a `packageManager` in the neighbouring `package.json` that
+  disagrees with the pin, or a pinned tool that is not installed exits 3 in
+  an explicit `use`, `exec` or `run`; the automatic paths only warn.
+- The tools live in `$NVM_DIR/package-managers/<tool>/<version>/`, shared by
+  all node versions, and their `bin` directories lead `PATH`.
+- `NVM_AUTH_HEADER` is not sent to the npm registry, tarball hosts or the
+  built-in vulnerability index; `NVMRC_NPM_AUTH_HEADER` goes to the registry
+  host only.
+
 ### Colors
 
 - An invalid `NVM_COLORS` letter warns once; an unknown `TERM` is silent.

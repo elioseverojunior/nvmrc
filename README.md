@@ -198,7 +198,9 @@ the author's fork of nvm, not from nvm-sh/nvm.
 
 nvmrc's own: `NVMRC_SCRIPT_FD`, `NVMRC_SHELL_KIND`, `NVMRC_SHELL`, and
 `NVMRC_POLICY` (the central security policy, see
-[Security policy](#security-policy)).
+[Security policy](#security-policy)), `NVMRC_NPM_REGISTRY`,
+`NVMRC_NPM_AUTH_HEADER` and `NVMRC_MIN_NPM`/`NVMRC_MIN_YARN`/`NVMRC_MIN_PNPM`
+(see [npm, yarn and pnpm](#npm-yarn-and-pnpm)).
 
 Not supported: `NVM_NO_PROGRESS` (there is no progress bar), `NVM_OFFLINE`
 (use `--offline`), curl and wget settings (downloads use ureq; proxies come
@@ -231,7 +233,9 @@ the design is in
 The node rules are `minimum`, `allow` (an npm-style range), `deny`,
 `ltsOnly` and `minimumReleaseAgeDays`; the `cve` settings are described in
 [CVE check](#cve-check). An unknown field is an error, never ignored. The
-npm, yarn and pnpm sections are accepted but not enforced.
+`tools.npm`, `tools.yarn` and `tools.pnpm` sections take `minimum`, `allow`,
+`deny` and `minimumReleaseAgeDays` and are enforced; see
+[npm, yarn and pnpm](#npm-yarn-and-pnpm).
 
 These sources take part, in this order:
 
@@ -243,6 +247,9 @@ These sources take part, in this order:
 - `.nvmrc-policy.json`, found from the working directory upward like
   `.nvmrc`: the repository policy.
 - `--min-node <version>`: a minimum of its own.
+- `--min-npm`, `--min-yarn`, `--min-pnpm <version>`: the same for those
+  tools, with `NVMRC_MIN_NPM`, `NVMRC_MIN_YARN` and `NVMRC_MIN_PNPM` as their
+  variables.
 - `NVM_MIN_VERSION`: a minimum, merged with the others in policy mode.
 - `$NVM_DIR/min-version`: the same, from the file.
 
@@ -343,6 +350,56 @@ valid: ...` when it is invalid). If node rules already fail, the status stays
 local index works offline. The shell startup (`__auto`) warns and goes on.
 Legacy mode never fetches the index.
 
+## npm, yarn and pnpm
+
+A `.nvmrc` can pin the package managers next to the node version:
+
+```text
+20.11.1
+npm=10.9.0
+pnpm=9.12.0
+```
+
+Each pin is an exact `major.minor.patch` of digits: no `v`, no prerelease, no
+range. Yarn and pnpm together is an error. The pins come from the nearest
+`.nvmrc` and are read by `install`, `use`, `exec` and `run` with or without
+a policy, even when the node version is given on the command line.
+
+When yarn or pnpm is pinned and a `package.json` sits beside that `.nvmrc`,
+its `packageManager` must be `<name>@<version>` for the same tool and
+version (a `+<hash>` suffix is ignored). nvmrc never writes `package.json`.
+A bad pin, a diverging `packageManager` and a pinned tool that is not
+installed (in an explicit `use`, `exec` or `run`) stop with status 3; the
+automatic paths (`__auto`, the init snippet) only warn.
+
+`install` installs the pinned tools after the node and before activating it.
+They go to `$NVM_DIR/package-managers/<tool>/<version>/`, with `package/`
+(the unpacked package) and `bin/` (the commands), shared by all node
+versions. The packages are `npm`, `pnpm`, `yarn` below 2.0.0 and
+`@yarnpkg/cli-dist` from 2.0.0. The tarball must match a `sha512` entry of
+`dist.integrity`, a command may not point outside its package, and a failed
+install keeps the previous one. With `--offline`, a pinned tool that is not
+in the store fails.
+
+`use`, `exec` and `run` on an installed node put each pinned tool's `bin`
+ahead of node's on `PATH` and drop the tool entries of other projects.
+`use system` adds none, and `deactivate` removes them.
+
+The registry is `NVMRC_NPM_REGISTRY` (default `https://registry.npmjs.org`,
+https only). `NVMRC_NPM_AUTH_HEADER` is sent only to the registry's host.
+`NVM_AUTH_HEADER` is never sent to the npm registry, a tarball host or the
+built-in vulnerability index; it still goes to the Node mirrors, a central
+policy and a configured `cve.source`.
+
+The policy rules for these tools (`minimum`, `allow`, `deny`,
+`minimumReleaseAgeDays`) come from the same sources as node's, with
+`--min-npm`, `--min-yarn` and `--min-pnpm`, and tighten the same way;
+`ltsOnly` does not apply and their CVEs are not checked. A tool is checked
+when pinned. Without an npm pin, the npm bundled with the node in use is
+checked, and only when an npm rule exists. The release age uses the
+registry's `time` metadata. A violation exits 7, a check that cannot be made
+exits 9.
+
 ## Commands
 
 As nvm.sh: `version`, `current`, `ls`/`list`, `ls-remote`/`list-remote`,
@@ -371,7 +428,9 @@ together.
 - 1: failure.
 - 2: missing target (binary download failed with no source fallback,
   `alias lts/<missing>`, `reinstall-packages` from the version in use).
-- 3: invalid or unknown version.
+- 3: invalid or unknown version; an invalid `npm=`/`yarn=`/`pnpm=` pin, a
+  `packageManager` that disagrees with the pin, or a pinned tool that is not
+  installed in an explicit `use`, `exec` or `run`.
 - 4: `--reinstall-packages-from` the version being installed.
 - 5: `--reinstall-packages-from` a version not installed.
 - 6: options that cannot be combined.
