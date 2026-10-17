@@ -3,12 +3,10 @@
 //! `--node`, `--npm`, `--yarn` or `--pnpm` instead of a shell, it sets up
 //! the project (see [`request`]).
 
-mod candidates;
 mod project;
 mod request;
 #[cfg(test)]
-mod test_support;
-mod write;
+pub(crate) mod test_support;
 
 use crate::commands::Output;
 use crate::context::Context;

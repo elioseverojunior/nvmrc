@@ -1,4 +1,6 @@
-//! The releases `nvm init` can pick from, and which of them the policy allows.
+//! The releases a project command can pick from, and which of them the policy allows.
+
+use std::collections::BTreeSet;
 
 use crate::commands::package_managers::registry::fetch_packument;
 use crate::commands::policy::enforce::index_location;
@@ -80,6 +82,25 @@ pub fn tool_candidates(
         .collect())
 }
 
+/// The first candidate with no violation, whatever its LTS name.
+///
+/// # Errors
+/// [`PolicyError`] when the policy cannot judge a candidate.
+pub fn first_allowed(
+    context: &Context<'_>,
+    judge: &mut Judge,
+    tool: Tool,
+    candidates: &[Candidate],
+) -> Result<Option<Candidate>, PolicyError> {
+    for candidate in candidates {
+        let found = judge.violations(context, tool, &candidate.version, &candidate.release)?;
+        if found.is_empty() {
+            return Ok(Some(candidate.clone()));
+        }
+    }
+    Ok(None)
+}
+
 /// The first candidate with no violation; for node, among those with an LTS
 /// name only.
 ///
@@ -91,16 +112,33 @@ pub fn newest_allowed(
     tool: Tool,
     candidates: &[Candidate],
 ) -> Result<Option<Version>, PolicyError> {
-    for candidate in candidates {
-        if tool == Tool::Node && candidate.release.lts.is_none() {
-            continue;
-        }
-        let found = judge.violations(context, tool, &candidate.version, &candidate.release)?;
-        if found.is_empty() {
-            return Ok(Some(candidate.version));
-        }
-    }
-    Ok(None)
+    let eligible: Vec<Candidate> = candidates
+        .iter()
+        .filter(|candidate| tool != Tool::Node || candidate.release.lts.is_some())
+        .cloned()
+        .collect();
+    let first = first_allowed(context, judge, tool, &eligible)?;
+    Ok(first.map(|candidate| candidate.version))
+}
+
+/// The candidates of `major`, in their order.
+#[must_use]
+pub fn in_major(candidates: &[Candidate], major: u64) -> Vec<Candidate> {
+    candidates
+        .iter()
+        .filter(|candidate| candidate.version.major == major)
+        .cloned()
+        .collect()
+}
+
+/// The majors the candidates span, ascending and distinct.
+#[must_use]
+pub fn majors(candidates: &[Candidate]) -> Vec<u64> {
+    let found: BTreeSet<u64> = candidates
+        .iter()
+        .map(|candidate| candidate.version.major)
+        .collect();
+    found.into_iter().collect()
 }
 
 /// Whether `version` is published and allowed.

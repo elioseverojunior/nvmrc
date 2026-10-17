@@ -1,4 +1,7 @@
-use super::super::test_support::{file, init, project, served};
+use super::*;
+use crate::commands::init::test_support::{file, init, project, served};
+use crate::commands::transcript::Transcript;
+use crate::error::NvmExitCode;
 
 const YARN_URL: &str = "https://registry.npmjs.org/yarn";
 
@@ -93,4 +96,36 @@ fn a_failed_restore_says_package_json_was_updated() {
             denied("/p/.nvmrc")
         )
     );
+}
+
+#[test]
+fn beside_puts_package_json_next_to_the_nvmrc() {
+    let files = ProjectFiles::beside(Path::new("/a/b/.nvmrc"));
+    assert_eq!(files.nvmrc, Path::new("/a/b/.nvmrc"));
+    assert_eq!(files.package_json, Path::new("/a/b/package.json"));
+}
+
+#[test]
+fn the_restore_failure_line_names_the_command() {
+    let (fs, env) = project(&[("/p/package.json", "{}")], "");
+    let fs = fs
+        .with_write_failure("/p/.nvmrc", 0)
+        .with_write_failure("/p/package.json", 1);
+    let context = Context::new(&fs, &env);
+    let files = ProjectFiles::in_directory(Path::new("/p"));
+    let chosen = [(Tool::Pnpm, "v9.12.0".parse().unwrap())];
+    let edit = new_package_json(&context, &files.package_json, &chosen).unwrap();
+    let mut transcript = Transcript::default();
+    let saved = save(
+        &context,
+        "nvm upgrade",
+        &files,
+        "",
+        edit.as_ref(),
+        &mut transcript,
+    );
+    assert!(saved.is_err());
+    let stderr = transcript.finish(NvmExitCode::Success).stderr;
+    let line = "nvm upgrade: /p/package.json was already updated to \"pnpm@9.12.0\".";
+    assert!(stderr.ends_with(line), "{stderr}");
 }

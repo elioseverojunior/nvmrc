@@ -1,9 +1,9 @@
-//! The writing step of `nvm init`: the new `.nvmrc` and `package.json`
+//! The writing step of `nvm init` and `nvm upgrade`: the new `.nvmrc` and `package.json`
 //! texts, computed before either file is written.
 
 use std::path::{Path, PathBuf};
 
-use super::project::Stop;
+use super::stop::Stop;
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::nvmrc::{with_pin, with_version};
@@ -14,7 +14,7 @@ use crate::domain::tool::Tool;
 use crate::domain::version::Version;
 use crate::error::{CliError, PinsError};
 
-/// The two files `nvm init` writes, in the working directory.
+/// The two files a project command writes.
 pub struct ProjectFiles {
     pub nvmrc: PathBuf,
     pub package_json: PathBuf,
@@ -25,6 +25,16 @@ impl ProjectFiles {
     pub fn in_directory(directory: &Path) -> Self {
         Self {
             nvmrc: directory.join(".nvmrc"),
+            package_json: directory.join("package.json"),
+        }
+    }
+
+    /// The `.nvmrc` given and the `package.json` in its directory.
+    #[must_use]
+    pub fn beside(nvmrc: &Path) -> Self {
+        let directory = nvmrc.parent().unwrap_or_else(|| Path::new(""));
+        Self {
+            nvmrc: nvmrc.to_path_buf(),
             package_json: directory.join("package.json"),
         }
     }
@@ -119,12 +129,14 @@ impl PackageEdit {
 /// Writes `package.json` (when it changes) and then the `.nvmrc`. When the
 /// `.nvmrc` cannot be written, `package.json` gets its original text back,
 /// so a failure leaves both files as they were; the failure is printed, with
-/// a line naming the update should the restore fail too.
+/// a line, prefixed with `command`, naming the update should the restore
+/// fail too.
 ///
 /// # Errors
 /// [`Stop`] with the failed write.
 pub fn save(
     context: &Context<'_>,
+    command: &str,
     files: &ProjectFiles,
     nvmrc_text: &str,
     package_edit: Option<&PackageEdit>,
@@ -143,7 +155,7 @@ pub fn save(
         let path = files.package_json.display();
         let field = &edit.field;
         transcript.err(format!(
-            "nvm init: {path} was already updated to \"{field}\"."
+            "{command}: {path} was already updated to \"{field}\"."
         ));
     }
     Err(Stop::Refused(error.exit_code()))

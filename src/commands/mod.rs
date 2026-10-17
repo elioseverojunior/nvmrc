@@ -19,6 +19,7 @@ pub mod nvm_exec;
 pub mod nvmrc_file;
 pub mod package_managers;
 pub mod policy;
+pub mod project;
 pub mod project_pins;
 pub mod rc_version;
 pub mod reinstall_packages;

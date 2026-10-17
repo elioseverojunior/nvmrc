@@ -1,6 +1,7 @@
 use super::*;
 use crate::commands::transcript::Transcript;
 use crate::domain::fixtures::index_text_dated;
+use crate::domain::policy::ReleaseInfo;
 use crate::fakes::{FakeClock, FakeEnv, FakeFileSystem, FakeHttp};
 
 const INDEX_URL: &str = "https://nodejs.org/dist/index.tab";
@@ -218,4 +219,48 @@ fn node_candidates_without_an_nvm_directory_say_so() {
     let context = Context::new(&fs, &env).with_http(&http);
     let error = node_candidates(&context).unwrap_err();
     assert!(matches!(error, CliError::NvmDirUnresolved), "{error}");
+}
+
+fn candidate(text: &str, lts: Option<&str>) -> Candidate {
+    Candidate {
+        version: version(text),
+        release: ReleaseInfo {
+            lts: lts.map(str::to_owned),
+            published_day: None,
+        },
+    }
+}
+
+#[test]
+fn first_allowed_ignores_lts() {
+    let (fs, env) = policy_files("");
+    let context = Context::new(&fs, &env);
+    let mut judge = judged(&context);
+    let candidates = [candidate("23.0.0", None), candidate("22.3.0", Some("Jod"))];
+    let found = first_allowed(&context, &mut judge, Tool::Node, &candidates).unwrap();
+    assert_eq!(found, Some(candidates[0].clone()));
+    let lts = newest_allowed(&context, &mut judge, Tool::Node, &candidates).unwrap();
+    assert_eq!(lts, Some(version("22.3.0")));
+}
+
+#[test]
+fn in_major_keeps_only_that_major() {
+    let candidates = [
+        candidate("23.0.0", None),
+        candidate("22.3.0", Some("Jod")),
+        candidate("22.1.0", Some("Jod")),
+    ];
+    assert_eq!(in_major(&candidates, 22), candidates[1..].to_vec());
+    assert!(in_major(&candidates, 18).is_empty());
+}
+
+#[test]
+fn majors_are_ascending_and_distinct() {
+    let candidates = [
+        candidate("23.0.0", None),
+        candidate("22.3.0", Some("Jod")),
+        candidate("22.1.0", Some("Jod")),
+        candidate("20.0.0", Some("Iron")),
+    ];
+    assert_eq!(majors(&candidates), vec![20, 22, 23]);
 }

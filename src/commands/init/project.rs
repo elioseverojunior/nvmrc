@@ -6,21 +6,21 @@
 
 use std::path::Path;
 
-use super::candidates::{
-    Candidate, Exact, exact, newest_allowed, node_candidates, tool_candidates,
-};
 use super::request::{ProjectRequest, Wanted};
-use super::write::{ProjectFiles, current_nvmrc, new_nvmrc, new_package_json, save};
 use crate::commands::Output;
 use crate::commands::policy::judge::Judge;
 use crate::commands::policy::report::argument_block;
+use crate::commands::project::{
+    Candidate, Exact, ProjectFiles, Stop, current_nvmrc, exact, new_nvmrc, new_package_json,
+    newest_allowed, node_candidates, save, tool_candidates,
+};
 use crate::commands::project_pins::pin_error;
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::nvmrc::pins::parse_pins;
 use crate::domain::tool::Tool;
 use crate::domain::version::{Flavor, Version};
-use crate::error::{CliError, NvmExitCode, PolicyError};
+use crate::error::{CliError, NvmExitCode};
 
 /// The tools in the order they are chosen, written and reported.
 const ORDER: [Tool; 4] = [Tool::Node, Tool::Npm, Tool::Yarn, Tool::Pnpm];
@@ -33,26 +33,6 @@ const CLI_DIST: Version = Version {
     minor: 0,
     patch: 0,
 };
-
-/// Why project mode stopped.
-pub enum Stop {
-    /// An error, printed as its message.
-    Error(CliError),
-    /// A refusal already printed, with its status.
-    Refused(NvmExitCode),
-}
-
-impl From<CliError> for Stop {
-    fn from(error: CliError) -> Self {
-        Self::Error(error)
-    }
-}
-
-impl From<PolicyError> for Stop {
-    fn from(error: PolicyError) -> Self {
-        Self::Error(error.into())
-    }
-}
 
 /// Sets up the project as `request` asks; whatever stops it is printed on
 /// stderr with its status, after any warning the policy gave.
@@ -88,6 +68,7 @@ fn set_up(
     let package_edit = new_package_json(context, &files.package_json, &chosen)?;
     save(
         context,
+        "nvm init",
         &files,
         &nvmrc_text,
         package_edit.as_ref(),
