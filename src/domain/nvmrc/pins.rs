@@ -21,6 +21,9 @@ pub enum PinError {
     NotExact { line: String },
     #[error("yarn and pnpm are both pinned")]
     YarnAndPnpm,
+    /// `key` (`npm`, `yarn` or `pnpm`) is pinned on more than one line.
+    #[error("{key} is pinned more than once")]
+    Repeated { key: String },
 }
 
 impl Pins {
@@ -51,19 +54,25 @@ impl Pins {
 
 /// Reads the pins from `.nvmrc` content. Lines are the ones
 /// [`super::process_content`] sees; keys other than `npm`, `yarn` and `pnpm`
-/// are not pins and are ignored.
+/// are not pins and are ignored. A pin may appear once.
 pub fn parse_pins(contents: &str) -> Result<Pins, PinError> {
     let mut pins = Pins::default();
     for line in content_lines(contents) {
         let Some((key, value)) = line.split_once('=') else {
             continue;
         };
-        let slot = match trim_space(key) {
+        let key = trim_space(key);
+        let slot = match key {
             "npm" => &mut pins.npm,
             "yarn" => &mut pins.yarn,
             "pnpm" => &mut pins.pnpm,
             _ => continue,
         };
+        if slot.is_some() {
+            return Err(PinError::Repeated {
+                key: key.to_owned(),
+            });
+        }
         *slot = Some(
             exact_version(trim_space(value)).ok_or_else(|| PinError::NotExact {
                 line: line.to_owned(),

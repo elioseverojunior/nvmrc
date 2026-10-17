@@ -38,6 +38,18 @@ fn yarn_and_pnpm_together_are_rejected() {
 }
 
 #[test]
+fn a_repeated_pin_is_rejected_with_its_key() {
+    for (contents, key) in [
+        ("npm=10.9.0\nnpm=10.8.0\n", "npm"),
+        ("yarn=4.5.0\n yarn = 4.5.0\n", "yarn"),
+        ("pnpm=9.12.0\npnpm=9.12.1\n", "pnpm"),
+    ] {
+        let error = parse_pins(contents).unwrap_err();
+        assert_eq!(error, PinError::Repeated { key: key.into() });
+    }
+}
+
+#[test]
 fn comments_and_spaces_are_ignored() {
     let pins = parse_pins("# tools\n npm = 10.9.0 # pinned\r\n").unwrap();
     assert_eq!(pins.npm, Some(version("10.9.0")));

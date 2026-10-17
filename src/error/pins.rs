@@ -11,6 +11,8 @@ pub enum PinsError {
     NotExact { nvmrc: String, line: String },
     #[error("nvm: {nvmrc} pins both yarn and pnpm; pin at most one.")]
     YarnAndPnpm { nvmrc: String },
+    #[error("nvm: {nvmrc} pins {key} more than once; keep one {key}= line.")]
+    Repeated { nvmrc: String, key: String },
     #[error(
         "nvm: {package_json} has no packageManager; set it to \"{expected}\" to match {nvmrc}."
     )]

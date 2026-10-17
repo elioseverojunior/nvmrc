@@ -66,6 +66,7 @@ fn pin_error(error: PinError, nvmrc: &Path) -> PinsError {
     match error {
         PinError::NotExact { line } => PinsError::NotExact { nvmrc, line },
         PinError::YarnAndPnpm => PinsError::YarnAndPnpm { nvmrc },
+        PinError::Repeated { key } => PinsError::Repeated { nvmrc, key },
     }
 }
 
@@ -176,6 +177,11 @@ mod tests {
                 "yarn=4.5.0\npnpm=9.12.0\n",
                 None,
                 "nvm: /p/.nvmrc pins both yarn and pnpm; pin at most one.",
+            ),
+            (
+                "npm=10.9.0\nnpm=10.8.0\n",
+                None,
+                "nvm: /p/.nvmrc pins npm more than once; keep one npm= line.",
             ),
             (
                 "pnpm=9.12.0\n",
