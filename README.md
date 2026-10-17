@@ -248,8 +248,9 @@ These sources take part, in this order:
 
 The flags go before the subcommand or anywhere after it up to a `--`
 (`nvm --policy p use 20`, `nvm use 20 --min-node 20`). After `exec` and
-`run` they are taken only before the version: a later occurrence belongs to
-the program they run and is left alone. A flag with no value fails with
+`run` they are taken only immediately after the subcommand: any other option
+in between ends them, and a later occurrence belongs to the program they run
+and is left alone. A flag with no value fails with
 `nvm: <flag> needs a value.` and status 127; a flag given twice fails with
 `nvm: <flag> is given twice.`.
 
