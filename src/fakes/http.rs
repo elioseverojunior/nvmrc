@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-use crate::ports::{Http, HttpError};
+use crate::ports::{Http, HttpError, MAX_TEXT_BYTES};
 
 /// Pages by URL: each answers with a fixed body, status or transport error, or
 /// redirects to another URL, and every request is recorded.
@@ -55,21 +55,26 @@ impl FakeHttp {
     }
 }
 
+/// A body read as text, held to the adapter's limit: over it, or not UTF-8,
+/// it is a body error, as the real client reports.
+fn as_text(url: &str, bytes: Vec<u8>) -> Result<String, HttpError> {
+    let body_error = |message: String| HttpError::Body {
+        url: url.to_owned(),
+        message,
+    };
+    if u64::try_from(bytes.len()).map_or(true, |size| size > MAX_TEXT_BYTES) {
+        return Err(body_error("body exceeds the text limit".to_owned()));
+    }
+    String::from_utf8(bytes).map_err(|error| body_error(error.to_string()))
+}
+
 impl Http for FakeHttp {
     fn get_text(&self, url: &str) -> Result<String, HttpError> {
-        let bytes = self.get_bytes(url)?;
-        String::from_utf8(bytes).map_err(|error| HttpError::Body {
-            url: url.to_owned(),
-            message: error.to_string(),
-        })
+        as_text(url, self.get_bytes(url)?)
     }
 
     fn get_secure_text(&self, url: &str) -> Result<String, HttpError> {
-        let bytes = self.get_secure_bytes(url)?;
-        String::from_utf8(bytes).map_err(|error| HttpError::Body {
-            url: url.to_owned(),
-            message: error.to_string(),
-        })
+        as_text(url, self.get_secure_bytes(url)?)
     }
 
     fn get_secure_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
@@ -127,6 +132,17 @@ mod tests {
         let unknown = http.get_text("http://m/other").unwrap_err();
         assert_eq!(unknown.to_string(), "http://m/other: connection refused");
         assert_eq!(http.requests().len(), 3);
+    }
+
+    #[test]
+    fn fake_text_is_held_to_the_adapter_limit() {
+        let size = usize::try_from(MAX_TEXT_BYTES).unwrap() + 1;
+        let http = FakeHttp::default().with_bytes("https://m/big", &vec![b'a'; size]);
+        let text = http.get_text("https://m/big");
+        assert!(matches!(text, Err(HttpError::Body { .. })));
+        let secure = http.get_secure_text("https://m/big");
+        assert!(matches!(secure, Err(HttpError::Body { .. })));
+        assert_eq!(http.get_secure_bytes("https://m/big").unwrap().len(), size);
     }
 
     #[test]

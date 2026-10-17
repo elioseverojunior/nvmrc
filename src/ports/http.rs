@@ -1,5 +1,9 @@
 use thiserror::Error;
 
+/// The most a text body (`get_text`, `get_secure_text`) may hold; a bigger
+/// one is a [`HttpError::Body`]. Fetch a bigger document as bytes.
+pub const MAX_TEXT_BYTES: u64 = 16 * 1024 * 1024;
+
 /// Why a download failed.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum HttpError {
@@ -25,7 +29,7 @@ pub trait Http {
     ///
     /// # Errors
     /// Fails on a non-success status, on a network error, or when the body is
-    /// not text.
+    /// not text or over [`MAX_TEXT_BYTES`].
     fn get_text(&self, url: &str) -> Result<String, HttpError>;
 
     /// Like [`Self::get_text`], but `url` and every redirect it leads to must

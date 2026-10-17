@@ -173,7 +173,7 @@ fn bytes_that_are_not_text_are_fetched_whole() {
 
 #[test]
 fn a_body_over_the_limit_is_a_body_error() {
-    let size = usize::try_from(MAX_BODY_BYTES).unwrap() + 1024;
+    let size = usize::try_from(MAX_TEXT_BYTES).unwrap() + 1024;
     let base = serve_bytes(reply_with(&vec![b'a'; size], size));
     let error = UreqHttp::unproxied(None).get_text(&format!("{base}/x"));
     assert!(matches!(error, Err(HttpError::Body { .. })), "{error:?}");

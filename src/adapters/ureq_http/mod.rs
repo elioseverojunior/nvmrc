@@ -5,7 +5,7 @@ use std::time::Duration;
 use ureq::config::RedirectAuthHeaders;
 use ureq::tls::{RootCerts, TlsConfig};
 
-use crate::ports::{Http, HttpError};
+use crate::ports::{Http, HttpError, MAX_TEXT_BYTES};
 
 /// How long a request may take. An index or `SHASUMS256.txt` is small, so
 /// its whole call is bounded. An archive (25-45 MB) can take minutes on a
@@ -29,7 +29,6 @@ const QUICK_TIMEOUTS: Timeouts = Timeouts {
     text_call: Duration::from_secs(5),
     until_response: Duration::from_secs(5),
 };
-const MAX_BODY_BYTES: u64 = 16 * 1024 * 1024;
 /// An archive is far bigger than an index, but never this big.
 const MAX_DOWNLOAD_BYTES: u64 = 1024 * 1024 * 1024;
 
@@ -199,7 +198,7 @@ fn download_limits(https_only: bool) -> Limits {
 impl UreqHttp {
     fn text_limits(&self, https_only: bool) -> Limits {
         Limits {
-            bytes: MAX_BODY_BYTES,
+            bytes: MAX_TEXT_BYTES,
             whole_call: Some(self.text_call),
             https_only,
         }

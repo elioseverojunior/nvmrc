@@ -68,6 +68,19 @@ fn fetch_text(http: &dyn Http, url: &str) -> Result<String, FetchError> {
     })
 }
 
+/// Like [`fetch_text`], but read as bytes: a packument (26 MB for npm) is past
+/// the text limit. A body that is not UTF-8 is unusable.
+fn fetch_large_text(http: &dyn Http, url: &str) -> Result<String, FetchError> {
+    let failure = |reason: String| FetchError {
+        location: url.to_owned(),
+        reason,
+    };
+    let bytes = http
+        .get_secure_bytes(url)
+        .map_err(|error| failure(http_reason(error)))?;
+    String::from_utf8(bytes).map_err(|error| failure(error.to_string()))
+}
+
 fn invalid(url: &str, error: &RegistryError) -> FetchError {
     FetchError {
         location: url.to_owned(),
@@ -102,7 +115,7 @@ pub fn fetch_release_day(
     version: &Version,
 ) -> Result<Option<i64>, FetchError> {
     let url = packument_url(&registry_base(context)?, tool, version);
-    let text = fetch_text(http, &url)?;
+    let text = fetch_large_text(http, &url)?;
     release_day(&text, version).map_err(|error| invalid(&url, &error))
 }
 
@@ -192,5 +205,33 @@ mod tests {
             day,
             crate::domain::timestamp::days_from_iso_date("2024-03-09")
         );
+    }
+
+    #[test]
+    fn a_packument_over_the_text_limit_still_yields_the_release_day() {
+        // The real npm packument is over 26 MB, past the text limit.
+        let entry = r#"{"time": {"10.9.0": "2024-10-03T16:09:31.000Z"}, "pad": ""#;
+        let size = usize::try_from(crate::ports::MAX_TEXT_BYTES).unwrap();
+        let body = format!("{entry}{}\"}}", "a".repeat(size));
+        let http = FakeHttp::default().with_body("https://registry.npmjs.org/npm", &body);
+        let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
+        let context = Context::new(&fs, &env);
+        let version: Version = "v10.9.0".parse().unwrap();
+        let day = fetch_release_day(&context, &http, Tool::Npm, &version).unwrap();
+        assert_eq!(
+            day,
+            crate::domain::timestamp::days_from_iso_date("2024-10-03")
+        );
+    }
+
+    #[test]
+    fn a_packument_that_is_not_utf8_is_a_fetch_error() {
+        let url = "https://registry.npmjs.org/npm";
+        let http = FakeHttp::default().with_bytes(url, &[0xff, 0xfe]);
+        let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
+        let context = Context::new(&fs, &env);
+        let version: Version = "v10.9.0".parse().unwrap();
+        let error = fetch_release_day(&context, &http, Tool::Npm, &version).unwrap_err();
+        assert_eq!(error.location, url);
     }
 }
