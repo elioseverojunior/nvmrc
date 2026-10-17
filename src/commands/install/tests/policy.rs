@@ -81,3 +81,24 @@ fn install_in_legacy_mode_keeps_todays_floor_message() {
         ]
     );
 }
+
+/// The vulnerability index is local, so offline only the bundled npm, which
+/// must come from the release index, cannot be known.
+#[test]
+fn offline_an_npm_rule_without_a_pin_fails_to_know_before_downloading() {
+    let policy = r#"{ "schemaVersion": 1, "tools": { "npm": { "minimum": "10.5.0" } },
+                     "cve": { "source": "/vuln.json" } }"#;
+    let mut world = World::new().with_env(&[("NVMRC_POLICY", "/p.json")]);
+    world.fs = FakeFileSystem::default()
+        .with_file(TARBALL, "cached")
+        .with_file("/p.json", policy)
+        .with_file("/vuln.json", "{}");
+    let error = world.run("--offline 20").unwrap_err();
+    assert_eq!(error.exit_code(), NvmExitCode::PolicyUnverifiable);
+    assert_eq!(
+        error.to_string(),
+        "nvm: cannot check the policy: the release information is unavailable: offline"
+    );
+    assert!(!world.installed());
+    assert!(world.http.requests().is_empty());
+}

@@ -82,6 +82,22 @@ fn exec_from_an_nvmrc_names_the_file_in_the_message() {
 }
 
 #[test]
+fn exec_with_a_pinned_pnpm_below_the_minimum_runs_nothing() {
+    let fs = lab().with_file("/proj/.nvmrc", "22\npnpm=9.1.0\n");
+    let (env, process) = (env_on(BASE_PATH), npm_versions());
+    let http = FakeHttp::default().with_empty_advisories();
+    let context = Context::new(&fs, &env)
+        .with_process(&process)
+        .with_http(&http)
+        .with_policy_flags(policy_flags(&["--min-pnpm", "9.12.0"]));
+    let output = run(&context, &strings(&["18", "node", "-v"])).expect("nvm exec runs");
+    assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
+    assert_eq!(output.spawn, None);
+    let header = "nvm: pnpm 9.1.0 (from /proj/.nvmrc) is not allowed by policy:";
+    assert!(output.stderr.contains(header), "{}", output.stderr);
+}
+
+#[test]
 fn exec_of_the_active_version_says_so() {
     let output = exec_in_under(&lab(), ACTIVE_18, &[]);
     assert_eq!(output.status, NvmExitCode::BelowVersionFloor);

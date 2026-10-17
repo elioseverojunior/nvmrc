@@ -30,26 +30,9 @@ pub type ToolFinding = (Tool, Version, ToolOrigin, Vec<Violation>);
 /// cannot be known.
 pub(super) type ToolOutcome = Result<Option<ToolFinding>, (Tool, PolicyError)>;
 
-/// The package managers in effect that break a rule, npm, yarn and pnpm in
-/// that order.
-///
-/// # Errors
-/// The first [`PolicyError`] of a tool whose version or release date cannot
-/// be known.
-pub fn tool_violations(
-    context: &Context<'_>,
-    requested: &Requested,
-    policy: &EnforcedPolicy,
-) -> Result<Vec<ToolFinding>, PolicyError> {
-    tool_checks(context, requested, policy)
-        .into_iter()
-        .filter_map(Result::transpose)
-        .collect::<Result<_, _>>()
-        .map_err(|(_, error)| error)
-}
-
-/// Each package manager with a rule, checked on its own, so one that cannot
-/// be known leaves the findings of the others.
+/// Each package manager with a rule, npm, yarn and pnpm in that order,
+/// checked on its own, so one that cannot be known leaves the findings of
+/// the others.
 pub(super) fn tool_checks(
     context: &Context<'_>,
     requested: &Requested,
