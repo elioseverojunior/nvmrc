@@ -15,7 +15,7 @@ pub use document::{
     parse_document,
 };
 pub use flags::{FlagError, POLICY_FLAGS, PolicyFlag, PolicyFlags, extract};
-pub use rules::{NodeLayer, NodePolicy, merge};
+pub use rules::{ToolLayer, ToolPolicy, merge};
 pub use source::{Source, Sourced};
 pub use verdict::{MissingReleaseInfo, ReleaseInfo, Violation, finding_list};
 

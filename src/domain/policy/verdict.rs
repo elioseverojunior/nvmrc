@@ -1,11 +1,12 @@
-//! The verdict: which rules a node version breaks.
+//! The verdict: which rules a tool version breaks.
 
 use std::fmt;
 
 use super::advisories::Finding;
 use super::document::Severity;
-use super::rules::NodePolicy;
+use super::rules::ToolPolicy;
 use super::source::{Source, Sourced};
+use crate::domain::tool::Tool;
 use crate::domain::version::{Flavor, Version};
 
 /// What the index says about a release, for the rules that need it.
@@ -21,7 +22,7 @@ pub struct MissingReleaseInfo;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Violation {
-    BelowMinimum(Sourced<Version>),
+    BelowMinimum(Sourced<String>),
     OutsideRange(Sourced<String>),
     Denied(Source),
     NotLts(Source),
@@ -79,7 +80,7 @@ impl fmt::Display for Violation {
     }
 }
 
-impl NodePolicy {
+impl ToolPolicy {
     /// Whether judging a version needs its LTS and release-date data.
     #[must_use]
     pub fn needs_release_info(&self) -> bool {
@@ -98,7 +99,7 @@ impl NodePolicy {
         release: Option<&ReleaseInfo>,
         today_day: i64,
     ) -> Result<Vec<Violation>, MissingReleaseInfo> {
-        if version.flavor == Flavor::IoJs {
+        if self.tool == Tool::Node && version.flavor == Flavor::IoJs {
             return Ok(vec![Violation::NotNode]);
         }
         let mut found = self.version_violations(version);
@@ -111,7 +112,10 @@ impl NodePolicy {
     fn version_violations(&self, version: &Version) -> Vec<Violation> {
         let mut found = Vec::new();
         if let Some(rule) = self.minimum.as_ref().filter(|rule| *version < rule.value) {
-            found.push(Violation::BelowMinimum(rule.clone()));
+            found.push(Violation::BelowMinimum(Sourced {
+                value: self.tool.show(&rule.value),
+                source: rule.source.clone(),
+            }));
         }
         let semver = nodejs_semver::Version::parse(format!(
             "{}.{}.{}",

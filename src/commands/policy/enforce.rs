@@ -10,7 +10,7 @@ use crate::commands::remote_index;
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::mirror;
-use crate::domain::policy::{NodePolicy, ReleaseInfo, Violation};
+use crate::domain::policy::{ReleaseInfo, ToolPolicy, Violation};
 use crate::domain::version::{Flavor, Version};
 use crate::error::{CliError, NvmExitCode, PolicyError};
 
@@ -113,7 +113,7 @@ fn unknown_vulnerabilities(error: &PolicyError) -> String {
 fn node_violations(
     context: &Context<'_>,
     requested: &Requested,
-    policy: &NodePolicy,
+    policy: &ToolPolicy,
 ) -> Result<Vec<Violation>, PolicyError> {
     let release = release_info(context, requested, policy)?;
     let today = context.clock().unix_seconds().div_euclid(SECONDS_PER_DAY);
@@ -126,7 +126,7 @@ fn node_violations(
 fn release_info(
     context: &Context<'_>,
     requested: &Requested,
-    policy: &NodePolicy,
+    policy: &ToolPolicy,
 ) -> Result<Option<ReleaseInfo>, PolicyError> {
     if !policy.needs_release_info() || requested.version.flavor != Flavor::Node {
         return Ok(None);

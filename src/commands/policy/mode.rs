@@ -8,8 +8,9 @@ use std::path::Path;
 
 use crate::context::Context;
 use crate::domain::policy::{
-    CveLayer, CvePolicy, NodeLayer, NodePolicy, Source, merge, merge_cve, parse_document,
+    CveLayer, CvePolicy, Source, ToolLayer, ToolPolicy, merge, merge_cve, parse_document,
 };
+use crate::domain::tool::Tool;
 use crate::domain::version::{Version, VersionPattern};
 use crate::error::PolicyError;
 
@@ -27,14 +28,14 @@ pub enum Mode {
 /// The merged rules of an enforced policy.
 #[derive(Debug)]
 pub struct EnforcedPolicy {
-    pub node: NodePolicy,
+    pub node: ToolPolicy,
     pub cve: CvePolicy,
 }
 
 /// What one policy document contributes.
 #[derive(Default)]
 struct DocumentLayers {
-    node: Option<NodeLayer>,
+    node: Option<ToolLayer>,
     cve: Option<CveLayer>,
 }
 
@@ -63,7 +64,7 @@ pub fn resolve_mode(context: &Context<'_>) -> Result<(Mode, Vec<String>), Policy
         context.env.var(MINIMUM_VARIABLE),
     )?);
     layers.extend(file_layer(context)?);
-    let (node, mut warnings) = merge(layers);
+    let (node, mut warnings) = merge(Tool::Node, layers);
     let (cve, cve_warnings) = cve_policy(context, central.cve, repository.cve)?;
     warnings.extend(cve_warnings);
     Ok((Mode::Enforced(EnforcedPolicy { node, cve }), warnings))
@@ -126,13 +127,13 @@ fn document_layers(
     let document = parse_document(text).map_err(invalid)?;
     let cve = document_cve_layer(&document, location, source.clone(), directory)?;
     let node = match &document.tools.node {
-        Some(rules) => Some(NodeLayer::from_rules(source, rules).map_err(invalid)?),
+        Some(rules) => Some(ToolLayer::from_node(source, rules).map_err(invalid)?),
         None => None,
     };
     Ok(DocumentLayers { node, cve })
 }
 
-fn file_layer(context: &Context<'_>) -> Result<Option<NodeLayer>, PolicyError> {
+fn file_layer(context: &Context<'_>) -> Result<Option<ToolLayer>, PolicyError> {
     let Ok(directory) = context.nvm_dir() else {
         return Ok(None);
     };
@@ -152,7 +153,7 @@ fn file_layer(context: &Context<'_>) -> Result<Option<NodeLayer>, PolicyError> {
 }
 
 /// A layer that only sets the minimum, from `raw`; blank is unset.
-fn minimum_layer(source: Source, raw: Option<String>) -> Result<Option<NodeLayer>, PolicyError> {
+fn minimum_layer(source: Source, raw: Option<String>) -> Result<Option<ToolLayer>, PolicyError> {
     let Some(raw) = raw
         .map(|raw| raw.trim().to_owned())
         .filter(|raw| !raw.is_empty())
@@ -160,7 +161,7 @@ fn minimum_layer(source: Source, raw: Option<String>) -> Result<Option<NodeLayer
         return Ok(None);
     };
     let minimum = parse_minimum(&source, &raw)?;
-    Ok(Some(NodeLayer::minimum_only(source, minimum)))
+    Ok(Some(ToolLayer::minimum_only(source, minimum)))
 }
 
 fn parse_minimum(source: &Source, raw: &str) -> Result<Version, PolicyError> {

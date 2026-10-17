@@ -1,7 +1,8 @@
 use super::*;
-use crate::domain::policy::rules::{NodeLayer, merge};
+use crate::domain::policy::rules::{ToolLayer, merge};
 use crate::domain::policy::source::Source;
 use crate::domain::timestamp::days_from_iso_date;
+use crate::domain::tool::Tool;
 use crate::domain::version::{Version, VersionPattern};
 
 fn v(text: &str) -> Version {
@@ -23,19 +24,23 @@ fn lts(name: &str) -> ReleaseInfo {
     }
 }
 
-fn policy_with_all_rules() -> NodePolicy {
-    let mut layer = NodeLayer::minimum_only(central(), v("20.11.1"));
+fn policy_with_all_rules() -> ToolPolicy {
+    let mut layer = ToolLayer::minimum_only(central(), v("20.11.1"));
     layer.allow = nodejs_semver::Range::parse(">=20 <25").ok();
     layer.allow_text = Some(">=20 <25".into());
     layer.deny = vec![v("20.12.0")];
     layer.lts_only = Some(true);
     layer.minimum_release_age_days = Some(14);
-    merge(vec![layer]).0
+    merge(Tool::Node, vec![layer]).0
 }
 
-fn minimum_only(text: &str) -> NodePolicy {
+fn minimum_only(text: &str) -> ToolPolicy {
     let pattern: VersionPattern = text.parse().unwrap();
-    merge(vec![NodeLayer::minimum_only(central(), pattern.lowest())]).0
+    merge(
+        Tool::Node,
+        vec![ToolLayer::minimum_only(central(), pattern.lowest())],
+    )
+    .0
 }
 
 #[test]
@@ -137,5 +142,16 @@ fn a_vulnerable_verdict_names_each_finding_and_the_limit() {
     assert_eq!(
         violation.to_string(),
         "CVE-2024-27983 (high), CVE-2024-22019 (high); the limit is high (from policy /p.json)"
+    );
+}
+
+#[test]
+fn an_npm_minimum_is_shown_without_a_v() {
+    let layer = ToolLayer::minimum_only(Source::CentralPolicy("p".into()), v("10.2.4"));
+    let (policy, _) = merge(Tool::Npm, vec![layer]);
+    let found = policy.violations(&v("9.0.0"), None, 0).unwrap();
+    assert_eq!(
+        found[0].to_string(),
+        "below the minimum 10.2.4 (from policy p)"
     );
 }
