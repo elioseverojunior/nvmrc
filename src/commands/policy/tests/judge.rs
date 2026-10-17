@@ -124,3 +124,46 @@ fn an_unreadable_index_is_a_failure_to_know() {
     let error = violations(&mut judge, &context, Tool::Node, AFFECTED).unwrap_err();
     assert!(matches!(error, PolicyError::IndexInvalid { .. }));
 }
+
+#[test]
+fn an_iojs_version_never_reads_the_index() {
+    let (fs, env) = policy_world(EMPTY_POLICY);
+    let http = FakeHttp::default();
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
+    let mut judge = loaded(&context);
+    let found = violations(&mut judge, &context, Tool::Node, "iojs-v3.3.1").unwrap();
+    assert!(
+        !found
+            .iter()
+            .any(|item| matches!(item, Violation::Vulnerable { .. }))
+    );
+    assert!(http.requests().is_empty());
+}
+
+#[test]
+fn the_limit_none_lets_a_vulnerable_version_through() {
+    let (fs, env) = policy_world(EMPTY_POLICY);
+    let env = env.with_var("NVMRC_FAIL_ON_SEVERITY", "none");
+    let http = FakeHttp::default().with_body(DEFAULT_INDEX, advisories_json());
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
+    let mut judge = loaded(&context);
+    let found = violations(&mut judge, &context, Tool::Node, AFFECTED).unwrap();
+    assert!(found.is_empty());
+}
+
+#[test]
+fn a_failed_index_read_is_retried_on_the_next_call() {
+    let (fs, env) = policy_world(EMPTY_POLICY);
+    let http = FakeHttp::default();
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
+    let mut judge = loaded(&context);
+    assert!(violations(&mut judge, &context, Tool::Node, AFFECTED).is_err());
+    assert!(violations(&mut judge, &context, Tool::Node, AFFECTED).is_err());
+    assert_eq!(http.requests(), [DEFAULT_INDEX, DEFAULT_INDEX]);
+}

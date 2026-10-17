@@ -5,28 +5,20 @@ use super::enforce::Requested;
 use super::load::{is_https, read_location_with};
 use crate::context::Context;
 use crate::domain::policy::{
-    Advisory, CvePolicy, DEFAULT_INDEX, Finding, Severity, Violation, finding_list, findings,
-    parse_advisories,
+    Advisory, CvePolicy, DEFAULT_INDEX, Finding, Severity, Sourced, Violation, finding_list,
+    findings, parse_advisories,
 };
-use crate::domain::version::Flavor;
+use crate::domain::version::{Flavor, Version};
 use crate::error::PolicyError;
 use crate::ports::Http;
-
-/// What the index says about a version, split by the limit.
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct Judgement {
-    /// At or above the limit: the version is not allowed.
-    pub failing: Vec<Finding>,
-    /// Below the limit, or every finding when the limit is `none`: a warning.
-    pub below: Vec<Finding>,
-}
 
 /// The CVE check of the gate: the violation for findings at or above the
 /// limit, if any. Findings below it are a warning added to `notes`, whatever
 /// the gate decides. io.js versions are not checked, and nothing is fetched.
 ///
 /// # Errors
-/// As [`judge`].
+/// [`PolicyError::ReleaseInfoUnavailable`] for a remote index while offline,
+/// before any request; the errors of [`load_advisories`].
 pub(super) fn cve_violation(
     context: &Context<'_>,
     requested: &Requested,
@@ -36,42 +28,43 @@ pub(super) fn cve_violation(
     if requested.version.flavor != Flavor::Node {
         return Ok(None);
     }
-    let judgement = judge(context, requested, &cve)?;
-    if !judgement.below.is_empty() {
+    if requested.offline && is_https(&cve.index.value) {
+        return Err(PolicyError::ReleaseInfoUnavailable("offline".to_owned()));
+    }
+    let advisories = load_advisories(context, &cve)?;
+    let (violation, below) = vulnerable(context, &advisories, &requested.version, &cve.limit);
+    if !below.is_empty() {
         notes.push(format!(
             "nvm: warning: node {} has known vulnerabilities below the limit {}: {}",
             requested.version,
             cve.limit.value,
-            finding_list(&judgement.below)
+            finding_list(&below)
         ));
     }
-    if judgement.failing.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(Violation::Vulnerable {
-        findings: judgement.failing,
-        limit: cve.limit,
-    }))
+    Ok(violation)
 }
 
-/// Reads the index named by `cve` and judges `requested` against it.
-///
-/// # Errors
-/// [`PolicyError::ReleaseInfoUnavailable`] for a remote index while offline,
-/// before any request; the errors of [`read_location_with`]; and
-/// [`PolicyError::IndexInvalid`] for an index that cannot be understood.
-pub(super) fn judge(
+/// What `advisories` say about `version`, split by the limit: the violation
+/// for the findings at or above it, and the findings below it (every finding
+/// when the limit is `none`).
+pub(super) fn vulnerable(
     context: &Context<'_>,
-    requested: &Requested,
-    cve: &CvePolicy,
-) -> Result<Judgement, PolicyError> {
-    if requested.offline && is_https(&cve.index.value) {
-        return Err(PolicyError::ReleaseInfoUnavailable("offline".to_owned()));
-    }
-    let advisories = load_advisories(context, cve)?;
+    advisories: &[Advisory],
+    version: &Version,
+    limit: &Sourced<Severity>,
+) -> (Option<Violation>, Vec<Finding>) {
     let os = context.platform().map(|platform| platform.os.slug());
-    let found = findings(&advisories, &requested.version, os);
-    Ok(failing(found, cve.limit.value))
+    let fails = |finding: &Finding| {
+        limit.value != Severity::None && finding.severity.rank() >= limit.value.rank()
+    };
+    let (failing, below): (Vec<_>, Vec<_>) = findings(advisories, version, os)
+        .into_iter()
+        .partition(fails);
+    let violation = (!failing.is_empty()).then(|| Violation::Vulnerable {
+        findings: failing,
+        limit: limit.clone(),
+    });
+    (violation, below)
 }
 
 /// Reads and parses the index `cve` names.
@@ -99,12 +92,4 @@ fn index_client<'a>(context: &Context<'a>, location: &str) -> &'a dyn Http {
     } else {
         context.policy_http()
     }
-}
-
-/// Splits `found` by `limit`: a finding fails when its severity reaches the limit; `none` fails nothing.
-pub(super) fn failing(found: Vec<Finding>, limit: Severity) -> Judgement {
-    let fails =
-        |finding: &Finding| limit != Severity::None && finding.severity.rank() >= limit.rank();
-    let (failing, below) = found.into_iter().partition(fails);
-    Judgement { failing, below }
 }

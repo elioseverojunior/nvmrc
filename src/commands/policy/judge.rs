@@ -1,12 +1,12 @@
 //! "Is this version allowed?" for callers that choose versions (`nvm init`):
 //! the mode resolved once, the vulnerability index read at most once.
 
-use super::advisories::{failing, load_advisories};
+use super::advisories::{load_advisories, vulnerable};
 use super::enforce::today;
 use super::mode::{EnforcedPolicy, Mode, resolve_mode};
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
-use crate::domain::policy::{Advisory, ReleaseInfo, Violation, findings};
+use crate::domain::policy::{Advisory, MissingReleaseInfo, ReleaseInfo, Violation};
 use crate::domain::tool::Tool;
 use crate::domain::version::{Flavor, Version};
 use crate::error::PolicyError;
@@ -53,14 +53,16 @@ impl Judge {
         let mut found = policy
             .tool(tool)
             .violations(version, Some(release), today(context))
-            .map_err(|_| PolicyError::ReleaseInfoUnavailable("release data".to_owned()))?;
+            .map_err(|MissingReleaseInfo| {
+                PolicyError::ReleaseInfoUnavailable("release data".to_owned())
+            })?;
         if tool == Tool::Node && version.flavor == Flavor::Node {
-            found.extend(self.vulnerable(context, version)?);
+            found.extend(self.node_vulnerability(context, version)?);
         }
         Ok(found)
     }
 
-    fn vulnerable(
+    fn node_vulnerability(
         &mut self,
         context: &Context<'_>,
         version: &Version,
@@ -68,18 +70,12 @@ impl Judge {
         let Some(policy) = &self.policy else {
             return Ok(None);
         };
-        if self.advisories.is_none() {
-            self.advisories = Some(load_advisories(context, &policy.cve)?);
-        }
-        let advisories = self.advisories.as_deref().unwrap_or_default();
-        let os = context.platform().map(|platform| platform.os.slug());
-        let judgement = failing(findings(advisories, version, os), policy.cve.limit.value);
-        if judgement.failing.is_empty() {
-            return Ok(None);
-        }
-        Ok(Some(Violation::Vulnerable {
-            findings: judgement.failing,
-            limit: policy.cve.limit.clone(),
-        }))
+        let advisories = match &self.advisories {
+            Some(loaded) => loaded,
+            None => self
+                .advisories
+                .insert(load_advisories(context, &policy.cve)?),
+        };
+        Ok(vulnerable(context, advisories, version, &policy.cve.limit).0)
     }
 }
