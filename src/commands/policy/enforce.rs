@@ -187,7 +187,7 @@ pub(super) fn indexed_release(
         .ok_or_else(unavailable)
 }
 
-pub(super) fn index_location(context: &Context<'_>) -> String {
+pub(crate) fn index_location(context: &Context<'_>) -> String {
     mirror::from_env(context.env, Flavor::Node).map_or_else(
         |_| "the release index".to_owned(),
         |mirror| mirror.index_url(),

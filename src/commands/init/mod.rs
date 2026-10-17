@@ -3,6 +3,8 @@
 //! `--node`, `--npm`, `--yarn` or `--pnpm` instead of a shell, it sets up
 //! the project (see [`request`]).
 
+#[allow(dead_code, reason = "project mode uses it in the next task")]
+mod candidates;
 mod request;
 
 use crate::commands::Output;

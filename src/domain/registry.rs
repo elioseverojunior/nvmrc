@@ -6,6 +6,7 @@ use std::path::{Component, Path};
 use serde_json::Value;
 use thiserror::Error;
 
+use crate::domain::nvmrc::pins::exact_version;
 use crate::domain::timestamp::days_from_iso_date;
 use crate::domain::tool::Tool;
 use crate::domain::version::Version;
@@ -125,9 +126,12 @@ pub fn parse_manifest(text: &str) -> Result<Manifest, RegistryError> {
 /// # Errors
 /// When the text is not JSON or the entry is not an ISO date.
 pub fn release_day(packument: &str, version: &Version) -> Result<Option<i64>, RegistryError> {
-    let document = parse(packument)?;
     let key = format!("{}.{}.{}", version.major, version.minor, version.patch);
-    let Some(stamp) = document["time"][key.as_str()].as_str() else {
+    day_of(&parse(packument)?, &key)
+}
+
+fn day_of(document: &Value, key: &str) -> Result<Option<i64>, RegistryError> {
+    let Some(stamp) = document["time"][key].as_str() else {
         return Ok(None);
     };
     stamp
@@ -135,6 +139,27 @@ pub fn release_day(packument: &str, version: &Version) -> Result<Option<i64>, Re
         .and_then(days_from_iso_date)
         .map(Some)
         .ok_or_else(|| RegistryError::BadDate(stamp.to_owned()))
+}
+
+/// Every published `major.minor.patch` of a packument (prereleases and
+/// `dist-tags` are not listed), oldest first, with the day it was published.
+///
+/// # Errors
+/// When the text is not JSON, has no `versions` object or a `time` entry of a
+/// listed version is not an ISO date.
+pub fn published_versions(packument: &str) -> Result<Vec<(Version, Option<i64>)>, RegistryError> {
+    let document = parse(packument)?;
+    let listed = document["versions"]
+        .as_object()
+        .ok_or(RegistryError::Missing("versions"))?;
+    let mut found = Vec::new();
+    for key in listed.keys() {
+        if let Some(version) = exact_version(key) {
+            found.push((version, day_of(&document, key)?));
+        }
+    }
+    found.sort_by_key(|(version, _)| *version);
+    Ok(found)
 }
 
 #[cfg(test)]

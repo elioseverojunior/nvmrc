@@ -110,6 +110,31 @@ pub fn fetch_manifest(
     parse_manifest(&text).map_err(|error| invalid(&url, &error))
 }
 
+/// The packument of the package that ships `tool` at `version`, read with the
+/// third-party client.
+///
+/// # Errors
+/// When the registry is refused or the request fails.
+pub fn fetch_packument(
+    context: &Context<'_>,
+    tool: Tool,
+    version: &Version,
+) -> Result<String, FetchError> {
+    packument_with(context, context.third_party_http(), tool, version).map(|(_, text)| text)
+}
+
+/// The packument and the URL it came from, asked of `http`.
+fn packument_with(
+    context: &Context<'_>,
+    http: &dyn Http,
+    tool: Tool,
+    version: &Version,
+) -> Result<(String, String), FetchError> {
+    let url = packument_url(&registry_base(context)?, tool, version);
+    let text = fetch_large_text(http, &url)?;
+    Ok((url, text))
+}
+
 /// The day `version` was published (days since 1970-01-01), asked of `http`
 /// (the caller may pass a client that retries); `None` when the registry does
 /// not list it.
@@ -122,8 +147,7 @@ pub fn fetch_release_day(
     tool: Tool,
     version: &Version,
 ) -> Result<Option<i64>, FetchError> {
-    let url = packument_url(&registry_base(context)?, tool, version);
-    let text = fetch_large_text(http, &url)?;
+    let (url, text) = packument_with(context, http, tool, version)?;
     release_day(&text, version).map_err(|error| invalid(&url, &error))
 }
 

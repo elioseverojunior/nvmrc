@@ -127,3 +127,38 @@ fn release_day_reads_the_time_entry() {
         Err(RegistryError::BadDate(_))
     ));
 }
+
+#[test]
+fn prereleases_and_dist_tags_are_ignored() {
+    let packument = r#"{
+        "dist-tags": {"latest": "10.9.0", "next": "11.0.0-pre.1"},
+        "versions": {"10.0.0-rc.1": {}, "10.8.0": {}, "10.9.0": {}, "v10.9.1": {}},
+        "time": {}
+    }"#;
+    let found = published_versions(packument).unwrap();
+    let versions: Vec<Version> = found.into_iter().map(|(version, _)| version).collect();
+    assert_eq!(versions, [version("10.8.0"), version("10.9.0")]);
+}
+
+#[test]
+fn published_versions_reads_the_time_day() {
+    let packument = r#"{
+        "versions": {"10.8.0": {}, "10.9.0": {}},
+        "time": {"10.9.0": "2024-10-03T16:09:31.000Z"}
+    }"#;
+    let found = published_versions(packument).unwrap();
+    let day = crate::domain::timestamp::days_from_iso_date("2024-10-03");
+    assert_eq!(found, [(version("10.8.0"), None), (version("10.9.0"), day)]);
+}
+
+#[test]
+fn published_versions_refuses_a_document_without_versions() {
+    assert_eq!(
+        published_versions(r#"{"time": {}}"#),
+        Err(RegistryError::Missing("versions"))
+    );
+    assert!(matches!(
+        published_versions("nope"),
+        Err(RegistryError::Json(_))
+    ));
+}
