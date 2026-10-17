@@ -84,32 +84,6 @@ impl<'a> Context<'a> {
         self.script_channel
     }
 
-    /// The policy flags of the command line, already stripped from it; a
-    /// context starts out with none.
-    #[must_use]
-    pub fn with_policy_flags(mut self, flags: PolicyFlags) -> Self {
-        self.policy_flags = flags;
-        self
-    }
-
-    #[must_use]
-    pub fn policy_flags(&self) -> &PolicyFlags {
-        &self.policy_flags
-    }
-
-    /// Makes the policy advise instead of enforce; a context starts out
-    /// enforcing.
-    #[must_use]
-    pub fn advisory(mut self) -> Self {
-        self.advisory = true;
-        self
-    }
-
-    #[must_use]
-    pub fn is_advisory(&self) -> bool {
-        self.advisory
-    }
-
     #[must_use]
     pub fn with_process(mut self, process: &'a dyn Process) -> Self {
         self.process = process;
@@ -308,5 +282,6 @@ impl Context<'_> {
 }
 
 mod environment;
+mod policy;
 #[cfg(test)]
 mod tests;
