@@ -2,8 +2,9 @@
 //! `NODE_VERSION`, else from the `.nvmrc`, and leave the command to the CLI,
 //! which runs it with the environment of the selected version.
 //!
-//! Every failure to select is status 127 (a refused prefix included), and
-//! there is no fallback to `default` or to the active version.
+//! Every failure to select is status 127 (a refused prefix included), except
+//! a refusal of the security policy, which keeps its own status (7 or 9).
+//! There is no fallback to `default` or to the active version.
 
 use crate::commands::Output;
 use crate::commands::exec::child::{self, Environment};
@@ -26,6 +27,21 @@ struct Selection {
     stderr: String,
     /// The version it switched to, or `None` when it failed.
     target: Option<Target>,
+    /// Its status.
+    status: NvmExitCode,
+}
+
+/// The environment of the selected version, or the status of the failure to
+/// select (its reasons already in the transcript).
+type Selected = Result<Environment, NvmExitCode>;
+
+/// The status of a `use` that switched to nothing: the policy's own (7 for a
+/// version it does not allow, 9 when it cannot be checked), else 127.
+fn refusal_status(status: NvmExitCode) -> NvmExitCode {
+    match status {
+        NvmExitCode::BelowVersionFloor | NvmExitCode::PolicyUnverifiable => status,
+        _ => NvmExitCode::NotFound,
+    }
 }
 
 /// `nvm-exec <command> [<args>...]`: the version comes from `NODE_VERSION`
@@ -38,8 +54,8 @@ struct Selection {
 pub fn run(context: &Context<'_>, command: &[String]) -> Output {
     let mut transcript = Transcript::default();
     let environment = match select(context, &mut transcript) {
-        Ok(Some(environment)) => environment,
-        Ok(None) => return transcript.finish(NvmExitCode::NotFound),
+        Ok(Ok(environment)) => environment,
+        Ok(Err(status)) => return transcript.finish(status),
         Err(error) => {
             transcript.err(error.to_string());
             return transcript.finish(NvmExitCode::NotFound);
@@ -52,12 +68,9 @@ pub fn run(context: &Context<'_>, command: &[String]) -> Output {
     }
 }
 
-/// The environment of the selected version, or `None` with the reasons in
-/// `transcript`.
-fn select(
-    context: &Context<'_>,
-    transcript: &mut Transcript,
-) -> Result<Option<Environment>, CliError> {
+/// The environment of the selected version, or the status of the failure with
+/// the reasons in `transcript`.
+fn select(context: &Context<'_>, transcript: &mut Transcript) -> Result<Selected, CliError> {
     let selection = match context
         .env
         .var("NODE_VERSION")
@@ -72,10 +85,10 @@ fn select(
         }
         None => from_nvmrc(context, transcript)?,
     };
-    selection
-        .target
-        .map(|target| environment(context, &target))
-        .transpose()
+    match selection.target {
+        Some(target) => environment(context, &target).map(Ok),
+        None => Ok(Err(refusal_status(selection.status))),
+    }
 }
 
 /// The `.nvmrc` path: the lookup and the install check print as they do in
@@ -101,6 +114,7 @@ fn switch(context: &Context<'_>, args: &[String]) -> Result<Selection, CliError>
     Ok(Selection {
         stderr: output.stderr,
         target,
+        status: output.status,
     })
 }
 

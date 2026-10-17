@@ -151,6 +151,10 @@ or `NVMRC_POLICY`, nothing changes (pinned by
   `an_unreachable_index_is_a_failure_to_know`,
   `offline_with_a_release_rule_is_a_failure_to_know`,
   `a_min_version_file_that_cannot_be_read_is_an_error`)
+- `nvm-exec` keeps the status of a policy refusal (7, or 9 when the policy
+  cannot be checked); its other failures to select stay 127.
+  (`a_policy_refusal_keeps_its_own_status` in
+  `src/commands/nvm_exec/tests.rs`)
 - `use system` is checked only in policy mode.
   (`use_system_without_a_policy_never_asks_the_system_node`)
 - `http://` policy locations are rejected, and so is a redirect from an

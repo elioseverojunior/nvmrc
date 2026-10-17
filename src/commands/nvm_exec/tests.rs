@@ -159,3 +159,22 @@ fn the_child_gets_the_environment_of_exec_without_node_version() {
     expected.env.retain(|(name, _)| name != "NODE_VERSION");
     assert_eq!(output.spawn, Some(expected));
 }
+
+#[test]
+fn a_policy_refusal_keeps_its_own_status() {
+    let policy = r#"{ "schemaVersion": 1, "tools": { "node": { "minimum": "20" } } }"#;
+    let fs = lab().with_file("/p.json", policy);
+    let env = env_on(BASE_PATH)
+        .with_var("NODE_VERSION", "18")
+        .with_var("NVMRC_POLICY", "/p.json");
+    let output = nvm_exec_in(&fs, &env, &["node", "a"]);
+    assert_eq!(output.status, NvmExitCode::BelowVersionFloor, "{output:?}");
+    assert_eq!(output.spawn, None);
+
+    let env = env_on(BASE_PATH)
+        .with_var("NODE_VERSION", "18")
+        .with_var("NVMRC_POLICY", "/missing.json");
+    let output = nvm_exec_in(&lab(), &env, &["node", "a"]);
+    assert_eq!(output.status, NvmExitCode::PolicyUnverifiable, "{output:?}");
+    assert_eq!(output.spawn, None);
+}
