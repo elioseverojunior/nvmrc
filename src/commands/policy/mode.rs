@@ -1,8 +1,15 @@
 //! Legacy floor or enforced policy: which one applies, and the merged rules.
 
-use super::load::{central_location, policy_mode_requested, read_location, repository_policy};
+use super::cve_layers::{document_cve_layer, severity_layers};
+use super::load::{
+    absolute, central_location, policy_mode_requested, read_location, repository_policy,
+};
+use std::path::Path;
+
 use crate::context::Context;
-use crate::domain::policy::{NodeLayer, NodePolicy, Source, merge, parse_document};
+use crate::domain::policy::{
+    CveLayer, CvePolicy, NodeLayer, NodePolicy, Source, merge, merge_cve, parse_document,
+};
 use crate::domain::version::{Version, VersionPattern};
 use crate::error::PolicyError;
 
@@ -10,10 +17,25 @@ const MINIMUM_FLAG: &str = "--min-node";
 const MINIMUM_VARIABLE: &str = "NVM_MIN_VERSION";
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)] // built once per command; boxing only adds a hop
 pub enum Mode {
     /// Nothing asks for a policy: the existing version floor applies.
     Legacy,
-    Enforced(NodePolicy),
+    Enforced(EnforcedPolicy),
+}
+
+/// The merged rules of an enforced policy.
+#[derive(Debug)]
+pub struct EnforcedPolicy {
+    pub node: NodePolicy,
+    pub cve: CvePolicy,
+}
+
+/// What one policy document contributes.
+#[derive(Default)]
+struct DocumentLayers {
+    node: Option<NodeLayer>,
+    cve: Option<CveLayer>,
 }
 
 /// Decides the mode and, when a policy is enforced, merges every source:
@@ -27,9 +49,11 @@ pub fn resolve_mode(context: &Context<'_>) -> Result<(Mode, Vec<String>), Policy
     if !policy_mode_requested(context) {
         return Ok((Mode::Legacy, Vec::new()));
     }
+    let central = central_layer(context)?;
+    let repository = repository_layer(context)?;
     let mut layers = Vec::new();
-    layers.extend(central_layer(context)?);
-    layers.extend(repository_layer(context)?);
+    layers.extend(central.node);
+    layers.extend(repository.node);
     layers.extend(minimum_layer(
         Source::Flag(MINIMUM_FLAG),
         context.policy_flags().get(MINIMUM_FLAG).map(str::to_owned),
@@ -39,43 +63,56 @@ pub fn resolve_mode(context: &Context<'_>) -> Result<(Mode, Vec<String>), Policy
         context.env.var(MINIMUM_VARIABLE),
     )?);
     layers.extend(file_layer(context)?);
-    let (policy, warnings) = merge(layers);
-    Ok((Mode::Enforced(policy), warnings))
+    let (node, mut warnings) = merge(layers);
+    let mut cve_layers = Vec::new();
+    cve_layers.extend(central.cve);
+    cve_layers.extend(repository.cve);
+    cve_layers.extend(severity_layers(context)?);
+    let (cve, cve_warnings) = merge_cve(cve_layers);
+    warnings.extend(cve_warnings);
+    Ok((Mode::Enforced(EnforcedPolicy { node, cve }), warnings))
 }
 
-fn central_layer(context: &Context<'_>) -> Result<Option<NodeLayer>, PolicyError> {
+fn central_layer(context: &Context<'_>) -> Result<DocumentLayers, PolicyError> {
     let Some(location) = central_location(context) else {
-        return Ok(None);
+        return Ok(DocumentLayers::default());
     };
     let text = read_location(context, &location)?;
-    document_layer(&text, &location, Source::CentralPolicy(location.clone()))
+    let directory = (!location.starts_with("https://"))
+        .then(|| absolute(context, &location).parent().map(Path::to_path_buf))
+        .flatten();
+    let source = Source::CentralPolicy(location.clone());
+    document_layers(&text, &location, source, directory.as_deref())
 }
 
-fn repository_layer(context: &Context<'_>) -> Result<Option<NodeLayer>, PolicyError> {
+fn repository_layer(context: &Context<'_>) -> Result<DocumentLayers, PolicyError> {
     let Some(path) = repository_policy(context) else {
-        return Ok(None);
+        return Ok(DocumentLayers::default());
     };
     let location = path.to_string_lossy().into_owned();
     let text = read_location(context, &location)?;
-    document_layer(&text, &location, Source::RepositoryPolicy(path))
+    let directory = path.parent().map(Path::to_path_buf);
+    let source = Source::RepositoryPolicy(path);
+    document_layers(&text, &location, source, directory.as_deref())
 }
 
-fn document_layer(
+fn document_layers(
     text: &str,
     location: &str,
     source: Source,
-) -> Result<Option<NodeLayer>, PolicyError> {
+    directory: Option<&Path>,
+) -> Result<DocumentLayers, PolicyError> {
     let invalid = |error: crate::domain::policy::DocumentError| PolicyError::Invalid {
         location: location.to_owned(),
         reason: error.to_string(),
     };
     let document = parse_document(text).map_err(invalid)?;
-    let Some(rules) = document.tools.node else {
-        return Ok(None);
+    let cve = document_cve_layer(&document, location, source.clone(), directory)?;
+    let node = match &document.tools.node {
+        Some(rules) => Some(NodeLayer::from_rules(source, rules).map_err(invalid)?),
+        None => None,
     };
-    NodeLayer::from_rules(source, &rules)
-        .map(Some)
-        .map_err(invalid)
+    Ok(DocumentLayers { node, cve })
 }
 
 fn file_layer(context: &Context<'_>) -> Result<Option<NodeLayer>, PolicyError> {

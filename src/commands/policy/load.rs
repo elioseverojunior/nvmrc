@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::context::Context;
 use crate::domain::nvmrc::find_up;
+use crate::domain::policy::POLICY_FLAGS;
 use crate::error::PolicyError;
 
 pub const REPOSITORY_POLICY_FILE: &str = ".nvmrc-policy.json";
@@ -43,7 +44,7 @@ fn unreadable(location: &str, reason: impl std::fmt::Display) -> PolicyError {
     }
 }
 
-fn absolute(context: &Context<'_>, location: &str) -> PathBuf {
+pub(super) fn absolute(context: &Context<'_>, location: &str) -> PathBuf {
     let path = Path::new(location);
     match context.working_directory() {
         Some(directory) if path.is_relative() => directory.join(path),
@@ -71,11 +72,22 @@ pub(super) fn repository_policy(context: &Context<'_>) -> Option<PathBuf> {
     )
 }
 
-/// Whether anything asks for the policy: a policy flag, a central policy, or a
-/// repository policy file.
+/// Whether anything asks for the policy: a policy flag, a policy variable of
+/// the `NVMRC_` family, a central policy, or a repository policy file.
 #[must_use]
 pub fn policy_mode_requested(context: &Context<'_>) -> bool {
     !context.policy_flags().is_empty()
+        || policy_variable_set(context)
         || central_location(context).is_some()
         || repository_policy(context).is_some()
+}
+
+/// Whether an `NVMRC_` policy variable is set and not blank; `NVM_MIN_VERSION`
+/// is nvm's own and does not ask for the policy.
+fn policy_variable_set(context: &Context<'_>) -> bool {
+    POLICY_FLAGS
+        .iter()
+        .filter(|flag| flag.variable.starts_with("NVMRC_"))
+        .filter_map(|flag| context.env.var(flag.variable))
+        .any(|value| !value.trim().is_empty())
 }

@@ -73,6 +73,7 @@ fn check(
     let Mode::Enforced(policy) = mode else {
         return Ok(Vec::new());
     };
+    let policy = policy.node;
     let release = release_info(context, requested, &policy)?;
     let today = context.clock().unix_seconds().div_euclid(SECONDS_PER_DAY);
     policy

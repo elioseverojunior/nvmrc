@@ -1,6 +1,8 @@
 use super::{context, policy_with_minimum};
+use crate::commands::policy::EnforcedPolicy;
+use crate::commands::policy::policy_mode_requested;
 use crate::commands::policy::{Mode, resolve_mode};
-use crate::domain::policy::{NodePolicy, PolicyFlags, Source, extract};
+use crate::domain::policy::{DEFAULT_INDEX, PolicyFlags, Severity, Source, extract};
 use crate::error::{CliError, PolicyError};
 use crate::fakes::{FakeEnv, FakeFileSystem};
 use std::ffi::OsString;
@@ -10,7 +12,7 @@ fn flags(values: &[&str]) -> PolicyFlags {
     extract(args.map(OsString::from).collect()).unwrap().0
 }
 
-fn enforced(mode: Mode) -> NodePolicy {
+fn enforced(mode: Mode) -> EnforcedPolicy {
     match mode {
         Mode::Enforced(policy) => policy,
         Mode::Legacy => panic!("expected an enforced policy"),
@@ -33,7 +35,7 @@ fn legacy_mode_without_any_new_configuration() {
 fn the_min_node_flag_alone_enforces() {
     let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
     let context = context(&fs, &env).with_policy_flags(flags(&["--min-node", "20"]));
-    let policy = enforced(resolve_mode(&context).unwrap().0);
+    let policy = enforced(resolve_mode(&context).unwrap().0).node;
     assert_eq!(policy.minimum.unwrap().source, Source::Flag("--min-node"));
 }
 
@@ -45,7 +47,7 @@ fn a_repository_policy_is_found_above_the_working_directory_and_enforces() {
     let env = FakeEnv::default()
         .with_var("PWD", "/w/app/src")
         .with_current_dir("/w/app/src");
-    let policy = enforced(resolve_mode(&context(&fs, &env)).unwrap().0);
+    let policy = enforced(resolve_mode(&context(&fs, &env)).unwrap().0).node;
     assert_eq!(
         policy.minimum.unwrap().source,
         Source::RepositoryPolicy("/w/.nvmrc-policy.json".into())
@@ -90,7 +92,7 @@ fn every_source_takes_part_in_the_merge() {
         .with_current_dir("/w");
     let context = context(&fs, &env).with_policy_flags(flags(&["--min-node", "21"]));
     let (mode, warnings) = resolve_mode(&context).unwrap();
-    let minimum = enforced(mode).minimum.unwrap();
+    let minimum = enforced(mode).node.minimum.unwrap();
     assert_eq!(minimum.value.to_string(), "v22.0.0");
     assert_eq!(minimum.source, Source::Variable("NVM_MIN_VERSION"));
     assert_eq!(warnings.len(), 2);
@@ -101,7 +103,7 @@ fn a_tie_is_attributed_to_the_central_policy() {
     let fs = FakeFileSystem::default().with_file("/central.json", &policy_with_minimum("20"));
     let env = FakeEnv::default().with_var("NVMRC_POLICY", "/central.json");
     let context = context(&fs, &env).with_policy_flags(flags(&["--min-node", "20"]));
-    let policy = enforced(resolve_mode(&context).unwrap().0);
+    let policy = enforced(resolve_mode(&context).unwrap().0).node;
     assert!(matches!(
         policy.minimum.unwrap().source,
         Source::CentralPolicy(_)
@@ -128,7 +130,7 @@ fn a_missing_min_version_file_is_no_layer() {
     let env = FakeEnv::default().with_var("NVM_DIR", "/n");
     let context = context(&fs, &env).with_policy_flags(flags(&["--min-node", "20"]));
     let (mode, warnings) = resolve_mode(&context).unwrap();
-    assert!(enforced(mode).minimum.is_some());
+    assert!(enforced(mode).node.minimum.is_some());
     assert!(warnings.is_empty());
 }
 
@@ -139,7 +141,111 @@ fn a_policy_flag_wins_over_the_policy_variable() {
         .with_file("/flag.json", &policy_with_minimum("20"));
     let env = FakeEnv::default().with_var("NVMRC_POLICY", "/variable.json");
     let context = context(&fs, &env).with_policy_flags(flags(&["--policy", "/flag.json"]));
-    let minimum = enforced(resolve_mode(&context).unwrap().0).minimum.unwrap();
+    let minimum = enforced(resolve_mode(&context).unwrap().0)
+        .node
+        .minimum
+        .unwrap();
     assert_eq!(minimum.value.to_string(), "v20.0.0");
     assert_eq!(minimum.source, Source::CentralPolicy("/flag.json".into()));
+}
+
+fn cve_policy(severity: &str, source: Option<&str>) -> String {
+    let source = source.map_or(String::new(), |value| format!(r#", "source": "{value}""#));
+    format!(r#"{{ "schemaVersion": 1, "cve": {{ "failOnSeverity": "{severity}"{source} }} }}"#)
+}
+
+#[test]
+fn the_severity_flag_and_variable_turn_policy_mode_on() {
+    let fs = FakeFileSystem::default();
+    let env = FakeEnv::default().with_var("NVMRC_FAIL_ON_SEVERITY", "low");
+    assert!(policy_mode_requested(&context(&fs, &env)));
+    let env = FakeEnv::default();
+    let flagged = context(&fs, &env).with_policy_flags(flags(&["--fail-on-severity", "low"]));
+    assert!(policy_mode_requested(&flagged));
+    let env = FakeEnv::default().with_var("NVMRC_FAIL_ON_SEVERITY", " ");
+    assert!(!policy_mode_requested(&context(&fs, &env)));
+}
+
+#[test]
+fn an_invalid_severity_flag_or_variable_is_a_failure_to_know() {
+    let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
+    let flagged = context(&fs, &env).with_policy_flags(flags(&["--fail-on-severity", "critial"]));
+    let reason = "'critial' is not one of critical, high, medium, low, none".to_owned();
+    assert_eq!(
+        resolve_mode(&flagged).unwrap_err(),
+        PolicyError::Invalid {
+            location: "--fail-on-severity".into(),
+            reason: reason.clone()
+        }
+    );
+    let env = FakeEnv::default().with_var("NVMRC_FAIL_ON_SEVERITY", "critial");
+    assert_eq!(
+        resolve_mode(&context(&fs, &env)).unwrap_err(),
+        PolicyError::Invalid {
+            location: "NVMRC_FAIL_ON_SEVERITY".into(),
+            reason
+        }
+    );
+}
+
+#[test]
+fn the_cve_settings_of_both_policies_take_part() {
+    let fs = FakeFileSystem::default()
+        .with_file("/central.json", &cve_policy("medium", None))
+        .with_file("/w/.nvmrc-policy.json", &cve_policy("low", Some("v.json")));
+    let env = FakeEnv::default()
+        .with_var("NVMRC_POLICY", "/central.json")
+        .with_var("PWD", "/w")
+        .with_current_dir("/w");
+    let policy = enforced(resolve_mode(&context(&fs, &env)).unwrap().0);
+    assert_eq!(policy.cve.limit.value, Severity::Low);
+    assert_eq!(policy.cve.index.value, DEFAULT_INDEX);
+}
+
+#[test]
+fn the_severity_flag_can_only_tighten() {
+    let fs = FakeFileSystem::default().with_file("/central.json", &cve_policy("medium", None));
+    let env = FakeEnv::default().with_var("NVMRC_POLICY", "/central.json");
+    let flagged = context(&fs, &env).with_policy_flags(flags(&["--fail-on-severity", "critical"]));
+    let (mode, warnings) = resolve_mode(&flagged).unwrap();
+    assert_eq!(enforced(mode).cve.limit.value, Severity::Medium);
+    assert_eq!(warnings.len(), 1);
+}
+
+#[test]
+fn a_relative_index_location_is_read_next_to_its_policy() {
+    let fs = FakeFileSystem::default().with_file(
+        "/w/.nvmrc-policy.json",
+        &cve_policy("high", Some("sec/vuln.json")),
+    );
+    let env = FakeEnv::default()
+        .with_var("PWD", "/w/app/src")
+        .with_current_dir("/w/app/src");
+    let fs = fs.with_dir("/w/app/src");
+    let policy = enforced(resolve_mode(&context(&fs, &env)).unwrap().0);
+    assert_eq!(policy.cve.index.value, "/w/sec/vuln.json");
+}
+
+#[test]
+fn a_relative_index_in_a_central_file_is_read_next_to_it() {
+    let fs = FakeFileSystem::default()
+        .with_file("/etc/p/central.json", &cve_policy("high", Some("v.json")));
+    let env = FakeEnv::default()
+        .with_var("NVMRC_POLICY", "/etc/p/central.json")
+        .with_current_dir("/w");
+    let policy = enforced(resolve_mode(&context(&fs, &env)).unwrap().0);
+    assert_eq!(policy.cve.index.value, "/etc/p/v.json");
+}
+
+#[test]
+fn a_relative_index_in_a_remote_policy_is_invalid() {
+    let env = FakeEnv::default().with_var("NVMRC_POLICY", "https://sec/p.json");
+    let fs = FakeFileSystem::default();
+    let http = crate::fakes::FakeHttp::default()
+        .with_body("https://sec/p.json", &cve_policy("high", Some("vuln.json")));
+    let context = context(&fs, &env).with_http(&http);
+    assert!(matches!(
+        resolve_mode(&context).unwrap_err(),
+        PolicyError::Invalid { location, .. } if location == "https://sec/p.json"
+    ));
 }

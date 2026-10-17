@@ -122,3 +122,13 @@ fn a_value_that_is_not_utf8_is_an_error() {
         "nvm: the value of --policy is not valid UTF-8."
     );
 }
+
+#[test]
+fn the_severity_flag_is_taken_like_the_others() {
+    let (flags, rest) = extract(args(&["nvm", "--fail-on-severity", "low", "use", "20"])).unwrap();
+    assert_eq!(flags.get("--fail-on-severity"), Some("low"));
+    assert_eq!(rest, args(&["nvm", "use", "20"]));
+    let (flags, rest) = extract(args(&["nvm", "use", "20", "--fail-on-severity=high"])).unwrap();
+    assert_eq!(flags.get("--fail-on-severity"), Some("high"));
+    assert_eq!(rest, args(&["nvm", "use", "20"]));
+}
