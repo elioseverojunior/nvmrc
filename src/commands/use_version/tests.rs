@@ -5,9 +5,12 @@ use std::path::Path;
 
 use super::{Target, run_and_target};
 use crate::commands::Output;
-use crate::commands::exec::tests::{BASE_PATH, N18, env_on, lab, npm_versions, strings};
+use crate::commands::exec::tests::{
+    BASE_PATH, N18, env_on, lab, npm_versions, policy_flags, strings,
+};
 use crate::context::Context;
 use crate::error::NvmExitCode;
+use crate::fakes::FakeProcess;
 
 fn switch(args: &[&str]) -> (Output, Option<Target>) {
     let (fs, env, process) = (lab(), env_on(BASE_PATH), npm_versions());
@@ -30,4 +33,67 @@ fn a_stop_before_the_switch_returns_no_target() {
     let (output, target) = switch(&["99"]);
     assert_ne!(output.status, NvmExitCode::Success);
     assert!(target.is_none());
+}
+
+fn switch_under(flags: &[&str], path: &str, process: &FakeProcess, args: &[&str]) -> Output {
+    let (fs, env) = (lab(), env_on(path));
+    let context = Context::new(&fs, &env)
+        .with_process(process)
+        .with_policy_flags(policy_flags(flags));
+    run_and_target(&context, &strings(args)).unwrap().0
+}
+
+#[test]
+fn use_of_a_disallowed_installed_version_stops_without_switching() {
+    let output = switch_under(&["--min-node", "22"], BASE_PATH, &npm_versions(), &["18"]);
+    assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
+    assert!(output.script.is_empty());
+    assert!(
+        output.stderr.starts_with("nvm: node v18.20.4 "),
+        "{}",
+        output.stderr
+    );
+}
+
+#[test]
+fn use_of_an_allowed_version_under_a_policy_switches() {
+    let output = switch_under(&["--min-node", "18"], BASE_PATH, &npm_versions(), &["18"]);
+    assert_eq!(output.status, NvmExitCode::Success);
+    assert!(!output.script.is_empty());
+}
+
+#[test]
+fn use_system_checks_the_system_node_version() {
+    let process = npm_versions().with_run("/sys/bin/node", "--version", true, "v18.0.0\n");
+    let output = switch_under(
+        &["--min-node", "20"],
+        "/sys/bin:/usr/bin:/bin",
+        &process,
+        &["system"],
+    );
+    assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
+    assert!(output.script.is_empty());
+    assert!(
+        output.stderr.contains("node v18.0.0 (system)"),
+        "{}",
+        output.stderr
+    );
+}
+
+#[test]
+fn use_system_with_an_unreadable_version_cannot_be_verified() {
+    let output = switch_under(
+        &["--min-node", "20"],
+        "/sys/bin:/usr/bin:/bin",
+        &npm_versions(),
+        &["system"],
+    );
+    assert_eq!(output.status, NvmExitCode::PolicyUnverifiable);
+    assert!(output.script.is_empty());
+}
+
+#[test]
+fn use_system_without_a_policy_never_asks_the_system_node() {
+    let output = switch_under(&[], "/sys/bin:/usr/bin:/bin", &npm_versions(), &["system"]);
+    assert_eq!(output.status, NvmExitCode::Success);
 }

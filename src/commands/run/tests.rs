@@ -4,7 +4,8 @@
 use crate::commands::Output;
 use crate::commands::exec::tests::{
     ACTIVE_18, BASE_PATH, CURRENT_NOT_INSTALLED, N18, N20, NO_NVMRC, WARNING, assert_runs,
-    assert_stops, assert_streams, child, child_on, env_on, lab, npm_versions, strings,
+    assert_stops, assert_streams, child, child_on, env_on, lab, npm_versions, policy_flags,
+    strings,
 };
 use crate::commands::run::run;
 use crate::context::Context;
@@ -261,4 +262,16 @@ fn run_alone_with_an_nvmrc_naming_a_missing_version_is_the_usage() {
     let output = run_in(&with_nvmrc("99"), &env_on(BASE_PATH), &[]);
     let stdout = "Found '/proj/.nvmrc' with version <99>";
     assert_stops(&output, stdout, USAGE, NvmExitCode::NotFound);
+}
+
+#[test]
+fn run_goes_through_the_same_policy_gate() {
+    let (fs, env, process) = (lab(), env_on(BASE_PATH), npm_versions());
+    let context = Context::new(&fs, &env)
+        .with_process(&process)
+        .with_policy_flags(policy_flags(&["--min-node", "22"]));
+    let output = run(&context, &strings(&["18", "app.js"])).expect("nvm run runs");
+    assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
+    assert_eq!(output.spawn, None);
+    assert_eq!(output.stdout, "");
 }

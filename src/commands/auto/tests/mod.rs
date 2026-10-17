@@ -3,11 +3,14 @@
 //! `/sys/bin` for the rows that put it on `PATH`.
 
 mod install;
+mod policy;
 
 use super::run;
 use crate::commands::Output;
+use crate::commands::exec::tests::policy_flags;
 use crate::context::Context;
 use crate::domain::fixtures::index_text;
+use crate::domain::policy::PolicyFlags;
 use crate::error::{CliError, NvmExitCode};
 use crate::fakes::{FakeEnv, FakeFileSystem, FakeHttp, FakeProcess, FakeScriptChannel};
 
@@ -26,6 +29,7 @@ struct Lab {
     env: FakeEnv,
     /// Run in the `nvm` function: with its channel open.
     in_function: bool,
+    policy_flags: PolicyFlags,
 }
 
 impl Lab {
@@ -47,6 +51,7 @@ impl Lab {
             fs,
             env,
             in_function,
+            policy_flags: PolicyFlags::default(),
         }
         .path(BASE_PATH)
     }
@@ -72,6 +77,11 @@ impl Lab {
         self
     }
 
+    fn policy(mut self, flags: &[&str]) -> Self {
+        self.policy_flags = policy_flags(flags);
+        self
+    }
+
     fn in_function(mut self) -> Self {
         self.in_function = true;
         self
@@ -93,7 +103,8 @@ impl Lab {
             .with_body(IOJS_INDEX, &index_text(&[]));
         let context = Context::new(&self.fs, &self.env)
             .with_process(&process)
-            .with_http(&http);
+            .with_http(&http)
+            .with_policy_flags(self.policy_flags.clone());
         let channel = FakeScriptChannel::default();
         if self.in_function {
             return run(&context.with_script_channel(&channel), &[mode.to_owned()]);

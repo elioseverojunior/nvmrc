@@ -64,10 +64,16 @@ fn use_default_or_nvmrc(context: &Context<'_>) -> Result<Output, CliError> {
 fn auto_install(context: &Context<'_>) -> Result<Output, CliError> {
     let target = context.alias_store()?.target(DEFAULT).unwrap_or_default();
     if target != "N/A" && is_valid_version(&target) {
-        return Ok(without_stdout(install::run(context, &[target])));
+        return Ok(without_stdout(install::run(
+            &context.clone().advisory(),
+            &[target],
+        )));
     }
     if has_rc_version(context) {
-        return Ok(without_stdout(install::run(context, &[])));
+        return Ok(without_stdout(install::run(
+            &context.clone().advisory(),
+            &[],
+        )));
     }
     Ok(Output::default())
 }
@@ -86,7 +92,7 @@ fn use_silently(context: &Context<'_>, version: Option<String>) -> Output {
     let args: Vec<String> = std::iter::once("--silent".to_owned())
         .chain(version)
         .collect();
-    without_stdout(use_version::run(context, &args))
+    without_stdout(use_version::run(&context.clone().advisory(), &args))
 }
 
 /// The result of a command with its stdout sent to `/dev/null`; a failure

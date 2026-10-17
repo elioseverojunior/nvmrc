@@ -4,14 +4,17 @@
 
 mod environment;
 mod parsing;
+mod policy;
 mod rows;
 
 use crate::commands::Output;
 use crate::commands::exec::run;
 use crate::context::Context;
+use crate::domain::policy::{PolicyFlags, extract};
 use crate::error::NvmExitCode;
 use crate::fakes::{FakeEnv, FakeFileSystem, FakeProcess};
 use crate::ports::Invocation;
+use std::ffi::OsString;
 
 pub(crate) const BASE_PATH: &str = "/usr/bin:/bin";
 pub(crate) const N18: &str = "/n/versions/node/v18.20.4";
@@ -83,6 +86,12 @@ pub(crate) fn env_on(path: &str) -> FakeEnv {
         .with_var("NVM_DIR", "/n")
         .with_var("PATH", path)
         .with_var("PWD", "/proj")
+}
+
+/// The policy flags the command line `nvm <values>` carries.
+pub(crate) fn policy_flags(values: &[&str]) -> PolicyFlags {
+    let args = std::iter::once("nvm").chain(values.iter().copied());
+    extract(args.map(OsString::from).collect()).unwrap().0
 }
 
 pub(crate) fn strings(args: &[&str]) -> Vec<String> {

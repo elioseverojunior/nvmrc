@@ -12,6 +12,8 @@ pub use options::Options;
 pub use target::{Halt, SystemFlavor, SystemNode, Target};
 
 use crate::commands::Output;
+use crate::commands::policy::enforce::Gate;
+use crate::commands::policy::gate::{gate_installed, gate_system, origin_of};
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::error::CliError;
@@ -55,10 +57,39 @@ pub fn run_and_target(
     let mut transcript = Transcript::default();
     match target::resolve(context, &options, &mut transcript) {
         Ok(target) => {
+            if let Some(output) = refused(context, &target, &mut transcript) {
+                return Ok((output, None));
+            }
             let output = apply::apply(context, &options, &target, transcript)?;
             Ok((output, Some(target)))
         }
         Err(halt) => Ok((transcript.finish(halt.status), None)),
+    }
+}
+
+/// The output of a `use` that the policy stops (or cannot verify), `None`
+/// when the target may be switched to.
+fn refused(context: &Context<'_>, target: &Target, transcript: &mut Transcript) -> Option<Output> {
+    let gate = match target {
+        Target::Installed {
+            version,
+            from_nvmrc,
+            ..
+        } => gate_installed(
+            context,
+            version,
+            origin_of(context, *from_nvmrc),
+            transcript,
+        ),
+        Target::System(_) => gate_system(context, transcript),
+    };
+    match gate {
+        Ok(Gate::Pass) => None,
+        Ok(Gate::Stop(status)) => Some(std::mem::take(transcript).finish(status)),
+        Err(error) => {
+            let status = Halt::report(&error, transcript).status;
+            Some(std::mem::take(transcript).finish(status))
+        }
     }
 }
 

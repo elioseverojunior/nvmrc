@@ -1,6 +1,7 @@
 //! Reading the policy from where it lives and deciding whether it applies.
 
 pub mod enforce;
+pub mod gate;
 pub mod load;
 pub mod mode;
 
