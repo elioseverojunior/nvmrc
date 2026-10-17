@@ -14,6 +14,7 @@ mod npm_steps;
 mod nvmrc_version;
 mod offline;
 pub mod options;
+mod pinned;
 pub mod place;
 mod resolve;
 mod source;
@@ -21,9 +22,11 @@ mod source;
 use crate::commands::Output;
 use crate::commands::npm::packages::Source;
 use crate::commands::nvmrc_file;
+use crate::commands::project_pins::read_for;
 use crate::commands::resolve::{Resolved, resolve_installed};
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
+use crate::domain::nvmrc::pins::Pins;
 use crate::domain::source_build::natural_jobs;
 use crate::domain::version::Version;
 use crate::domain::version_prefix::with_v_prefix;
@@ -31,6 +34,7 @@ use crate::error::{CliError, NvmExitCode};
 use flow::{Halt, Step, Target};
 use nvmrc_version::with_nvmrc_version;
 use options::Options;
+use pinned::install_pinned;
 use resolve::{check_version, resolve};
 
 /// No version and no usable `.nvmrc` is not an error but an [`Output`] with
@@ -51,6 +55,7 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
 
 fn install(context: &Context<'_>, given: &Options, transcript: &mut Transcript) -> Step<()> {
     let make_jobs = requested_jobs(given, transcript);
+    let pins = read_for(context, transcript)?.pins;
     let options = &with_nvmrc_version(context, no_source_fallback(context, given)?, transcript)?;
     announce(options, transcript);
     let version = resolve(context, options, transcript)?;
@@ -64,9 +69,9 @@ fn install(context: &Context<'_>, given: &Options, transcript: &mut Transcript) 
         make_jobs,
     };
     if place::is_valid_install(context, &target.path) {
-        already_installed(context, options, &target, transcript)
+        already_installed(context, options, &target, &pins, transcript)
     } else {
-        fresh_install(context, options, &target, transcript)
+        fresh_install(context, options, &target, &pins, transcript)
     }
 }
 
@@ -79,9 +84,11 @@ fn already_installed(
     context: &Context<'_>,
     options: &Options,
     target: &Target,
+    pins: &Pins,
     transcript: &mut Transcript,
 ) -> Step<()> {
     transcript.err(format!("{} is already installed.", target.version));
+    install_pinned(context, pins, options.offline, transcript)?;
     let mut status = activate::use_always(context, &target.version, transcript);
     if status == NvmExitCode::Success {
         status = npm_steps::run(context, options, target, transcript)?;
@@ -104,6 +111,7 @@ fn fresh_install(
     context: &Context<'_>,
     options: &Options,
     target: &Target,
+    pins: &Pins,
     transcript: &mut Transcript,
 ) -> Step<()> {
     acquire::acquire(context, options, target, transcript)?;
@@ -116,6 +124,7 @@ fn fresh_install(
         transcript.err(message);
         return Err(Halt::Exit(NvmExitCode::Failure));
     }
+    install_pinned(context, pins, options.offline, transcript)?;
     end_with(activate::use_if_needed(
         context,
         &target.version,

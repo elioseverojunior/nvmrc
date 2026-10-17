@@ -28,6 +28,8 @@ struct World {
     policy_flags: PolicyFlags,
     /// Run in the `nvm` function: with its channel open.
     in_function: bool,
+    /// Run for an automatic path (the init snippet): warnings, never blocks.
+    advisory: bool,
 }
 
 impl World {
@@ -48,6 +50,7 @@ impl World {
             process: FakeProcess::default(),
             policy_flags: PolicyFlags::default(),
             in_function: false,
+            advisory: false,
         }
     }
 
@@ -72,6 +75,13 @@ impl World {
                 ("node-v20.10.0-linux-x64/bin/npm", "npm", true),
             ],
         );
+        let archive = archive.with_archive(
+            pinned::PNPM_DOWNLOAD,
+            &[
+                ("package/package.json", "{}", false),
+                ("package/bin/pnpm.cjs", "pnpm", false),
+            ],
+        );
         let context = Context::new(&self.fs, &self.env)
             .with_http(&self.http)
             .with_digest(&self.digest)
@@ -79,6 +89,11 @@ impl World {
             .with_sleeper(&self.sleeper)
             .with_process(&self.process)
             .with_policy_flags(self.policy_flags.clone());
+        let context = if self.advisory {
+            context.advisory()
+        } else {
+            context
+        };
         let channel = FakeScriptChannel::default();
         if self.in_function {
             return super::run(&context.with_script_channel(&channel), words);
@@ -115,6 +130,7 @@ mod hook;
 mod npm;
 mod nvmrc;
 mod offline_and_save;
+mod pinned;
 mod policy;
 mod source;
 
