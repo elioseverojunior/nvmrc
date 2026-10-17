@@ -98,33 +98,6 @@ fn pick_bare_line(lines: &[String]) -> Option<String> {
     bare.cloned()
 }
 
-/// What `--save` writes over `contents`: its bare version line replaced by
-/// `version`, every other line (pins, other keys, comments) kept in place.
-/// Without a bare line the version goes first. With no other line the result
-/// is exactly `<version>\n`, as nvm.sh writes it.
-#[must_use]
-pub fn with_version(contents: &str, version: &str) -> String {
-    let mut lines: Vec<&str> = contents
-        .strip_suffix('\n')
-        .unwrap_or(contents)
-        .split('\n')
-        .collect();
-    let bare = lines.iter().position(|line| is_bare(content_of(line)));
-    match bare {
-        Some(index) => lines[index] = version,
-        None => lines.insert(0, version),
-    }
-    let index = bare.unwrap_or(0);
-    let alone = (lines.iter().enumerate())
-        .all(|(other, line)| other == index || trim_space(line).is_empty());
-    if alone {
-        return format!("{version}\n");
-    }
-    let mut text = lines.join("\n");
-    text.push('\n');
-    text
-}
-
 /// Whether a content line is the bare version-ish: no `=`, or one first.
 fn is_bare(content: &str) -> bool {
     !content.is_empty()
@@ -179,6 +152,10 @@ pub fn colored_invalid_message(parsed: &[String]) -> String {
     )
 }
 
+mod edit;
+#[cfg(test)]
+mod edit_tests;
+pub use edit::{with_pin, with_version};
 pub mod pins;
 #[cfg(test)]
 mod pins_tests;

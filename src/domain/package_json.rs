@@ -2,6 +2,10 @@
 
 use thiserror::Error;
 
+#[cfg(test)]
+mod edit_tests;
+mod scan;
+
 use crate::domain::tool::Tool;
 use crate::domain::version::Version;
 
@@ -43,6 +47,23 @@ pub fn check_package_manager(
     } else {
         Err(PackageManagerError::Different { found })
     }
+}
+
+/// Sets the top-level `"packageManager"` of the `package.json` in `text` to
+/// `value`: the value replaced in place, or the member added after the last
+/// one with the indentation of the first. Everything else stays byte for
+/// byte, so the file is edited as text, not re-serialised.
+pub fn set_package_manager(text: &str, value: &str) -> Result<String, PackageManagerError> {
+    let not_an_object = || PackageManagerError::Malformed("not a JSON object".to_owned());
+    match serde_json::from_str::<serde_json::Value>(text) {
+        Ok(serde_json::Value::Object(_)) => {}
+        Ok(_) => return Err(not_an_object()),
+        Err(error) => return Err(PackageManagerError::Malformed(error.to_string())),
+    }
+    let quoted = serde_json::to_string(value)
+        .map_err(|error| PackageManagerError::Malformed(error.to_string()))?;
+    let layout = scan::Layout::of(text).ok_or_else(not_an_object)?;
+    Ok(layout.splice(text, &quoted))
 }
 
 #[cfg(test)]

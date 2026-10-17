@@ -58,10 +58,9 @@ impl Pins {
 pub fn parse_pins(contents: &str) -> Result<Pins, PinError> {
     let mut pins = Pins::default();
     for line in content_lines(contents) {
-        let Some((key, value)) = line.split_once('=') else {
+        let Some((key, value)) = key_value(line) else {
             continue;
         };
-        let key = trim_space(key);
         let slot = match key {
             "npm" => &mut pins.npm,
             "yarn" => &mut pins.yarn,
@@ -83,6 +82,13 @@ pub fn parse_pins(contents: &str) -> Result<Pins, PinError> {
         return Err(PinError::YarnAndPnpm);
     }
     Ok(pins)
+}
+
+/// A content line as `key=value`, the key trimmed; `None` without a `=`.
+pub(super) fn key_value(content: &str) -> Option<(&str, &str)> {
+    content
+        .split_once('=')
+        .map(|(key, value)| (trim_space(key), value))
 }
 
 /// `major.minor.patch` of digits only: no `v`, prerelease or range.
