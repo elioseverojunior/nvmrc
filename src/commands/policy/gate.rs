@@ -11,8 +11,6 @@ use crate::domain::nvmrc::find_nvmrc;
 use crate::domain::version::Version;
 use crate::error::{CliError, PolicyError};
 
-const SYSTEM_VERSION: &str = "system node version";
-
 /// The `.nvmrc` the version came from when `from_nvmrc`, else the command
 /// line.
 #[must_use]
@@ -65,9 +63,7 @@ pub fn gate_system(context: &Context<'_>, transcript: &mut Transcript) -> Result
 }
 
 fn unreadable() -> CliError {
-    CliError::Policy(PolicyError::ReleaseInfoUnavailable(
-        SYSTEM_VERSION.to_owned(),
-    ))
+    CliError::Policy(PolicyError::SystemVersionUnreadable)
 }
 
 /// The system version could not be known: an error, or in an advisory

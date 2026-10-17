@@ -238,7 +238,8 @@ These sources take part, in this order:
 - `NVMRC_POLICY` or `--policy <path|https-url>`: the central policy. A path
   is read from the working directory; `https://` is fetched, and a redirect
   away from https is refused; `http://` is rejected. An empty
-  `NVMRC_POLICY` is treated as unset.
+  `NVMRC_POLICY` is treated as unset. When both are given, `--policy`
+  wins and `NVMRC_POLICY` is not read at all: there is one central policy.
 - `.nvmrc-policy.json`, found from the working directory upward like
   `.nvmrc`: the repository policy.
 - `--min-node <version>`: a minimum of its own.

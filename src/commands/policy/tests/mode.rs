@@ -131,3 +131,15 @@ fn a_missing_min_version_file_is_no_layer() {
     assert!(enforced(mode).minimum.is_some());
     assert!(warnings.is_empty());
 }
+
+#[test]
+fn a_policy_flag_wins_over_the_policy_variable() {
+    let fs = FakeFileSystem::default()
+        .with_file("/variable.json", &policy_with_minimum("22"))
+        .with_file("/flag.json", &policy_with_minimum("20"));
+    let env = FakeEnv::default().with_var("NVMRC_POLICY", "/variable.json");
+    let context = context(&fs, &env).with_policy_flags(flags(&["--policy", "/flag.json"]));
+    let minimum = enforced(resolve_mode(&context).unwrap().0).minimum.unwrap();
+    assert_eq!(minimum.value.to_string(), "v20.0.0");
+    assert_eq!(minimum.source, Source::CentralPolicy("/flag.json".into()));
+}

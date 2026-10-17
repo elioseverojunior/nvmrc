@@ -40,6 +40,21 @@ fn exec_system_checks_the_system_node_version() {
     assert_eq!(output.spawn, None);
 }
 
+#[test]
+fn exec_system_with_an_unreadable_version_says_so_and_fails_to_know() {
+    let process = npm_versions().with_run("/sys/bin/node", "--version", false, "");
+    let (fs, env) = (lab(), env_on("/sys/bin:/usr/bin:/bin"));
+    let context = Context::new(&fs, &env)
+        .with_process(&process)
+        .with_policy_flags(policy_flags(&["--min-node", "20"]));
+    let error = run(&context, &strings(&["system", "node", "-v"])).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "nvm: cannot check the policy: the version of the system node cannot be read."
+    );
+    assert_eq!(error.exit_code(), NvmExitCode::PolicyUnverifiable);
+}
+
 fn exec_in_under(fs: &FakeFileSystem, path: &str, args: &[&str]) -> Output {
     let (env, process) = (env_on(path), npm_versions());
     let context = Context::new(fs, &env)

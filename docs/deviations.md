@@ -123,6 +123,12 @@ or `NVMRC_POLICY`, nothing changes (pinned by
   `a_floor_flag_after_the_version_of_install_is_enforced`,
   `a_policy_flag_after_the_program_of_exec_reaches_the_program` in
   `src/cli/tests/policy.rs`)
+- `--policy` replaces `NVMRC_POLICY`; the two are never merged.
+  (`a_policy_flag_wins_over_the_policy_variable`)
+- An unreadable system node version under a policy is
+  `nvm: cannot check the policy: the version of the system node cannot be
+  read.`, status 9.
+  (`exec_system_with_an_unreadable_version_says_so_and_fails_to_know`)
 - `.nvmrc-policy.json` is found upward from the working directory.
   (`a_repository_policy_is_found_above_the_working_directory_and_enforces`)
 - In policy mode `install`, `use`, `exec` and `run` check the node rules;
