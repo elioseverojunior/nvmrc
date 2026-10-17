@@ -37,6 +37,22 @@ fn use_after_leading_policy_flags_switches_the_shell() {
 }
 
 #[test]
+fn use_after_package_manager_minimum_flags_switches_the_shell() {
+    let lab = lab_with("proj/.nvmrc-policy.json", LOCAL_INDEX_POLICY);
+    each_shell(|name, shell| {
+        let commands = "nvm --min-pnpm 9 use 20 >/dev/null\nnode -v\n\
+                        nvm --min-yarn=4 use 20 >/dev/null\nnode -v";
+        let run = lab.run(shell, &with_function(name, commands));
+        assert_eq!(
+            (run.status, run.stdout.as_str()),
+            (0, "v20.11.1\nv20.11.1\n"),
+            "{name}: {}",
+            run.stderr
+        );
+    });
+}
+
+#[test]
 fn use_after_a_joined_policy_flag_switches_the_shell() {
     let lab = lab_with("proj/p.json", POLICY);
     each_shell(|name, shell| {
