@@ -294,6 +294,7 @@ mod help;
 mod init;
 mod install;
 mod nvm_exec;
+mod policy;
 mod script;
 mod set_colors;
 mod spawn;

@@ -29,6 +29,7 @@ use crate::commands::Output;
 use crate::context::Context;
 use crate::domain::http_header::sanitize_auth_header;
 use crate::domain::platform::Platform;
+use crate::domain::policy::extract;
 use crate::error::{CliError, NvmExitCode};
 use crate::ports::{Env, FileSystem};
 
@@ -59,8 +60,17 @@ where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
 {
-    let args = arguments(args);
-    let cli = match Cli::try_parse_from(args) {
+    let raw: Vec<OsString> = args.into_iter().map(Into::into).collect();
+    let (flags, rest) = match extract(raw) {
+        Ok(taken) => taken,
+        Err(error) => {
+            // Nowhere left to report a failed stderr write.
+            let _ = emit(err, &format!("{error}\n"));
+            return NvmExitCode::NotFound.code();
+        }
+    };
+    let context = &context.clone().with_policy_flags(flags);
+    let cli = match Cli::try_parse_from(arguments(rest)) {
         Ok(cli) => cli,
         Err(error) if error.use_stderr() => {
             // Nowhere left to report a failed stderr write.

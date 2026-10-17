@@ -14,6 +14,7 @@ use crate::adapters::no_sleeper::NoSleeper;
 use crate::adapters::no_terminal::NoTerminal;
 use crate::domain::alias::AliasStore;
 use crate::domain::platform::{Os, Platform};
+use crate::domain::policy::PolicyFlags;
 use crate::domain::version::Version;
 use crate::error::CliError;
 use crate::ports::{
@@ -21,6 +22,7 @@ use crate::ports::{
     Terminal,
 };
 
+#[derive(Clone)]
 pub struct Context<'a> {
     pub fs: &'a dyn FileSystem,
     pub env: &'a dyn Env,
@@ -35,6 +37,8 @@ pub struct Context<'a> {
     prompt: &'a dyn Prompt,
     platform: Option<Platform>,
     script_channel: Option<&'a dyn ScriptChannel>,
+    policy_flags: PolicyFlags,
+    advisory: bool,
 }
 
 impl<'a> Context<'a> {
@@ -59,6 +63,8 @@ impl<'a> Context<'a> {
                 arch: "x64".to_owned(),
             }),
             script_channel: None,
+            policy_flags: PolicyFlags::default(),
+            advisory: false,
         }
     }
 
@@ -76,6 +82,32 @@ impl<'a> Context<'a> {
     #[must_use]
     pub fn script_channel(&self) -> Option<&dyn ScriptChannel> {
         self.script_channel
+    }
+
+    /// The policy flags of the command line, already stripped from it; a
+    /// context starts out with none.
+    #[must_use]
+    pub fn with_policy_flags(mut self, flags: PolicyFlags) -> Self {
+        self.policy_flags = flags;
+        self
+    }
+
+    #[must_use]
+    pub fn policy_flags(&self) -> &PolicyFlags {
+        &self.policy_flags
+    }
+
+    /// Makes the policy advise instead of enforce; a context starts out
+    /// enforcing.
+    #[must_use]
+    pub fn advisory(mut self) -> Self {
+        self.advisory = true;
+        self
+    }
+
+    #[must_use]
+    pub fn is_advisory(&self) -> bool {
+        self.advisory
     }
 
     #[must_use]
