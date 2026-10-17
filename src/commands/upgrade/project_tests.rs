@@ -136,7 +136,7 @@ fn one_tool_without_a_target_writes_nothing() {
     assert_eq!(
         output.stderr,
         "nvm upgrade: no allowed pnpm release in major 9.\n\
-         nvm: pnpm 9.12.0 (from /p/.nvmrc) is not allowed by policy:\n  \
+         nvm: pnpm 9.12.0 (the newest in major 9) is not allowed by policy:\n  \
          - below the minimum 10.0.0 (from policy /policy.json)\n\
          The lowest major with an allowed release is 10. Run \
          `nvm upgrade --pnpm --major=10`, or `nvm upgrade --pnpm --major` for the newest."
@@ -154,7 +154,7 @@ fn no_allowed_release_in_any_major_says_so() {
     assert_eq!(
         output.stderr,
         "nvm upgrade: no allowed pnpm release.\n\
-         nvm: pnpm 9.12.0 (from /p/.nvmrc) is not allowed by policy:\n  \
+         nvm: pnpm 9.12.0 (the newest release) is not allowed by policy:\n  \
          - below the minimum 11.0.0 (from policy /policy.json)\n\
          No major has an allowed pnpm release."
     );

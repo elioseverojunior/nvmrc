@@ -2,13 +2,13 @@
 //! nearest `.nvmrc` and the `package.json` beside it written only when every
 //! one has an allowed target.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use super::pinned::{Pinned, Project, read_project, select};
 use super::request::UpgradeRequest;
 use super::target::{Target, target};
 use crate::commands::policy::judge::Judge;
-use crate::commands::policy::report::nvmrc_block;
+use crate::commands::policy::report::newest_block;
 use crate::commands::project::{ProjectFiles, Stop, new_nvmrc, new_package_json, save};
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
@@ -53,7 +53,7 @@ pub fn upgrade(
         )?;
         planned.push((pinned, found));
     }
-    refuse_missing(&project.nvmrc, &planned, transcript)?;
+    refuse_missing(&planned, transcript)?;
     let (lines, moves) = changes(&planned);
     let upgraded = if moves.is_empty() {
         Upgraded::Nothing
@@ -67,14 +67,10 @@ pub fn upgrade(
 
 /// Prints the block of every tool without a target and stops with exit 7
 /// when there is one.
-fn refuse_missing(
-    nvmrc: &Path,
-    planned: &[(Pinned, Target)],
-    transcript: &mut Transcript,
-) -> Result<(), Stop> {
+fn refuse_missing(planned: &[(Pinned, Target)], transcript: &mut Transcript) -> Result<(), Stop> {
     let mut refused = false;
     for (pinned, found) in planned {
-        refused |= no_target(nvmrc, pinned.tool, found, transcript);
+        refused |= no_target(pinned.tool, found, transcript);
     }
     if refused {
         return Err(Stop::Refused(NvmExitCode::BelowVersionFloor));
@@ -83,7 +79,7 @@ fn refuse_missing(
 }
 
 /// Prints why `tool` has no target, when `found` says so; whether it did.
-fn no_target(nvmrc: &Path, tool: Tool, found: &Target, transcript: &mut Transcript) -> bool {
+fn no_target(tool: Tool, found: &Target, transcript: &mut Transcript) -> bool {
     let Target::NoneInMajor {
         major,
         newest,
@@ -100,7 +96,7 @@ fn no_target(nvmrc: &Path, tool: Tool, found: &Target, transcript: &mut Transcri
     let hint = hint(name, *lowest);
     match newest {
         Some((version, violations)) => {
-            nvmrc_block(tool, version, nvmrc, violations, &hint, transcript);
+            newest_block(tool, version, *major, violations, &hint, transcript);
         }
         None => transcript.err(hint),
     }

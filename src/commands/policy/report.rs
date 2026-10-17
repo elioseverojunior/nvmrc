@@ -1,8 +1,6 @@
 //! What the gate prints: one block per offending tool, node first, each with
 //! the rules it breaks and the fix.
 
-use std::path::Path;
-
 use super::enforce::{Gate, Origin, Requested};
 use super::tools::{ToolFinding, ToolOrigin};
 use crate::commands::transcript::Transcript;
@@ -94,33 +92,39 @@ pub fn argument_block(
     transcript: &mut Transcript,
 ) {
     let origin = Origin::Argument;
-    let subject = format!(
-        "nvm: {} {} {}",
-        tool.name(),
-        tool.show(version),
-        origin_text(&origin)
-    );
+    let subject = subject(tool, version, &origin_text(&origin));
     block(&subject, violations, &fix_text(&origin), transcript);
 }
 
-/// The block for `version` of `tool` pinned in the `.nvmrc` at `nvmrc`,
-/// ending in `fix`, as `nvm upgrade` prints it.
-pub fn nvmrc_block(
+/// The block for `version`, the newest release of `tool` in `major` (in
+/// any major for `None`), ending in `fix`, as `nvm upgrade` prints it when
+/// nothing there is allowed. A node release refused with no rule of its
+/// own is refused for the npm it bundles.
+pub fn newest_block(
     tool: Tool,
     version: &Version,
-    nvmrc: &Path,
+    major: Option<u64>,
     violations: &[Violation],
     fix: &str,
     transcript: &mut Transcript,
 ) {
-    let origin = Origin::Nvmrc(nvmrc.to_path_buf());
-    let subject = format!(
-        "nvm: {} {} {}",
-        tool.name(),
-        tool.show(version),
-        origin_text(&origin)
-    );
+    let scope = match major {
+        Some(major) => format!("(the newest in major {major})"),
+        None => "(the newest release)".to_owned(),
+    };
+    let subject = subject(tool, version, &scope);
+    if violations.is_empty() {
+        transcript.err(format!("{subject} is not allowed by policy:"));
+        transcript.err("  - the npm it bundles is not allowed by policy".to_owned());
+        transcript.err(fix.to_owned());
+        return;
+    }
     block(&subject, violations, fix, transcript);
+}
+
+/// `nvm: node v20.18.0 (from the command line)`.
+fn subject(tool: Tool, version: &Version, origin: &str) -> String {
+    format!("nvm: {} {} {origin}", tool.name(), tool.show(version))
 }
 
 fn block(subject: &str, violations: &[Violation], fix: &str, transcript: &mut Transcript) {
