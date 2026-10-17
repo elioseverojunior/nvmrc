@@ -10,7 +10,7 @@ const PINNED: &str = "v20.11.1\npnpm=9.1.0\n";
 const PNPM_9: &str = "{ \"packageManager\": \"pnpm@9.1.0\" }";
 
 /// Runs `nvm upgrade args`: what it printed, with its status, and what it did.
-fn upgrade_in(
+pub(super) fn upgrade_in(
     fs: &FakeFileSystem,
     env: &FakeEnv,
     http: &FakeHttp,

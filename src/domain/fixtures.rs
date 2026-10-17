@@ -21,11 +21,22 @@ pub fn index_text(rows: &[(&str, &str)]) -> String {
 /// Like [`index_text`], with a release date per row: `(version, date, lts)`.
 #[must_use]
 pub fn index_text_dated(rows: &[(&str, &str, &str)]) -> String {
+    let bundling: Vec<(&str, &str, &str, &str)> = rows
+        .iter()
+        .map(|(version, date, lts)| (*version, *date, *lts, "10.0.0"))
+        .collect();
+    index_text_bundling(&bundling)
+}
+
+/// Like [`index_text_dated`], with the npm each release bundles:
+/// `(version, date, lts, npm)`.
+#[must_use]
+pub fn index_text_bundling(rows: &[(&str, &str, &str, &str)]) -> String {
     let header = "version\tdate\tfiles\tnpm\tv8\tuv\tzlib\topenssl\tmodules\tlts\tsecurity";
     let body: Vec<String> = rows
         .iter()
-        .map(|(version, date, lts)| {
-            format!("{version}\t{date}\tlinux-x64\t10.0.0\t11.0.0\t1.0.0\t1.3\t3.0\t100\t{lts}\t-")
+        .map(|(version, date, lts, npm)| {
+            format!("{version}\t{date}\tlinux-x64\t{npm}\t11.0.0\t1.0.0\t1.3\t3.0\t100\t{lts}\t-")
         })
         .collect();
     format!("{header}\n{}\n", body.join("\n"))

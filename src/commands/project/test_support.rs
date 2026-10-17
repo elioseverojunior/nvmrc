@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::commands::Output;
 use crate::commands::init::run;
 use crate::context::Context;
-use crate::domain::fixtures::index_text_dated;
+use crate::domain::fixtures::{index_text_bundling, index_text_dated};
 use crate::fakes::{FakeEnv, FakeFileSystem, FakeHttp};
 use crate::ports::FileSystem;
 
@@ -15,6 +15,7 @@ pub const PNPM_URL: &str = "https://registry.npmjs.org/pnpm";
 pub const PNPM_PACKUMENT: &str = r#"{"versions": {"9.1.0": {}, "9.12.0": {}, "10.0.0-rc.1": {}}}"#;
 pub const MIN_PNPM: &str =
     r#"{ "schemaVersion": 1, "tools": { "pnpm": { "minimum": "9.12.0" } } }"#;
+pub const MIN_NPM: &str = r#"{ "schemaVersion": 1, "tools": { "npm": { "minimum": "10.5.0" } } }"#;
 
 fn node_index() -> String {
     index_text_dated(&[
@@ -46,6 +47,16 @@ pub fn served() -> FakeHttp {
         .with_body(INDEX_URL, &node_index())
         .with_body(PNPM_URL, PNPM_PACKUMENT)
         .with_empty_advisories()
+}
+
+/// [`served`] with an index of `rows`, `(version, lts, npm)`: the npm each
+/// release bundles.
+pub fn served_bundling(rows: &[(&str, &str, &str)]) -> FakeHttp {
+    let dated: Vec<(&str, &str, &str, &str)> = rows
+        .iter()
+        .map(|(version, lts, npm)| (*version, "2024-10-01", *lts, *npm))
+        .collect();
+    served().with_body(INDEX_URL, &index_text_bundling(&dated))
 }
 
 pub fn init(fs: &FakeFileSystem, env: &FakeEnv, http: &FakeHttp, args: &[&str]) -> Output {

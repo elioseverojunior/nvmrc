@@ -4,6 +4,7 @@
 use super::advisories::{below_limit_warning, load_advisories, vulnerable};
 use super::enforce::{index_location, today};
 use super::mode::{EnforcedPolicy, Mode, resolve_mode};
+use super::tools::release_info;
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::policy::{Advisory, Finding, MissingReleaseInfo, ReleaseInfo, Violation};
@@ -15,6 +16,9 @@ use crate::error::PolicyError;
 pub struct Judge {
     policy: Option<EnforcedPolicy>,
     advisories: Option<Vec<Advisory>>,
+    /// Whether npm is pinned once the caller is done; when it is not, the
+    /// npm a node release bundles is the one in effect.
+    npm_pinned: bool,
 }
 
 impl Judge {
@@ -32,7 +36,46 @@ impl Judge {
         Ok(Self {
             policy,
             advisories: None,
+            npm_pinned: false,
         })
+    }
+
+    /// The judge told whether npm is pinned once the caller is done.
+    #[must_use]
+    pub fn with_npm_pinned(self, npm_pinned: bool) -> Self {
+        Self { npm_pinned, ..self }
+    }
+
+    /// Whether the npm bundled with a release of `tool` is allowed: always
+    /// for a tool other than node, with npm pinned or without an npm rule;
+    /// never when the bundled npm is unknown.
+    ///
+    /// # Errors
+    /// [`PolicyError`] when the release date an npm age rule needs cannot
+    /// be had.
+    pub fn allows_bundled_npm(
+        &mut self,
+        context: &Context<'_>,
+        tool: Tool,
+        bundled: Option<&Version>,
+    ) -> Result<bool, PolicyError> {
+        let Some(policy) = self.policy.as_ref().filter(|_| tool == Tool::Node) else {
+            return Ok(true);
+        };
+        let rules = policy.tool(Tool::Npm);
+        if self.npm_pinned || rules.is_unrestricted() {
+            return Ok(true);
+        }
+        let Some(npm) = bundled else {
+            return Ok(false);
+        };
+        let release = release_info(context, false, rules, npm)?.unwrap_or(ReleaseInfo {
+            lts: None,
+            published_day: None,
+        });
+        Ok(self
+            .violations(context, Tool::Npm, npm, &release)?
+            .is_empty())
     }
 
     /// Why `version` of `tool` is not allowed; empty when it is. For node

@@ -40,7 +40,8 @@ pub fn upgrade(
 ) -> Result<Upgraded, Stop> {
     let project = read_project(context, transcript)?;
     let selected = select(&project, request, transcript)?;
-    let mut judge = Judge::load(context, transcript)?;
+    let npm_pinned = project.pinned.iter().any(|pinned| pinned.tool == Tool::Npm);
+    let mut judge = Judge::load(context, transcript)?.with_npm_pinned(npm_pinned);
     let mut planned = Vec::new();
     for pinned in selected {
         let found = target(
@@ -173,3 +174,7 @@ fn write(
 #[cfg(test)]
 #[path = "project_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "bundled_npm_tests.rs"]
+mod bundled_npm_tests;

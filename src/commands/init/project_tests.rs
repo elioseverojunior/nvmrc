@@ -1,9 +1,12 @@
 use crate::commands::project::test_support::{
-    INDEX_URL, MIN_PNPM, PNPM_PACKUMENT, PNPM_URL, file, init, project, served,
+    INDEX_URL, MIN_NPM, MIN_PNPM, PNPM_PACKUMENT, PNPM_URL, file, init, project, served,
+    served_bundling,
 };
 use crate::domain::fixtures::{advisories_json, index_text_dated};
 use crate::domain::policy::DEFAULT_INDEX;
 use crate::fakes::FakeHttp;
+
+const NPM_PACKUMENT: &str = r#"{"versions": {"10.4.0": {}, "10.9.0": {}}}"#;
 
 #[test]
 fn newest_node_and_pnpm_are_written_with_package_manager() {
@@ -193,4 +196,36 @@ fn findings_below_the_limit_warn_for_the_chosen_node() {
         assert_eq!(output.stderr, warning);
         assert_eq!(output.stdout, "Wrote /p/.nvmrc: node v22.20.0");
     }
+}
+
+#[test]
+fn the_newest_node_whose_bundled_npm_is_refused_is_skipped() {
+    let http = served_bundling(&[
+        ("v22.11.0", "Jod", "10.4.0"),
+        ("v20.18.0", "Iron", "10.8.2"),
+    ]);
+    let (fs, env) = project(&[], MIN_NPM);
+    let output = init(&fs, &env, &http, &["--node"]);
+    assert_eq!(output.status.code(), 0, "{}", output.stderr);
+    assert_eq!(output.stdout, "Wrote /p/.nvmrc: node v20.18.0");
+}
+
+#[test]
+fn no_node_with_an_allowed_bundled_npm_writes_nothing() {
+    let http = served_bundling(&[("v22.11.0", "Jod", "10.4.0"), ("v20.18.0", "Iron", "-")]);
+    let (fs, env) = project(&[], MIN_NPM);
+    let output = init(&fs, &env, &http, &["--node"]);
+    assert_eq!(output.status.code(), 7);
+    assert_eq!(output.stderr, "nvm init: no allowed node LTS release.");
+    assert_eq!(file(&fs, "/p/.nvmrc"), None);
+}
+
+#[test]
+fn an_npm_set_in_the_same_run_leaves_the_bundled_npm_out_of_the_choice() {
+    let http = served_bundling(&[("v22.11.0", "Jod", "10.4.0")])
+        .with_body("https://registry.npmjs.org/npm", NPM_PACKUMENT);
+    let (fs, env) = project(&[], MIN_NPM);
+    let output = init(&fs, &env, &http, &["--node", "--npm"]);
+    assert_eq!(output.status.code(), 0, "{}", output.stderr);
+    assert_eq!(output.stdout, "Wrote /p/.nvmrc: node v22.11.0, npm 10.9.0");
 }

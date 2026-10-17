@@ -18,6 +18,8 @@ use crate::error::{CliError, PolicyError};
 pub struct Candidate {
     pub version: Version,
     pub release: ReleaseInfo,
+    /// The npm a node release bundles, when the index names one.
+    pub npm: Option<Version>,
 }
 
 /// What the policy says of one requested version.
@@ -46,6 +48,7 @@ pub fn node_candidates(context: &Context<'_>) -> Result<Vec<Candidate>, CliError
                 lts: release.lts,
                 published_day: release.published_day,
             },
+            npm: release.npm,
         })
         .collect();
     // The index is ordered by date, so a backport can precede a newer line.
@@ -78,11 +81,12 @@ pub fn tool_candidates(
                 lts: None,
                 published_day,
             },
+            npm: None,
         })
         .collect())
 }
 
-/// The first candidate with no violation, whatever its LTS name.
+/// The first allowed candidate, whatever its LTS name (see [`is_allowed`]).
 ///
 /// # Errors
 /// [`PolicyError`] when the policy cannot judge a candidate.
@@ -93,12 +97,23 @@ pub fn first_allowed(
     candidates: &[Candidate],
 ) -> Result<Option<Candidate>, PolicyError> {
     for candidate in candidates {
-        let found = judge.violations(context, tool, &candidate.version, &candidate.release)?;
-        if found.is_empty() {
+        if is_allowed(context, judge, tool, candidate)? {
             return Ok(Some(candidate.clone()));
         }
     }
     Ok(None)
+}
+
+/// Whether `candidate` has no violation and, for node, bundles an npm the
+/// policy allows (see [`Judge::allows_bundled_npm`]).
+fn is_allowed(
+    context: &Context<'_>,
+    judge: &mut Judge,
+    tool: Tool,
+    candidate: &Candidate,
+) -> Result<bool, PolicyError> {
+    let found = judge.violations(context, tool, &candidate.version, &candidate.release)?;
+    Ok(found.is_empty() && judge.allows_bundled_npm(context, tool, candidate.npm.as_ref())?)
 }
 
 /// The first candidate with no violation; for node, among those with an LTS

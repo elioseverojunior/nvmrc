@@ -17,7 +17,7 @@ use crate::commands::project::{
 use crate::commands::project_pins::pin_error;
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
-use crate::domain::nvmrc::pins::parse_pins;
+use crate::domain::nvmrc::pins::{Pins, parse_pins};
 use crate::domain::tool::Tool;
 use crate::domain::version::{Flavor, Version};
 use crate::error::{CliError, NvmExitCode};
@@ -58,8 +58,11 @@ fn set_up(
     })?;
     let files = ProjectFiles::in_directory(&directory);
     let current = current_nvmrc(context, &files.nvmrc)?;
-    refuse_switch(&current, &files.nvmrc, request, transcript)?;
-    let chosen = choose(context, request, transcript)?;
+    let pins =
+        parse_pins(&current).map_err(|error| CliError::from(pin_error(error, &files.nvmrc)))?;
+    refuse_switch(&pins, &files.nvmrc, request, transcript)?;
+    let npm_pinned = pins.npm.is_some() || request.get(Tool::Npm).is_some();
+    let chosen = choose(context, request, npm_pinned, transcript)?;
     let nvmrc_text = new_nvmrc(current, &chosen);
     let package_edit = new_package_json(context, &files.package_json, &chosen)?;
     save(
@@ -78,13 +81,16 @@ fn set_up(
     Ok(())
 }
 
-/// The version of each requested tool, in [`ORDER`].
+/// The version of each requested tool, in [`ORDER`]; whether npm is pinned
+/// once the files are written decides whether the npm bundled with node is
+/// judged.
 fn choose(
     context: &Context<'_>,
     request: &ProjectRequest,
+    npm_pinned: bool,
     transcript: &mut Transcript,
 ) -> Result<Vec<(Tool, Version)>, Stop> {
-    let mut judge = Judge::load(context, transcript)?;
+    let mut judge = Judge::load(context, transcript)?.with_npm_pinned(npm_pinned);
     let mut chosen = Vec::new();
     for tool in ORDER {
         if let Some(wanted) = request.get(tool) {
@@ -167,16 +173,14 @@ fn listed(chosen: &[(Tool, Version)]) -> String {
     shown.join(", ")
 }
 
-/// Refuses a malformed pin in the `.nvmrc`, and yarn over a pnpm pin or
-/// pnpm over a yarn pin: the switch is the user's to make. Both are known
-/// before any request.
+/// Refuses yarn over a pnpm pin or pnpm over a yarn pin: the switch is the
+/// user's to make. Like a malformed pin, it is known before any request.
 fn refuse_switch(
-    current: &str,
+    pins: &Pins,
     path: &Path,
     request: &ProjectRequest,
     transcript: &mut Transcript,
 ) -> Result<(), Stop> {
-    let pins = parse_pins(current).map_err(|error| CliError::from(pin_error(error, path)))?;
     for tool in ORDER
         .into_iter()
         .filter(|tool| request.get(*tool).is_some())

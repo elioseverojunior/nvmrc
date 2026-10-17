@@ -101,7 +101,7 @@ fn system_tool(
 }
 
 /// The release date from the registry, fetched only for an age rule.
-fn release_info(
+pub(super) fn release_info(
     context: &Context<'_>,
     offline: bool,
     rules: &ToolPolicy,

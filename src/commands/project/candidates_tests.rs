@@ -228,6 +228,7 @@ fn candidate(text: &str, lts: Option<&str>) -> Candidate {
             lts: lts.map(str::to_owned),
             published_day: None,
         },
+        npm: None,
     }
 }
 
