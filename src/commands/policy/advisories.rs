@@ -5,7 +5,7 @@ use super::enforce::Requested;
 use super::load::{is_https, read_location_with};
 use crate::context::Context;
 use crate::domain::policy::{
-    CvePolicy, DEFAULT_INDEX, Finding, Severity, Violation, finding_list, findings,
+    Advisory, CvePolicy, DEFAULT_INDEX, Finding, Severity, Violation, finding_list, findings,
     parse_advisories,
 };
 use crate::domain::version::Flavor;
@@ -65,18 +65,30 @@ pub(super) fn judge(
     requested: &Requested,
     cve: &CvePolicy,
 ) -> Result<Judgement, PolicyError> {
-    let location = &cve.index.value;
-    if requested.offline && is_https(location) {
+    if requested.offline && is_https(&cve.index.value) {
         return Err(PolicyError::ReleaseInfoUnavailable("offline".to_owned()));
     }
-    let text = read_location_with(context, index_client(context, location), location)?;
-    let advisories = parse_advisories(&text).map_err(|error| PolicyError::IndexInvalid {
-        location: location.clone(),
-        reason: error.to_string(),
-    })?;
+    let advisories = load_advisories(context, cve)?;
     let os = context.platform().map(|platform| platform.os.slug());
     let found = findings(&advisories, &requested.version, os);
-    Ok(split(found, cve.limit.value))
+    Ok(failing(found, cve.limit.value))
+}
+
+/// Reads and parses the index `cve` names.
+///
+/// # Errors
+/// The errors of [`read_location_with`], and [`PolicyError::IndexInvalid`]
+/// for an index that cannot be understood.
+pub(super) fn load_advisories(
+    context: &Context<'_>,
+    cve: &CvePolicy,
+) -> Result<Vec<Advisory>, PolicyError> {
+    let location = &cve.index.value;
+    let text = read_location_with(context, index_client(context, location), location)?;
+    parse_advisories(&text).map_err(|error| PolicyError::IndexInvalid {
+        location: location.clone(),
+        reason: error.to_string(),
+    })
 }
 
 /// The built-in index is a third party's, so it is read without
@@ -89,8 +101,8 @@ fn index_client<'a>(context: &Context<'a>, location: &str) -> &'a dyn Http {
     }
 }
 
-/// A finding fails when its severity reaches the limit; `none` fails nothing.
-fn split(found: Vec<Finding>, limit: Severity) -> Judgement {
+/// Splits `found` by `limit`: a finding fails when its severity reaches the limit; `none` fails nothing.
+pub(super) fn failing(found: Vec<Finding>, limit: Severity) -> Judgement {
     let fails =
         |finding: &Finding| limit != Severity::None && finding.severity.rank() >= limit.rank();
     let (failing, below) = found.into_iter().partition(fails);

@@ -5,6 +5,7 @@ pub mod bundled;
 mod cve_layers;
 pub mod enforce;
 pub mod gate;
+pub mod judge;
 pub mod load;
 pub mod mode;
 mod report;

@@ -1,6 +1,7 @@
 mod advisories;
 mod clients;
 mod enforce;
+mod judge;
 mod load;
 mod mode;
 mod tool_mode;
