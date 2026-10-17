@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 use super::project::Stop;
 use crate::context::Context;
 use crate::domain::nvmrc::{with_pin, with_version};
-use crate::domain::package_json::{package_manager_field, set_package_manager};
+use crate::domain::package_json::{
+    PackageManagerError, check_package_manager, package_manager_field, set_package_manager,
+};
 use crate::domain::tool::Tool;
 use crate::domain::version::Version;
 use crate::error::{CliError, PinsError};
@@ -27,11 +29,12 @@ impl ProjectFiles {
     }
 }
 
-/// The new `package.json` text and the `packageManager` value it holds.
+/// A change to `package.json`: its new text, the `packageManager` value
+/// set and the one it replaced, if any.
 pub struct PackageEdit {
     text: String,
-    changed: bool,
     field: String,
+    previous: Option<String>,
 }
 
 /// The `.nvmrc` at `path`; empty when there is none.
@@ -53,8 +56,8 @@ pub fn new_nvmrc(current: String, chosen: &[(Tool, Version)]) -> String {
         })
 }
 
-/// The `package.json` at `path` with `packageManager` set, when it exists
-/// and yarn or pnpm was chosen.
+/// The `package.json` at `path` with `packageManager` set, when it exists,
+/// yarn or pnpm was chosen and its value (a corepack hash aside) differs.
 ///
 /// # Errors
 /// When it cannot be read, or not as a JSON object.
@@ -72,6 +75,11 @@ pub fn new_package_json(
     let Some(original) = existing(context, path)? else {
         return Ok(None);
     };
+    let previous = match check_package_manager(&original, *tool, version) {
+        Ok(()) => return Ok(None),
+        Err(PackageManagerError::Different { found }) => Some(found),
+        Err(_) => None,
+    };
     let field = package_manager_field(*tool, version);
     let text = set_package_manager(&original, &field).map_err(|error| {
         CliError::from(PinsError::UnreadablePackageJson {
@@ -79,11 +87,10 @@ pub fn new_package_json(
             reason: error.to_string(),
         })
     })?;
-    let changed = text != original;
     Ok(Some(PackageEdit {
         text,
-        changed,
         field,
+        previous,
     }))
 }
 
@@ -91,11 +98,15 @@ impl PackageEdit {
     /// The line that reports the edit of the `package.json` at `path`.
     #[must_use]
     pub fn reported(&self, path: &Path) -> String {
-        format!(
+        let set = format!(
             "Set packageManager to \"{}\" in {}",
             self.field,
             path.display()
-        )
+        );
+        match &self.previous {
+            Some(previous) => format!("{set} (was \"{previous}\")"),
+            None => set,
+        }
     }
 }
 
@@ -109,7 +120,7 @@ pub fn save(
     nvmrc_text: &str,
     package_edit: Option<&PackageEdit>,
 ) -> Result<(), Stop> {
-    if let Some(edit) = package_edit.filter(|edit| edit.changed) {
+    if let Some(edit) = package_edit {
         write(context, &files.package_json, &edit.text)?;
     }
     write(context, &files.nvmrc, nvmrc_text)?;
@@ -131,3 +142,7 @@ fn write(context: &Context<'_>, path: &Path, text: &str) -> Result<(), CliError>
         .write_file(path, text)
         .map_err(|error| CliError::io(path, error))
 }
+
+#[cfg(test)]
+#[path = "write_tests.rs"]
+mod tests;
