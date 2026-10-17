@@ -26,13 +26,13 @@ use crate::adapters::std_terminal::StdTerminal;
 use crate::adapters::tar_archive::TarArchive;
 use crate::adapters::ureq_http::{AuthHeader, UreqHttp, url_host};
 use crate::commands::Output;
-use crate::commands::package_managers::registry::registry_base;
+use crate::commands::package_managers::registry::registry_base_from;
 use crate::context::Context;
 use crate::domain::http_header::auth_header_from;
 use crate::domain::platform::Platform;
 use crate::domain::policy::extract;
 use crate::error::{CliError, NvmExitCode};
-use crate::ports::FileSystem;
+use crate::ports::{Env, FileSystem};
 
 #[derive(Parser)]
 #[command(name = "nvm", version, about = "Node Version Manager, in Rust")]
@@ -166,9 +166,9 @@ fn with_real_context<R>(body: impl FnOnce(&Context<'_>) -> R) -> R {
     // First: the descriptor must be taken over before anything else opens one.
     let channel = FdChannel::from_env(&StdEnv);
     let process = StdProcess::default();
-    let (network, quick_http) = clients_with(node_auth_header());
+    let (network, quick_http) = clients_with(node_auth_header(&StdEnv));
     let http = RetryingHttp::new(&network, &StdSleeper);
-    let (registry_network, quick_third_party_http) = clients_with(registry_auth_header());
+    let (registry_network, quick_third_party_http) = clients_with(registry_auth_header(&StdEnv));
     let third_party_http = RetryingHttp::new(&registry_network, &StdSleeper);
     let context = Context::new(&StdFileSystem, &StdEnv)
         .with_process(&process)
@@ -201,17 +201,17 @@ fn clients_with(auth: Option<AuthHeader>) -> (UreqHttp, UreqHttp) {
 
 /// `NVM_AUTH_HEADER`, sent to every host the regular clients reach: the node
 /// mirrors, a central policy and a configured vulnerability index.
-fn node_auth_header() -> Option<AuthHeader> {
-    let value = auth_header_from(&StdEnv, "NVM_AUTH_HEADER")?;
+fn node_auth_header(env: &dyn Env) -> Option<AuthHeader> {
+    let value = auth_header_from(env, "NVM_AUTH_HEADER")?;
     Some(AuthHeader { value, host: None })
 }
 
 /// `NVMRC_NPM_AUTH_HEADER`, sent only to the host of the npm registry; when
 /// the registry is not a usable URL it goes nowhere (using the registry then
 /// reports the bad value).
-fn registry_auth_header() -> Option<AuthHeader> {
-    let value = auth_header_from(&StdEnv, "NVMRC_NPM_AUTH_HEADER")?;
-    let registry = registry_base(&Context::new(&StdFileSystem, &StdEnv)).ok()?;
+fn registry_auth_header(env: &dyn Env) -> Option<AuthHeader> {
+    let value = auth_header_from(env, "NVMRC_NPM_AUTH_HEADER")?;
+    let registry = registry_base_from(env).ok()?;
     let host = url_host(&registry)?;
     Some(AuthHeader {
         value,
@@ -266,5 +266,7 @@ pub fn nvm_exec_from_env() -> u8 {
     })
 }
 
+#[cfg(test)]
+mod credentials_tests;
 #[cfg(test)]
 mod tests;

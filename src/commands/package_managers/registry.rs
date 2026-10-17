@@ -9,7 +9,7 @@ use crate::domain::registry::{
 };
 use crate::domain::tool::Tool;
 use crate::domain::version::Version;
-use crate::ports::{Http, HttpError};
+use crate::ports::{Env, Http, HttpError};
 
 const REGISTRY_VARIABLE: &str = "NVMRC_NPM_REGISTRY";
 const DEFAULT_REGISTRY: &str = "https://registry.npmjs.org";
@@ -40,8 +40,16 @@ fn is_https(url: &str) -> bool {
 /// # Errors
 /// When the registry is not an https URL.
 pub fn registry_base(context: &Context<'_>) -> Result<String, FetchError> {
-    let value = context
-        .env
+    registry_base_from(context.env)
+}
+
+/// [`registry_base`] read from `env` alone, for wiring the clients before
+/// there is a context.
+///
+/// # Errors
+/// When the registry is not an https URL.
+pub fn registry_base_from(env: &dyn Env) -> Result<String, FetchError> {
+    let value = env
         .var(REGISTRY_VARIABLE)
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| DEFAULT_REGISTRY.to_owned());
