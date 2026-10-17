@@ -233,30 +233,37 @@ Only the node rules are enforced: `minimum`, `allow` (an npm-style range),
 error, never ignored. There is no CVE check yet, and the npm, yarn and pnpm
 sections are accepted but not enforced.
 
-Where a policy comes from, from the loosest source to the strictest:
+These sources take part, in this order:
 
 - `NVMRC_POLICY` or `--policy <path|https-url>`: the central policy. A path
   is read from the working directory; `https://` is fetched; `http://` is
-  rejected.
+  rejected. An empty `NVMRC_POLICY` is treated as unset.
 - `.nvmrc-policy.json`, found from the working directory upward like
   `.nvmrc`: the repository policy.
-- `--min-node <version>`, which feeds `NVM_MIN_VERSION`.
+- `--min-node <version>`: a minimum of its own.
+- `NVM_MIN_VERSION`: a minimum, merged with the others in policy mode.
+- `$NVM_DIR/min-version`: the same, from the file.
 
 The flags go before the subcommand or right after it
 (`nvm --policy p use 20`, `nvm use --min-node 20 20`); a later occurrence,
 such as inside the command of `exec`, is left alone. A flag with no value
-fails with `nvm: <flag> needs a value.` and status 127.
+fails with `nvm: <flag> needs a value.` and status 127; a flag given twice
+fails with `nvm: <flag> is given twice.`.
 
-The sources only tighten each other: the highest minimum wins, the allowed
-ranges all apply, the deny lists add up, `ltsOnly` is on when any source
-sets it, and the largest release age wins. A source that asks for less is
-ignored with a warning.
+The sources only tighten each other, so every rule takes the strictest value
+across them: the highest minimum wins, the allowed ranges all apply, the
+deny lists add up, `ltsOnly` is on when any source sets it, and the largest
+release age wins. A tie names the central policy, then the repository
+policy, and so on down the list. A source that asks for less is ignored
+with a warning.
 
 Two modes:
 
 - Legacy: only `NVM_MIN_VERSION` or `$NVM_DIR/min-version`. This is exactly
   the old behaviour, checked in `install` alone.
-- Policy: any central policy, repository policy or policy flag. The rules
+- Policy: any central policy, repository policy or policy flag (`--min-node`
+  included). `NVM_MIN_VERSION` and `$NVM_DIR/min-version` then count as
+  layers too, and can be the source a violation names. The rules
   are enforced in `install`, `use` (`use system` included), `exec` and
   `run`. The shell startup (`__auto`) only warns and goes on.
 
