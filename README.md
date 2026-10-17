@@ -244,11 +244,12 @@ These sources take part, in this order:
 - `NVM_MIN_VERSION`: a minimum, merged with the others in policy mode.
 - `$NVM_DIR/min-version`: the same, from the file.
 
-The flags go before the subcommand or right after it
-(`nvm --policy p use 20`, `nvm use --min-node 20 20`); a later occurrence,
-such as inside the command of `exec`, is left alone. A flag with no value
-fails with `nvm: <flag> needs a value.` and status 127; a flag given twice
-fails with `nvm: <flag> is given twice.`.
+The flags go before the subcommand or anywhere after it up to a `--`
+(`nvm --policy p use 20`, `nvm use 20 --min-node 20`). After `exec` and
+`run` they are taken only before the version: a later occurrence belongs to
+the program they run and is left alone. A flag with no value fails with
+`nvm: <flag> needs a value.` and status 127; a flag given twice fails with
+`nvm: <flag> is given twice.`.
 
 The sources only tighten each other, so every rule takes the strictest value
 across them: the highest minimum wins, the allowed ranges all apply, the

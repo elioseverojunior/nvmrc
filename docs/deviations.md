@@ -108,14 +108,21 @@ or `NVMRC_POLICY`, nothing changes (pinned by
 `legacy_mode_without_any_new_configuration` in
 `src/commands/policy/tests/mode.rs`).
 
-- `--policy` and `--min-node` are taken before the subcommand or right after
-  it; a later occurrence is left alone. An empty or blank value is
-  `nvm: <flag> needs a value.`, status 127.
+- `--policy` and `--min-node` are taken before the subcommand or anywhere
+  after it up to a `--`. After `exec` and `run` they are taken only right
+  after the subcommand; a later occurrence there belongs to the program and
+  is left alone. An empty or blank value is `nvm: <flag> needs a value.`,
+  status 127.
   (`flags_before_the_subcommand_are_taken`,
-  `flags_after_the_first_argument_are_left_alone`,
+  `flags_anywhere_after_another_subcommand_are_taken`,
+  `flags_after_a_double_dash_are_left_alone`,
+  `flags_after_the_first_argument_of_exec_or_run_are_left_alone`,
   `an_empty_or_blank_value_is_an_error` in
   `src/domain/policy/flags_tests.rs`; `a_flag_error_is_a_usage_error`,
-  `stripped_flags_do_not_reach_clap` in `src/cli/tests/policy.rs`)
+  `a_policy_flag_after_the_version_of_use_is_enforced`,
+  `a_floor_flag_after_the_version_of_install_is_enforced`,
+  `a_policy_flag_after_the_program_of_exec_reaches_the_program` in
+  `src/cli/tests/policy.rs`)
 - `.nvmrc-policy.json` is found upward from the working directory.
   (`a_repository_policy_is_found_above_the_working_directory_and_enforces`)
 - In policy mode `install`, `use`, `exec` and `run` check the node rules;

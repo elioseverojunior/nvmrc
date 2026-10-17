@@ -1,4 +1,4 @@
-//! The policy flags, which can stand before or right after the subcommand.
+//! The policy flags, which can stand before the subcommand or after it.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -56,9 +56,15 @@ impl PolicyFlags {
     }
 }
 
-/// Takes the policy flags from before the subcommand and from right after it,
-/// in `--flag value` and `--flag=value` form; every other argument, including
-/// a policy flag further on (it may belong to a program `exec` runs), stays.
+/// The subcommands whose later arguments belong to the program they run.
+const CHILD_COMMANDS: [&str; 2] = ["exec", "run"];
+
+type Input<I> = std::iter::Peekable<I>;
+
+/// Takes the policy flags, in `--flag value` and `--flag=value` form, from
+/// before the subcommand and from anywhere after it up to a `--`. After
+/// `exec` and `run` only the flags right after the subcommand are taken: a
+/// policy flag further on belongs to the program they run and stays.
 ///
 /// # Errors
 /// Returns a [`FlagError`] for a flag without a value, given twice, or whose
@@ -70,14 +76,40 @@ pub fn extract(args: Vec<OsString>) -> Result<(PolicyFlags, Vec<OsString>), Flag
     rest.extend(input.next());
     let mut input = input.peekable();
     take_flags(&mut input, &mut flags)?;
-    rest.extend(input.next());
+    let subcommand = input.next();
+    let child_owns_the_rest = subcommand
+        .as_ref()
+        .is_some_and(|command| CHILD_COMMANDS.iter().any(|name| command == name));
+    rest.extend(subcommand);
     take_flags(&mut input, &mut flags)?;
-    rest.extend(input);
+    if child_owns_the_rest {
+        rest.extend(input);
+    } else {
+        take_flags_anywhere(&mut input, &mut flags, &mut rest)?;
+    }
     Ok((flags, rest))
 }
 
+/// Takes every policy flag up to a `--`; the `--` and what follows stay.
+fn take_flags_anywhere(
+    input: &mut Input<impl Iterator<Item = OsString>>,
+    flags: &mut PolicyFlags,
+    rest: &mut Vec<OsString>,
+) -> Result<(), FlagError> {
+    while let Some(argument) = input.next() {
+        let ends_the_options = argument == "--";
+        rest.push(argument);
+        if ends_the_options {
+            rest.extend(input.by_ref());
+            break;
+        }
+        take_flags(input, flags)?;
+    }
+    Ok(())
+}
+
 fn take_flags(
-    input: &mut std::iter::Peekable<impl Iterator<Item = OsString>>,
+    input: &mut Input<impl Iterator<Item = OsString>>,
     flags: &mut PolicyFlags,
 ) -> Result<(), FlagError> {
     while let Some((flag, inline)) = input.peek().and_then(|argument| recognise(argument)) {

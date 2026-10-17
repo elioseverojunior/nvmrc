@@ -29,12 +29,49 @@ fn flags_right_after_the_subcommand_are_taken_in_both_forms() {
 }
 
 #[test]
-fn flags_after_the_first_argument_are_left_alone() {
-    let (flags, rest) = extract(args(&["nvm", "exec", "20", "node", "--policy", "x.js"])).unwrap();
+fn flags_after_the_first_argument_of_exec_or_run_are_left_alone() {
+    for input in [
+        &["nvm", "exec", "20", "node", "--policy", "x.js"][..],
+        &["nvm", "run", "--silent", "20", "--min-node=9", "x.js"][..],
+    ] {
+        let (flags, rest) = extract(args(input)).unwrap();
+        assert!(flags.is_empty());
+        assert_eq!(rest, args(input));
+    }
+}
+
+#[test]
+fn flags_anywhere_after_another_subcommand_are_taken() {
+    let (flags, rest) = extract(args(&[
+        "nvm",
+        "install",
+        "--offline",
+        "20",
+        "--min-node=22",
+        "--policy",
+        "p",
+    ]))
+    .unwrap();
+    assert_eq!(flags.get("--min-node"), Some("22"));
+    assert_eq!(flags.get("--policy"), Some("p"));
+    assert_eq!(rest, args(&["nvm", "install", "--offline", "20"]));
+}
+
+#[test]
+fn flags_after_a_double_dash_are_left_alone() {
+    let input = args(&["nvm", "use", "20", "--", "--policy", "p"]);
+    let (flags, rest) = extract(input.clone()).unwrap();
     assert!(flags.is_empty());
+    assert_eq!(rest, input);
+}
+
+#[test]
+fn a_late_flag_without_a_value_is_an_error() {
     assert_eq!(
-        rest,
-        args(&["nvm", "exec", "20", "node", "--policy", "x.js"])
+        extract(args(&["nvm", "use", "20", "--policy"]))
+            .unwrap_err()
+            .to_string(),
+        "nvm: --policy needs a value."
     );
 }
 
