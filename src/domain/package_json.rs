@@ -15,6 +15,12 @@ pub enum PackageManagerError {
     Different { found: String },
 }
 
+/// The `packageManager` value that matches a pin: `<name>@<version>`.
+#[must_use]
+pub fn package_manager_field(tool: Tool, version: &Version) -> String {
+    format!("{}@{}", tool.name(), tool.show(version))
+}
+
 /// Checks the `packageManager` field of the `package.json` in `text` against
 /// the pinned `tool` and `version`: it must read `<name>@<version>`, with a
 /// corepack `+<hash>` suffix ignored.
@@ -30,7 +36,7 @@ pub fn check_package_manager(
         Some(serde_json::Value::String(field)) => field.clone(),
         Some(other) => other.to_string(),
     };
-    let expected = format!("{}@{}", tool.name(), tool.show(version));
+    let expected = package_manager_field(tool, version);
     let without_hash = found.split('+').next().unwrap_or("");
     if without_hash == expected {
         Ok(())

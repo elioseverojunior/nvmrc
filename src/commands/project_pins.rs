@@ -7,7 +7,9 @@ use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::nvmrc::find_nvmrc;
 use crate::domain::nvmrc::pins::{PinError, Pins, parse_pins};
-use crate::domain::package_json::{PackageManagerError, check_package_manager};
+use crate::domain::package_json::{
+    PackageManagerError, check_package_manager, package_manager_field,
+};
 use crate::domain::tool::Tool;
 use crate::domain::version::Version;
 use crate::error::{CliError, PinsError};
@@ -81,35 +83,41 @@ fn check_beside(
         .fs
         .read_to_string(&package_json)
         .map_err(|source| CliError::io(&package_json, source))?;
-    let checked = check_package_manager(&text, tool, version);
-    checked.map_err(|error| {
-        let shown = tool.show(version);
-        let (package_json, nvmrc) = (
-            package_json.display().to_string(),
-            nvmrc.display().to_string(),
-        );
-        let expected = format!("{}@{shown}", tool.name());
-        match error {
-            PackageManagerError::Malformed(reason) => PinsError::UnreadablePackageJson {
-                package_json,
-                reason,
-            },
-            PackageManagerError::Missing => PinsError::MissingPackageManager {
-                package_json,
-                nvmrc,
-                expected,
-            },
-            PackageManagerError::Different { found } => PinsError::DifferentPackageManager {
-                package_json,
-                nvmrc,
-                found,
-                tool: tool.name().to_owned(),
-                version: shown,
-                expected,
-            },
-        }
-        .into()
-    })
+    check_package_manager(&text, tool, version)
+        .map_err(|error| package_manager_error(error, tool, version, &package_json, nvmrc).into())
+}
+
+fn package_manager_error(
+    error: PackageManagerError,
+    tool: Tool,
+    version: &Version,
+    package_json: &Path,
+    nvmrc: &Path,
+) -> PinsError {
+    let (package_json, nvmrc) = (
+        package_json.display().to_string(),
+        nvmrc.display().to_string(),
+    );
+    let expected = package_manager_field(tool, version);
+    match error {
+        PackageManagerError::Malformed(reason) => PinsError::UnreadablePackageJson {
+            package_json,
+            reason,
+        },
+        PackageManagerError::Missing => PinsError::MissingPackageManager {
+            package_json,
+            nvmrc,
+            expected,
+        },
+        PackageManagerError::Different { found } => PinsError::DifferentPackageManager {
+            package_json,
+            nvmrc,
+            found,
+            tool: tool.name().to_owned(),
+            version: tool.show(version),
+            expected,
+        },
+    }
 }
 
 #[cfg(test)]
