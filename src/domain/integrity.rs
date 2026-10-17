@@ -80,8 +80,9 @@ mod tests {
 
     #[test]
     fn a_matching_sha512_passes() {
-        let integrity = format!("sha1-abc {}", integrity_of(b"tarball"));
-        assert_eq!(verify(&integrity, b"tarball"), Ok(()));
+        let empty = "sha512-z4PhNX7vuL3xVChQ1m2AB9Yg5AULVxXcg/SpIdNs6c5H0NE8XYXysP+DGNKHfuwvY7kxvUdBeoGlODJ6+SfaPg==";
+        let integrity = format!("sha1-abc {empty}");
+        assert_eq!(verify(&integrity, b""), Ok(()));
     }
 
     #[test]

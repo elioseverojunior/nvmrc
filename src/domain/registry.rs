@@ -77,8 +77,15 @@ fn stays_inside(target: &str) -> bool {
         && components.all(|part| matches!(part, Component::Normal(_) | Component::CurDir))
 }
 
+/// One normal path component and nothing else, on every platform.
+fn is_plain_file_name(name: &str) -> bool {
+    let mut components = Path::new(name).components();
+    let single = matches!(components.next(), Some(Component::Normal(part)) if part == name);
+    single && components.next().is_none() && !name.contains(['\\', '\0'])
+}
+
 fn command(name: &str, target: &Value) -> Result<(String, String), RegistryError> {
-    if name.is_empty() || name.contains('/') {
+    if !is_plain_file_name(name) {
         return Err(RegistryError::BadCommand(name.to_owned()));
     }
     let target = target.as_str().unwrap_or_default();

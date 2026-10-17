@@ -81,6 +81,16 @@ fn a_bin_path_outside_the_package_is_refused() {
 }
 
 #[test]
+fn a_command_name_that_is_not_a_plain_file_name_is_refused() {
+    for name in [".", "..", "a\\\\b", "a\\u0000b", "a/b", ""] {
+        let bin = format!(r#"{{"{name}": "bin/x"}}"#);
+        let error = parse_manifest(&manifest_with_bin(&bin)).unwrap_err();
+        assert!(matches!(error, RegistryError::BadCommand(_)), "{name:?}");
+    }
+    assert!(parse_manifest(&manifest_with_bin(r#"{"yarn.js": "bin/x"}"#)).is_ok());
+}
+
+#[test]
 fn a_missing_bin_is_refused() {
     for bin in ["{}", r#""bin/x""#, "null"] {
         let error = parse_manifest(&manifest_with_bin(bin)).unwrap_err();
