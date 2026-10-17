@@ -211,8 +211,11 @@ fn the_policy_flag_patterns_come_from_the_flag_table() {
     assert_eq!(
         policy_flag_patterns(),
         (
-            "--policy | --min-node | --fail-on-severity".to_owned(),
-            "--policy=* | --min-node=* | --fail-on-severity=*".to_owned()
+            "--policy | --min-node | --fail-on-severity | --min-npm | --min-yarn | --min-pnpm"
+                .to_owned(),
+            "--policy=* | --min-node=* | --fail-on-severity=* | --min-npm=* | --min-yarn=* | \
+             --min-pnpm=*"
+                .to_owned()
         )
     );
 }
@@ -227,6 +230,9 @@ fn every_function_routes_on_the_first_argument_that_is_not_a_policy_flag() {
         );
         assert!(text.contains("--min-node"), "{name}");
         assert!(text.contains("--fail-on-severity"), "{name}");
+        for flag in ["--min-npm", "--min-yarn", "--min-pnpm"] {
+            assert!(text.contains(flag), "{name}: {flag}");
+        }
         assert!(!text.contains("\"${1-}\""), "{name}");
     }
 }

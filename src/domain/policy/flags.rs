@@ -10,7 +10,7 @@ pub struct PolicyFlag {
 }
 
 /// Every policy flag; later plans append to this table.
-pub const POLICY_FLAGS: [PolicyFlag; 3] = [
+pub const POLICY_FLAGS: [PolicyFlag; 6] = [
     PolicyFlag {
         name: "--policy",
         variable: "NVMRC_POLICY",
@@ -22,6 +22,18 @@ pub const POLICY_FLAGS: [PolicyFlag; 3] = [
     PolicyFlag {
         name: "--fail-on-severity",
         variable: "NVMRC_FAIL_ON_SEVERITY",
+    },
+    PolicyFlag {
+        name: "--min-npm",
+        variable: "NVMRC_MIN_NPM",
+    },
+    PolicyFlag {
+        name: "--min-yarn",
+        variable: "NVMRC_MIN_YARN",
+    },
+    PolicyFlag {
+        name: "--min-pnpm",
+        variable: "NVMRC_MIN_PNPM",
     },
 ];
 

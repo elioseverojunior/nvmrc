@@ -40,6 +40,12 @@ fn stripped_flags_do_not_reach_clap() {
 }
 
 #[test]
+fn stripped_package_manager_flags_do_not_reach_clap() {
+    let (code, out, _) = run_cli(&["nvm", "--min-npm", "10", "version", "20"]);
+    assert_eq!((code, out.trim_end()), (0, "v20.1.0"));
+}
+
+#[test]
 fn a_policy_flag_after_another_option_of_use_is_enforced() {
     let (code, _, err) = run_installed(&["nvm", "use", "--silent", "--policy", "/nonexist", "20"]);
     assert_eq!(code, 9, "{err}");

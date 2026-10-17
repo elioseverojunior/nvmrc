@@ -4,6 +4,7 @@ use super::cve_layers::{document_cve_layer, severity_layers};
 use super::load::{
     absolute, central_location, is_https, policy_mode_requested, read_location, repository_policy,
 };
+use super::tool_layers::{DocumentLayers, package_layers, package_policy};
 use std::path::Path;
 
 use crate::context::Context;
@@ -29,14 +30,22 @@ pub enum Mode {
 #[derive(Debug)]
 pub struct EnforcedPolicy {
     pub node: ToolPolicy,
+    pub npm: ToolPolicy,
+    pub yarn: ToolPolicy,
+    pub pnpm: ToolPolicy,
     pub cve: CvePolicy,
 }
 
-/// What one policy document contributes.
-#[derive(Default)]
-struct DocumentLayers {
-    node: Option<ToolLayer>,
-    cve: Option<CveLayer>,
+impl EnforcedPolicy {
+    #[must_use]
+    pub fn tool(&self, tool: Tool) -> &ToolPolicy {
+        match tool {
+            Tool::Node => &self.node,
+            Tool::Npm => &self.npm,
+            Tool::Yarn => &self.yarn,
+            Tool::Pnpm => &self.pnpm,
+        }
+    }
 }
 
 /// Decides the mode and, when a policy is enforced, merges every source:
@@ -50,11 +59,11 @@ pub fn resolve_mode(context: &Context<'_>) -> Result<(Mode, Vec<String>), Policy
     if !policy_mode_requested(context) {
         return Ok((Mode::Legacy, Vec::new()));
     }
-    let central = central_layer(context)?;
-    let repository = repository_layer(context)?;
+    let mut central = central_layer(context)?;
+    let mut repository = repository_layer(context)?;
     let mut layers = Vec::new();
-    layers.extend(central.node);
-    layers.extend(repository.node);
+    layers.extend(central.node.take());
+    layers.extend(repository.node.take());
     layers.extend(minimum_layer(
         Source::Flag(MINIMUM_FLAG),
         context.policy_flags().get(MINIMUM_FLAG).map(str::to_owned),
@@ -65,9 +74,26 @@ pub fn resolve_mode(context: &Context<'_>) -> Result<(Mode, Vec<String>), Policy
     )?);
     layers.extend(file_layer(context)?);
     let (node, mut warnings) = merge(Tool::Node, layers);
+    let mut package = |tool| {
+        let (policy, tool_warnings) = package_policy(context, tool, &mut central, &mut repository)?;
+        warnings.extend(tool_warnings);
+        Ok::<_, PolicyError>(policy)
+    };
+    let (npm, yarn, pnpm) = (
+        package(Tool::Npm)?,
+        package(Tool::Yarn)?,
+        package(Tool::Pnpm)?,
+    );
     let (cve, cve_warnings) = cve_policy(context, central.cve, repository.cve)?;
     warnings.extend(cve_warnings);
-    Ok((Mode::Enforced(EnforcedPolicy { node, cve }), warnings))
+    let enforced = EnforcedPolicy {
+        node,
+        npm,
+        yarn,
+        pnpm,
+        cve,
+    };
+    Ok((Mode::Enforced(enforced), warnings))
 }
 
 /// Merges the CVE layers of both policies, the severity flag and the variable.
@@ -127,10 +153,15 @@ fn document_layers(
     let document = parse_document(text).map_err(invalid)?;
     let cve = document_cve_layer(&document, location, source.clone(), directory)?;
     let node = match &document.tools.node {
-        Some(rules) => Some(ToolLayer::from_node(source, rules).map_err(invalid)?),
+        Some(rules) => Some(ToolLayer::from_node(source.clone(), rules).map_err(invalid)?),
         None => None,
     };
-    Ok(DocumentLayers { node, cve })
+    let packages = package_layers(&document, &source).map_err(invalid)?;
+    Ok(DocumentLayers {
+        node,
+        packages,
+        cve,
+    })
 }
 
 fn file_layer(context: &Context<'_>) -> Result<Option<ToolLayer>, PolicyError> {
@@ -153,7 +184,10 @@ fn file_layer(context: &Context<'_>) -> Result<Option<ToolLayer>, PolicyError> {
 }
 
 /// A layer that only sets the minimum, from `raw`; blank is unset.
-fn minimum_layer(source: Source, raw: Option<String>) -> Result<Option<ToolLayer>, PolicyError> {
+pub(super) fn minimum_layer(
+    source: Source,
+    raw: Option<String>,
+) -> Result<Option<ToolLayer>, PolicyError> {
     let Some(raw) = raw
         .map(|raw| raw.trim().to_owned())
         .filter(|raw| !raw.is_empty())

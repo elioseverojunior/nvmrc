@@ -6,6 +6,7 @@ pub mod enforce;
 pub mod gate;
 pub mod load;
 pub mod mode;
+mod tool_layers;
 
 pub use load::{REPOSITORY_POLICY_FILE, policy_mode_requested, read_location};
 pub use mode::{EnforcedPolicy, Mode, resolve_mode};
