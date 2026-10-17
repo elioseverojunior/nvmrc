@@ -64,3 +64,29 @@ pub fn iojs_releases() -> Vec<Release> {
         Flavor::IoJs,
     )
 }
+
+/// Real entries of the Node Security WG vulnerability index (downloaded
+/// 2026-10-17), keeping the shapes the parser has to handle: a plain range, a
+/// `win32`-only advisory, no CVE ids, an `unknown` severity, ranges with a
+/// leading space and a `<=` comparator. The long texts are dropped.
+#[must_use]
+pub fn advisories_json() -> &'static str {
+    r#"{
+  "6": {"cve": ["CVE-2016-9551"], "vulnerable": "^7.1.0", "patched": "^7.2.0",
+        "affectedEnvironments": ["all"], "severity": "unknown"},
+  "9": {"cve": [], "vulnerable": "6.x", "patched": "^6.9.0",
+        "affectedEnvironments": ["all"], "severity": "medium"},
+  "54": {"cve": ["CVE-2018-12115"], "vulnerable": "<= 10",
+         "patched": "^6.14.4 || ^8.11.4 || >= 10.9.0",
+         "affectedEnvironments": ["all"], "severity": "high"},
+  "69": {"cve": ["CVE-2020-8277"], "vulnerable": " 12.x || 14.x || 15.x",
+         "patched": " ^12.19.1 || ^14.15.1 || 15.2.1",
+         "affectedEnvironments": ["all"], "severity": "high"},
+  "80": {"cve": ["CVE-2021-22921"], "vulnerable": " 12.x || 14.x || 16.x",
+         "patched": " ^12.22.2 || ^14.17.2 || ^16.4.1",
+         "affectedEnvironments": ["win32"], "severity": "medium"},
+  "192": {"cve": ["CVE-2026-58043"], "vulnerable": "22.x || 24.x || 26.x",
+          "patched": "^22.23.2 || ^24.18.1 || ^26.5.1",
+          "affectedEnvironments": ["all"], "severity": "high"}
+}"#
+}

@@ -94,6 +94,20 @@ pub enum Severity {
     None,
 }
 
+impl Severity {
+    /// Orders severities: `None` is lowest, `Critical` highest.
+    #[must_use]
+    pub fn rank(self) -> u8 {
+        match self {
+            Self::None => 0,
+            Self::Low => 1,
+            Self::Medium => 2,
+            Self::High => 3,
+            Self::Critical => 4,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DocumentError {
     #[error("the policy is not valid: {0}")]
