@@ -434,6 +434,12 @@ allowed (yarn below 2.0.0 is the `yarn` package). Without a policy every
 published version is allowed; the legacy floor applies to `install` only.
 The policy flags (`--policy`, `--min-*`) apply as in `install`.
 
+When the policy has an npm rule and npm will not be pinned (no `npm=` line
+in the `.nvmrc` and no `--npm` in the same run), the newest node is chosen
+only among releases whose bundled npm (the `npm` column of the release
+index) the policy allows, since that npm is the one in effect; a release
+whose bundled npm is unknown is skipped.
+
 `nvm init` writes `.nvmrc` in the working directory, creating it when absent,
 and changes only the requested lines: the bare version line for node and the
 `npm=`, `yarn=` or `pnpm=` line for the others. Every other line, comment and
@@ -495,9 +501,11 @@ one tool pinned when no tool flag is given (otherwise exit 6). For node, any
 allowed release can be chosen, a non-LTS one included, unless the policy sets
 `ltsOnly`. npm, yarn and pnpm use stable `major.minor.patch` releases only;
 yarn reads the `yarn` package for major 1 and `@yarnpkg/cli-dist` for major 2
-and later (`--major` searches `@yarnpkg/cli-dist`). The policy flags
+and later (`--major` searches both). The policy flags
 (`--policy`, `--min-*`) apply as in `install`. A current version the policy
-does not allow moves to the target even when the target is lower.
+does not allow moves to the target even when the target is lower. As in
+`nvm init`, with an npm rule and no `npm=` line a node release is chosen
+only when its bundled npm is allowed (and known).
 
 A node line that is a partial version (`20`, `v20.11`) uses that major and is
 replaced by the exact target. A node line that is not a version (`lts/*`,
@@ -509,7 +517,12 @@ nvm upgrade: /p/.nvmrc names node as "lts/*", not a version; use nvm init --node
 
 With `--pnpm` (or another tool flag without `--node`) the alias line is left
 alone and the other tool is upgraded. Without a `.nvmrc`, `nvm upgrade` says
-`nvm upgrade: no .nvmrc found; run nvm init first.` (exit 3).
+`nvm upgrade: no .nvmrc found; run nvm init first.` (exit 3). A `.nvmrc` with
+neither a node line nor a pin is refused before any request, exit 3:
+
+```text
+nvm upgrade: /p/.nvmrc pins nothing; use nvm init to add a tool.
+```
 
 When a selected tool has no allowed release in its major, nothing is written
 and the command exits 7. For each such tool it prints
@@ -518,12 +531,17 @@ newest release in that major with the rules it breaks and where they come
 from, and a hint:
 
 ```text
+nvm: pnpm 9.12.0 (the newest in major 9) is not allowed by policy:
+  - below the minimum 10.0.0 (from policy /policy.json)
 The lowest major with an allowed release is 10. Run `nvm upgrade --pnpm --major=10`, or `nvm upgrade --pnpm --major` for the newest.
 ```
 
 or `No major has an allowed pnpm release.` With `--major` the first line is
-`nvm upgrade: no allowed pnpm release.`. For yarn 1 the lowest major also
-considers `@yarnpkg/cli-dist`, so the hint can point at `--major=4`.
+`nvm upgrade: no allowed pnpm release.` and the block names
+`(the newest release)`. A node release refused only for its bundled npm has
+the bullet `- the npm it bundles is not allowed by policy`. For yarn the
+lowest major considers both packages, so from yarn 1 the hint can point at
+`--major=4`, and from yarn 4 at `--major=1`.
 
 The files are written first, then the changes are printed, in node, npm,
 yarn, pnpm order; a tool already on its target is reported as up to date:
@@ -539,7 +557,9 @@ texts are computed first, `package.json` is written first, and gets its
 original text back when the `.nvmrc` write fails.
 
 After writing, `install` runs as `nvm install` with no argument would: it
-reads the rewritten `.nvmrc` and installs node and the pins. If that fails,
+reads the rewritten `.nvmrc` and installs node and the pins. A `.nvmrc`
+without a node line (as `nvm init --pnpm` writes) has only its pins
+installed. If that fails,
 by its status or by an error such as a policy that cannot be checked, the
 change lines and the error are printed, followed by:
 
@@ -550,9 +570,10 @@ nvm upgrade: /p/.nvmrc is updated, but the install failed; run nvm install to fi
 and the command exits with the install's status or the error's code.
 
 Exit codes: 1 for a file that cannot be read or written; 3 for no `.nvmrc`,
-a node alias line, or an invalid pin line; 6 for a usage error; 7 when no
-allowed release exists in the major; 9 when the index, the registry or the
-policy cannot be read; the install's status when the install fails.
+one that pins nothing, a node alias line, or an invalid pin line; 6 for a
+usage error; 7 when no allowed release exists in the major; 9 when the
+index, the registry or the policy cannot be read; the install's status when
+the install fails.
 
 ## Commands
 
