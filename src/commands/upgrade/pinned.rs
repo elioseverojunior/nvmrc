@@ -55,7 +55,8 @@ pub struct Project {
 /// Reads the nearest `.nvmrc` from the working directory.
 ///
 /// # Errors
-/// [`Stop`] when there is none, it cannot be read or a pin line is invalid.
+/// [`Stop`] when there is none, it cannot be read, a pin line is invalid
+/// or it pins nothing.
 pub fn read_project(context: &Context<'_>, transcript: &mut Transcript) -> Result<Project, Stop> {
     let found = context
         .working_directory()
@@ -71,12 +72,26 @@ pub fn read_project(context: &Context<'_>, transcript: &mut Transcript) -> Resul
         .iter()
         .map(|(tool, version)| Pinned::exact(tool, version));
     let pinned = node.into_iter().chain(others).collect();
-    Ok(Project {
+    let project = Project {
         nvmrc,
         text,
         pinned,
         alias,
-    })
+    };
+    refuse_empty(project, transcript)
+}
+
+/// Refuses a `.nvmrc` with neither a node line nor a pin: it has nothing
+/// to upgrade.
+fn refuse_empty(project: Project, transcript: &mut Transcript) -> Result<Project, Stop> {
+    if !project.pinned.is_empty() || project.alias.is_some() {
+        return Ok(project);
+    }
+    let message = format!(
+        "nvm upgrade: {} pins nothing; use nvm init to add a tool.",
+        project.nvmrc.display()
+    );
+    Err(Stop::refuse(transcript, message, FILE_PROBLEM))
 }
 
 /// The bare node line as a pin, or as an alias when it is not a version;

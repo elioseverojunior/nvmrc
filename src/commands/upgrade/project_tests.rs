@@ -254,3 +254,16 @@ fn an_alias_node_line_is_refused_when_node_is_selected() {
         assert_eq!(file(&fs, "/p/.nvmrc").as_deref(), Some(nvmrc));
     }
 }
+
+#[test]
+fn an_nvmrc_that_pins_nothing_is_refused_before_any_request() {
+    let (fs, env) = project(&[("/p/.nvmrc", "# nothing yet\n\n")], "");
+    let http = served();
+    let (output, _) = upgrade_in(&fs, &env, &http, &[]);
+    assert_eq!(output.status.code(), 3);
+    assert_eq!(
+        output.stderr,
+        "nvm upgrade: /p/.nvmrc pins nothing; use nvm init to add a tool."
+    );
+    assert!(http.requests().is_empty(), "{:?}", http.requests());
+}
