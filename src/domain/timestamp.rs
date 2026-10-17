@@ -15,6 +15,32 @@ pub fn compact_utc(unix_seconds: i64) -> String {
     )
 }
 
+/// Days since 1970-01-01 of a `YYYY-MM-DD` date; `None` for text that is not
+/// a real calendar date.
+#[must_use]
+pub fn days_from_iso_date(text: &str) -> Option<i64> {
+    let mut parts = text.split('-');
+    let year: i64 = parts.next()?.parse().ok()?;
+    let month: i64 = parts.next()?.parse().ok()?;
+    let day: i64 = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    let days = days_from_civil(year, month, day);
+    (civil_from_days(days) == (year, month, day)).then_some(days)
+}
+
+/// Howard Hinnant's `days_from_civil`, the inverse of [`civil_from_days`].
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let shifted_year = year - i64::from(month <= 2);
+    let era = shifted_year.div_euclid(400);
+    let year_of_era = shifted_year.rem_euclid(400);
+    let month_from_march = if month > 2 { month - 3 } else { month + 9 };
+    let day_of_year = (153 * month_from_march + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
+}
+
 /// The proleptic Gregorian date `days` after 1970-01-01, by Howard
 /// Hinnant's `civil_from_days` (eras of 400 years starting on March 1st).
 fn civil_from_days(days: i64) -> (i64, i64, i64) {
@@ -38,6 +64,14 @@ fn civil_from_days(days: i64) -> (i64, i64, i64) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn iso_dates_round_trip_through_days() {
+        assert_eq!(days_from_iso_date("1970-01-01"), Some(0));
+        assert_eq!(days_from_iso_date("2024-02-29"), Some(19_782));
+        assert_eq!(days_from_iso_date("2024-02-30"), None);
+        assert_eq!(days_from_iso_date("-"), None);
+    }
 
     #[test]
     fn formats_seconds_as_a_compact_utc_timestamp() {

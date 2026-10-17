@@ -1,9 +1,10 @@
 //! The release index of a mirror, `<mirror>/index.tab`: a tab-separated table
 //! with a header line, newest release first. Column 1 is the version, column
-//! 10 the LTS codename (`-` when there is none).
+//! 2 the release date, column 10 the LTS codename (`-` when there is none).
 
 use std::collections::HashSet;
 
+use crate::domain::timestamp::days_from_iso_date;
 use crate::domain::version::{Flavor, Version};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11,6 +12,8 @@ pub struct Release {
     pub version: Version,
     /// The LTS codename as the index spells it (`Iron`).
     pub lts: Option<String>,
+    /// Days since 1970-01-01 of the release date (column 2), when it is one.
+    pub published_day: Option<i64>,
 }
 
 /// The releases of `index_tab`, in file order. The header, blank lines and
@@ -38,6 +41,7 @@ fn parse_row(line: &str, flavor: Flavor) -> Option<Release> {
     Some(Release {
         version: text.parse().ok()?,
         lts,
+        published_day: columns.get(1).and_then(|date| days_from_iso_date(date)),
     })
 }
 
@@ -76,6 +80,16 @@ pub fn lts_aliases(releases: &[Release]) -> Vec<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::fixtures::index_text_dated;
+
+    #[test]
+    fn the_release_date_is_read_from_column_two() {
+        let text = index_text_dated(&[("v22.11.0", "2024-10-29", "Jod")]);
+        assert_eq!(
+            parse_index(&text, Flavor::Node)[0].published_day,
+            days_from_iso_date("2024-10-29")
+        );
+    }
 
     fn row(version: &str, lts: &str) -> String {
         format!("{version}\t2023-01-01\tlinux-x64\t10.0.0\t11.0.0\t1.0.0\t1.3\t3.0\t100\t{lts}\t-")

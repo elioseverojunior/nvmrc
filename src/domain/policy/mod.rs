@@ -3,6 +3,7 @@
 pub mod document;
 pub mod rules;
 pub mod source;
+pub mod verdict;
 
 pub use document::{
     CveSettings, DocumentError, NodeRules, PackageRules, PolicyDocument, Severity, Tools,
@@ -10,8 +11,11 @@ pub use document::{
 };
 pub use rules::{NodeLayer, NodePolicy, merge};
 pub use source::{Source, Sourced};
+pub use verdict::{MissingReleaseInfo, ReleaseInfo, Violation};
 
 #[cfg(test)]
 mod document_tests;
 #[cfg(test)]
 mod rules_tests;
+#[cfg(test)]
+mod verdict_tests;
