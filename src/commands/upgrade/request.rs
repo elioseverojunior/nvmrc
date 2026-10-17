@@ -27,16 +27,18 @@ pub struct UpgradeRequest {
 ///
 /// # Errors
 /// [`CliError::InvalidOptions`] for a flag given twice, a `--major=` value
-/// that is not digits, an unknown argument, or `--major=<N>` without exactly
-/// one tool flag.
+/// that is not digits, an unknown argument, or `--major=<N>` with two or more
+/// tool flags. `--major=<N>` with none passes: whether the `.nvmrc` pins just
+/// one tool is for the caller to check.
 pub fn parse(args: &[String]) -> Result<UpgradeRequest, CliError> {
-    let mut chosen = [false; 4];
+    let mut chosen: Vec<Tool> = Vec::new();
     let mut major: Option<Major> = None;
     for arg in args {
         if let Some(tool) = tool_flag(arg) {
-            if std::mem::replace(&mut chosen[tool as usize], true) {
+            if chosen.contains(&tool) {
                 return Err(invalid(format!("--{} is given twice.", tool.name())));
             }
+            chosen.push(tool);
         } else if let Some(value) = major_flag(arg)? {
             if major.replace(value).is_some() {
                 return Err(invalid("--major is given twice.".to_owned()));
@@ -47,10 +49,10 @@ pub fn parse(args: &[String]) -> Result<UpgradeRequest, CliError> {
     }
     let tools: Vec<Tool> = Tool::ALL
         .into_iter()
-        .filter(|tool| chosen[*tool as usize])
+        .filter(|tool| chosen.contains(tool))
         .collect();
     let major = major.unwrap_or(Major::Same);
-    if matches!(major, Major::Exactly(_)) && tools.len() != 1 {
+    if matches!(major, Major::Exactly(_)) && tools.len() > 1 {
         return Err(invalid(
             "--major=<N> applies to one tool; name exactly one.".to_owned(),
         ));
@@ -152,7 +154,12 @@ mod tests {
     fn major_n_with_two_tools_is_a_usage_error() {
         let expected = "nvm upgrade: --major=<N> applies to one tool; name exactly one.";
         assert_eq!(message(&["--node", "--npm", "--major=2"]), expected);
-        assert_eq!(message(&["--major=2"]), expected);
+    }
+
+    #[test]
+    fn major_n_without_a_tool_flag_is_left_to_the_nvmrc_check() {
+        let request = run(&["--major=2"]).unwrap();
+        assert_eq!((request.tools, request.major), (vec![], Major::Exactly(2)));
     }
 
     #[test]
