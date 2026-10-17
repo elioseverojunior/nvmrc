@@ -622,13 +622,14 @@ set -Eeuo pipefail
 
 [ "${usage_verbose:-false}" = "true" ] && set -x
 
-target="${usage_target:?}"
+channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)"
+# Without --target, build for this machine, as the pinned toolchain sees it.
+target="${usage_target:-$(rustup run "$channel" rustc -vV | sed -n 's/^host: //p')}"
 version="$(mise run -q release:check)"
 if [ "${usage_container:-false}" = "true" ]; then
   mise run release:build:container --target "$target"
   out="target/container/$target/release"
 else
-  channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)"
   rustup run "$channel" cargo build --release --locked --bins --target "$target"
   out="target/$target/release"
 fi
@@ -642,7 +643,7 @@ rm -rf "dist/${name:?}"
 shell = "bash -c"
 usage = '''
 flag "-v --verbose" help="Enable verbose (debug) output"
-flag "--target <triple>" help="The Rust target triple to build" required=#true
+flag "--target <triple>" help="The Rust target triple to build (default: this machine's)"
 flag "--container" help="Build inside the rust image (a Linux target from macOS)"
 '''
 
@@ -1109,10 +1110,8 @@ set -Eeuo pipefail
 
 [ "${usage_verbose:-false}" = "true" ] && set -x
 
-channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)"
-host="$(rustup run "$channel" rustc -vV | sed -n 's/^host: //p')"
 rm -rf dist target/image
-mise run release:build --target "$host"
+mise run release:build
 for machine in x86_64 aarch64; do
   mise run release:build --target "$machine-unknown-linux-musl" --container
 done
