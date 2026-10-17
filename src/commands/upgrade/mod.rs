@@ -26,7 +26,7 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
     let request = parse(args)?;
     let mut transcript = Transcript::default();
     let status = match upgrade(context, &request, &mut transcript) {
-        Ok(Upgraded::Written { nvmrc }) => install(context, &nvmrc, &mut transcript)?,
+        Ok(Upgraded::Written { nvmrc }) => install_written(context, &nvmrc, &mut transcript),
         Ok(Upgraded::Nothing) => NvmExitCode::Success,
         Err(stop) => stop.printed(&mut transcript),
     };
@@ -34,22 +34,32 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
 }
 
 /// Installs what the rewritten `.nvmrc` asks for, as `nvm install` would;
-/// its output follows the upgrade's and its status is the command's.
-fn install(
+/// its output follows the upgrade's and its status is the command's. An
+/// error of the install is printed like its output; the files are written
+/// either way, and the report says so.
+fn install_written(
     context: &Context<'_>,
     nvmrc: &Path,
     transcript: &mut Transcript,
-) -> Result<NvmExitCode, CliError> {
-    let output = install::run(context, &[])?;
-    let status = output.status;
-    transcript.absorb(output);
+) -> NvmExitCode {
+    let status = match install::run(context, &[]) {
+        Ok(output) => {
+            let status = output.status;
+            transcript.absorb(output);
+            status
+        }
+        Err(error) => {
+            transcript.err(error.to_string());
+            error.exit_code()
+        }
+    };
     if status != NvmExitCode::Success {
         transcript.err(format!(
             "nvm upgrade: {} is updated, but the install failed; run nvm install to finish.",
             nvmrc.display()
         ));
     }
-    Ok(status)
+    status
 }
 
 #[cfg(test)]

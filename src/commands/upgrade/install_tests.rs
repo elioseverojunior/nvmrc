@@ -103,6 +103,31 @@ fn a_failed_install_keeps_the_files_and_says_so() {
 }
 
 #[test]
+fn an_install_that_errors_keeps_the_upgrade_report() {
+    // Upgrading pnpm alone never needs $NVM_DIR; the install after it does.
+    let (fs, _) = project(&[("/p/.nvmrc", "v20.18.0\npnpm=9.1.0\n")], "");
+    let env = FakeEnv::default()
+        .with_var("PWD", "/p")
+        .with_current_dir("/p");
+    let http = mirror(true);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
+    let output = run(&context, &["--pnpm".to_owned()]).unwrap();
+    assert_eq!(output.status, NvmExitCode::Failure, "{output:?}");
+    assert_eq!(output.stdout, "pnpm 9.1.0 -> 9.12.0");
+    let notice =
+        "nvm upgrade: /p/.nvmrc is updated, but the install failed; run nvm install to finish.";
+    assert!(output.stderr.ends_with(notice), "{}", output.stderr);
+    let error = "Neither NVM_DIR nor HOME is set; cannot locate the nvm directory.";
+    assert!(output.stderr.starts_with(error), "{}", output.stderr);
+    assert_eq!(
+        file(&fs, "/p/.nvmrc").as_deref(),
+        Some("v20.18.0\npnpm=9.12.0\n")
+    );
+}
+
+#[test]
 fn nothing_to_upgrade_installs_nothing() {
     let (fs, env) = project(&[("/p/.nvmrc", "v20.18.0\npnpm=9.12.0\n")], "");
     let http = mirror(true);
