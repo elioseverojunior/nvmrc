@@ -24,14 +24,15 @@ use crate::adapters::std_prompt::StdPrompt;
 use crate::adapters::std_sleeper::StdSleeper;
 use crate::adapters::std_terminal::StdTerminal;
 use crate::adapters::tar_archive::TarArchive;
-use crate::adapters::ureq_http::UreqHttp;
+use crate::adapters::ureq_http::{AuthHeader, UreqHttp, url_host};
 use crate::commands::Output;
+use crate::commands::package_managers::registry::registry_base;
 use crate::context::Context;
-use crate::domain::http_header::sanitize_auth_header;
+use crate::domain::http_header::auth_header_from;
 use crate::domain::platform::Platform;
 use crate::domain::policy::extract;
 use crate::error::{CliError, NvmExitCode};
-use crate::ports::{Env, FileSystem};
+use crate::ports::FileSystem;
 
 #[derive(Parser)]
 #[command(name = "nvm", version, about = "Node Version Manager, in Rust")]
@@ -165,19 +166,15 @@ fn with_real_context<R>(body: impl FnOnce(&Context<'_>) -> R) -> R {
     // First: the descriptor must be taken over before anything else opens one.
     let channel = FdChannel::from_env(&StdEnv);
     let process = StdProcess::default();
-    let auth_header = StdEnv
-        .var("NVM_AUTH_HEADER")
-        .filter(|value| !value.is_empty())
-        .map(|value| sanitize_auth_header(&value));
-    let network = UreqHttp::new(auth_header.clone());
+    let (network, quick_http) = clients_with(node_auth_header());
     let http = RetryingHttp::new(&network, &StdSleeper);
-    let quick_http = UreqHttp::quick(auth_header);
-    let musl = StdFileSystem.is_file(Path::new("/etc/alpine-release"));
-    let platform = Platform::from_host(std::env::consts::OS, std::env::consts::ARCH, musl);
+    let (registry_network, quick_third_party_http) = clients_with(registry_auth_header());
+    let third_party_http = RetryingHttp::new(&registry_network, &StdSleeper);
     let context = Context::new(&StdFileSystem, &StdEnv)
         .with_process(&process)
         .with_http(&http)
         .with_quick_http(&quick_http)
+        .with_third_party_http(&third_party_http, &quick_third_party_http)
         .with_digest(&Sha256Digest)
         .with_archive(&TarArchive)
         .with_sleeper(&StdSleeper)
@@ -185,11 +182,41 @@ fn with_real_context<R>(body: impl FnOnce(&Context<'_>) -> R) -> R {
         .with_terminal(&StdTerminal)
         .with_clock(&StdClock)
         .with_prompt(&StdPrompt)
-        .with_platform(platform);
+        .with_platform(host_platform());
     match &channel {
         Some(channel) => body(&context.with_script_channel(channel)),
         None => body(&context),
     }
+}
+
+fn host_platform() -> Option<Platform> {
+    let musl = StdFileSystem.is_file(Path::new("/etc/alpine-release"));
+    Platform::from_host(std::env::consts::OS, std::env::consts::ARCH, musl)
+}
+
+/// A regular and a quick client, both sending `auth`.
+fn clients_with(auth: Option<AuthHeader>) -> (UreqHttp, UreqHttp) {
+    (UreqHttp::new(auth.clone()), UreqHttp::quick(auth))
+}
+
+/// `NVM_AUTH_HEADER`, sent to every host the regular clients reach: the node
+/// mirrors, a central policy and a configured vulnerability index.
+fn node_auth_header() -> Option<AuthHeader> {
+    let value = auth_header_from(&StdEnv, "NVM_AUTH_HEADER")?;
+    Some(AuthHeader { value, host: None })
+}
+
+/// `NVMRC_NPM_AUTH_HEADER`, sent only to the host of the npm registry; when
+/// the registry is not a usable URL it goes nowhere (using the registry then
+/// reports the bad value).
+fn registry_auth_header() -> Option<AuthHeader> {
+    let value = auth_header_from(&StdEnv, "NVMRC_NPM_AUTH_HEADER")?;
+    let registry = registry_base(&Context::new(&StdFileSystem, &StdEnv)).ok()?;
+    let host = url_host(&registry)?;
+    Some(AuthHeader {
+        value,
+        host: Some(host),
+    })
 }
 
 /// Entry point shared by the `nvmrc` and `nvm` binaries.

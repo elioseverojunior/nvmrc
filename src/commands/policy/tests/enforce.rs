@@ -76,6 +76,7 @@ fn a_violation_stops_with_7_and_names_everything() {
     let (env, fs, http) = (env(), FakeFileSystem::default(), served());
     let context = Context::new(&fs, &env)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(min_flags());
     let origin = Origin::Nvmrc("/w/app/.nvmrc".into());
     let (gate, stderr) = run(&context, &requested("v18.19.0", origin, false));
@@ -99,6 +100,7 @@ fn an_advisory_context_warns_and_passes() {
     let (env, fs, http) = (env(), FakeFileSystem::default(), served());
     let context = Context::new(&fs, &env)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(min_flags())
         .advisory();
     let (gate, stderr) = run(&context, &argument("v18.19.0"));
@@ -119,7 +121,10 @@ fn rules_needing_release_info_fetch_the_index_once() {
     let (env, fs) = lts_world();
     let http = served();
     let clock = FakeClock::at(1_791_110_040);
-    let context = Context::new(&fs, &env).with_http(&http).with_clock(&clock);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http)
+        .with_clock(&clock);
     let (gate, stderr) = run(&context, &argument("v23.1.0"));
     assert!(matches!(gate, Ok(Gate::Stop(_))));
     assert!(stderr.contains("  - not an LTS release (from policy /p.json)"));
@@ -130,7 +135,9 @@ fn rules_needing_release_info_fetch_the_index_once() {
 fn an_lts_release_passes_the_lts_rule() {
     let (env, fs) = lts_world();
     let http = served();
-    let context = Context::new(&fs, &env).with_http(&http);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
     assert!(matches!(
         run(&context, &argument("v20.15.1")).0,
         Ok(Gate::Pass)
@@ -141,7 +148,9 @@ fn an_lts_release_passes_the_lts_rule() {
 fn an_unreachable_index_is_a_failure_to_know() {
     let (env, fs) = lts_world();
     let http = FakeHttp::default();
-    let context = Context::new(&fs, &env).with_http(&http);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
     let error = run(&context, &argument("v20.15.1")).0.unwrap_err();
     assert_eq!(error.exit_code().code(), 9);
 }
@@ -150,7 +159,9 @@ fn an_unreachable_index_is_a_failure_to_know() {
 fn a_version_missing_from_the_index_is_a_failure_to_know() {
     let (env, fs) = lts_world();
     let http = FakeHttp::default().with_body(INDEX_URL, &index());
-    let context = Context::new(&fs, &env).with_http(&http);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
     let error = run(&context, &argument("v21.0.0")).0.unwrap_err();
     assert_eq!(error.exit_code().code(), 9);
 }
@@ -159,7 +170,9 @@ fn a_version_missing_from_the_index_is_a_failure_to_know() {
 fn offline_with_a_release_rule_is_a_failure_to_know() {
     let (env, fs) = lts_world();
     let http = FakeHttp::default().with_body(INDEX_URL, &index());
-    let context = Context::new(&fs, &env).with_http(&http);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
     let request = requested("v20.15.1", Origin::Argument, true);
     assert_eq!(run(&context, &request).0.unwrap_err().exit_code().code(), 9);
     assert!(http.requests().is_empty());
@@ -169,7 +182,10 @@ fn offline_with_a_release_rule_is_a_failure_to_know() {
 fn an_advisory_failure_to_know_warns_and_passes() {
     let (env, fs) = lts_world();
     let http = FakeHttp::default();
-    let context = Context::new(&fs, &env).with_http(&http).advisory();
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http)
+        .advisory();
     let (gate, stderr) = run(&context, &argument("v20.15.1"));
     assert!(matches!(gate, Ok(Gate::Pass)));
     assert!(stderr.starts_with("nvm: warning: cannot check the policy:"));
@@ -184,6 +200,7 @@ fn an_advisory_index_fetch_goes_through_the_quick_client() {
     let context = Context::new(&fs, &env)
         .with_http(&regular)
         .with_quick_http(&quick)
+        .with_third_party_http(&regular, &quick)
         .advisory();
     let (gate, stderr) = run(&context, &argument("v23.1.0"));
     assert!(matches!(gate, Ok(Gate::Pass)));

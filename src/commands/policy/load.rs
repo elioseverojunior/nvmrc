@@ -6,6 +6,7 @@ use crate::context::Context;
 use crate::domain::nvmrc::find_up;
 use crate::domain::policy::POLICY_FLAGS;
 use crate::error::PolicyError;
+use crate::ports::Http;
 
 pub const REPOSITORY_POLICY_FILE: &str = ".nvmrc-policy.json";
 
@@ -20,10 +21,22 @@ const CENTRAL_VARIABLE: &str = "NVMRC_POLICY";
 /// [`PolicyError::InsecureUrl`] for a URL that is not https;
 /// [`PolicyError::Unreadable`] when the text cannot be fetched or read.
 pub fn read_location(context: &Context<'_>, location: &str) -> Result<String, PolicyError> {
+    read_location_with(context, context.policy_http(), location)
+}
+
+/// Like [`read_location`], fetching an https URL with `http` instead of the
+/// policy client.
+///
+/// # Errors
+/// As [`read_location`].
+pub fn read_location_with(
+    context: &Context<'_>,
+    http: &dyn Http,
+    location: &str,
+) -> Result<String, PolicyError> {
     if is_https(location) {
         // Never follows a redirect away from https.
-        return context
-            .policy_http()
+        return http
             .get_secure_text(location)
             .map_err(|error| unreadable(location, error));
     }

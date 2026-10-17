@@ -41,6 +41,7 @@ fn run(advisory: bool, offline: bool) -> (Result<Gate, CliError>, String, Vec<St
     );
     let context = Context::new(&fs, &env)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(min_flags());
     let context = if advisory {
         context.advisory()

@@ -271,6 +271,7 @@ fn run_goes_through_the_same_policy_gate() {
     let context = Context::new(&fs, &env)
         .with_process(&process)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(policy_flags(&["--min-node", "22"]));
     let output = run(&context, &strings(&["18", "app.js"])).expect("nvm run runs");
     assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
@@ -288,6 +289,7 @@ fn run_from_an_nvmrc_names_the_file_in_the_policy_message() {
     let context = Context::new(&fs, &env)
         .with_process(&process)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(policy_flags(&["--min-node", "22"]));
     let output = run(&context, &strings(&["app.js"])).expect("nvm run runs");
     assert_eq!(output.status, NvmExitCode::BelowVersionFloor);

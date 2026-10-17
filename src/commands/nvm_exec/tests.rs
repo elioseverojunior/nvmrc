@@ -21,7 +21,8 @@ fn nvm_exec_in(fs: &FakeFileSystem, env: &FakeEnv, command: &[&str]) -> Output {
     let (process, http) = (npm_versions(), FakeHttp::default().with_empty_advisories());
     let context = Context::new(fs, env)
         .with_process(&process)
-        .with_http(&http);
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
     run(&context, &strings(command))
 }
 

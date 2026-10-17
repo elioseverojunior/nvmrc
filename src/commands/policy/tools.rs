@@ -94,7 +94,7 @@ fn release_info(
     if offline {
         return Err(PolicyError::ReleaseInfoUnavailable("offline".to_owned()));
     }
-    let day = fetch_release_day(context, context.policy_http(), rules.tool, version)
+    let day = fetch_release_day(context, context.third_party_http(), rules.tool, version)
         .map_err(|error| PolicyError::ReleaseInfoUnavailable(error.location))?
         .ok_or_else(|| unavailable(context, rules.tool, version))?;
     Ok(Some(ReleaseInfo {

@@ -43,6 +43,7 @@ fn switch_under(flags: &[&str], path: &str, process: &FakeProcess, args: &[&str]
     let context = Context::new(&fs, &env)
         .with_process(process)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(policy_flags(flags));
     run_and_target(&context, &strings(args)).unwrap().0
 }
@@ -68,6 +69,7 @@ fn use_of_a_vulnerable_installed_version_stops_without_switching() {
     let context = Context::new(&fs, &env)
         .with_process(&process)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(policy_flags(&["--fail-on-severity", "high"]));
     let output = run_and_target(&context, &strings(&["18"])).unwrap().0;
     assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
@@ -135,6 +137,7 @@ fn use_from_an_nvmrc_names_the_file_in_the_message() {
     let context = Context::new(&fs, &env)
         .with_process(&process)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(policy_flags(&["--min-node", "22"]));
     let output = run_and_target(&context, &[]).unwrap().0;
     assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
@@ -176,6 +179,7 @@ fn save_under(flags: &[&str], args: &[&str]) -> (Output, Option<String>) {
     let context = Context::new(&fs, &env)
         .with_process(&process)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(policy_flags(flags));
     let output = run_and_target(&context, &strings(args)).unwrap().0;
     (output, fs.read_to_string(Path::new("/w/.nvmrc")).ok())
@@ -228,6 +232,7 @@ fn use_checks_the_tools_pinned_in_the_nvmrc() {
     let context = Context::new(&fs, &env)
         .with_process(&process)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(policy_flags(&["--min-pnpm", "9.12.0"]));
     let output = run_and_target(&context, &[]).unwrap().0;
     assert_eq!(output.status, NvmExitCode::BelowVersionFloor);

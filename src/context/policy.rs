@@ -1,5 +1,5 @@
 //! The policy settings a command carries: the flags, the advisory mode and
-//! the client the policy fetches with.
+//! the clients the policy and the third-party fetches go through.
 
 use super::Context;
 use crate::domain::policy::PolicyFlags;
@@ -22,6 +22,28 @@ impl<'a> Context<'a> {
         match self.quick_http {
             Some(quick) if self.advisory => quick,
             _ => self.http,
+        }
+    }
+
+    /// The clients of the hosts `NVM_AUTH_HEADER` is not meant for (the npm
+    /// registry, its tarballs, the built-in vulnerability index): `regular`
+    /// retries, `quick` is the one of the automatic paths. A context starts
+    /// out without either.
+    #[must_use]
+    pub fn with_third_party_http(mut self, regular: &'a dyn Http, quick: &'a dyn Http) -> Self {
+        self.third_party_http = regular;
+        self.quick_third_party_http = quick;
+        self
+    }
+
+    /// The client of a third-party fetch: the quick one when advising, the
+    /// regular one when enforcing, as [`Self::policy_http`].
+    #[must_use]
+    pub fn third_party_http(&self) -> &'a dyn Http {
+        if self.advisory {
+            self.quick_third_party_http
+        } else {
+            self.third_party_http
         }
     }
 }

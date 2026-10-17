@@ -2,13 +2,15 @@
 //! version split by the severity limit.
 
 use super::enforce::Requested;
-use super::load::{is_https, read_location};
+use super::load::{is_https, read_location_with};
 use crate::context::Context;
 use crate::domain::policy::{
-    CvePolicy, Finding, Severity, Violation, finding_list, findings, parse_advisories,
+    CvePolicy, DEFAULT_INDEX, Finding, Severity, Violation, finding_list, findings,
+    parse_advisories,
 };
 use crate::domain::version::Flavor;
 use crate::error::PolicyError;
+use crate::ports::Http;
 
 /// What the index says about a version, split by the limit.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -56,7 +58,7 @@ pub(super) fn cve_violation(
 ///
 /// # Errors
 /// [`PolicyError::ReleaseInfoUnavailable`] for a remote index while offline,
-/// before any request; the errors of [`read_location`]; and
+/// before any request; the errors of [`read_location_with`]; and
 /// [`PolicyError::IndexInvalid`] for an index that cannot be understood.
 pub(super) fn judge(
     context: &Context<'_>,
@@ -67,7 +69,7 @@ pub(super) fn judge(
     if requested.offline && is_https(location) {
         return Err(PolicyError::ReleaseInfoUnavailable("offline".to_owned()));
     }
-    let text = read_location(context, location)?;
+    let text = read_location_with(context, index_client(context, location), location)?;
     let advisories = parse_advisories(&text).map_err(|error| PolicyError::IndexInvalid {
         location: location.clone(),
         reason: error.to_string(),
@@ -75,6 +77,16 @@ pub(super) fn judge(
     let os = context.platform().map(|platform| platform.os.slug());
     let found = findings(&advisories, &requested.version, os);
     Ok(split(found, cve.limit.value))
+}
+
+/// The built-in index is a third party's, so it is read without
+/// `NVM_AUTH_HEADER`; an index a policy names is read like the policy.
+fn index_client<'a>(context: &Context<'a>, location: &str) -> &'a dyn Http {
+    if location == DEFAULT_INDEX {
+        context.third_party_http()
+    } else {
+        context.policy_http()
+    }
 }
 
 /// A finding fails when its severity reaches the limit; `none` fails nothing.

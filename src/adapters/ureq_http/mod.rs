@@ -33,37 +33,62 @@ const MAX_BODY_BYTES: u64 = 16 * 1024 * 1024;
 /// An archive is far bigger than an index, but never this big.
 const MAX_DOWNLOAD_BYTES: u64 = 1024 * 1024 * 1024;
 
+/// The `Authorization` value and the host it belongs to: with a `host`, it is
+/// sent only to that host (compared ASCII case-insensitively); without one,
+/// on every request.
+#[derive(Clone)]
+pub struct AuthHeader {
+    pub value: String,
+    pub host: Option<String>,
+}
+
+impl AuthHeader {
+    fn applies_to(&self, url: &str) -> bool {
+        match &self.host {
+            None => true,
+            Some(host) => url_host(url).is_some_and(|target| target.eq_ignore_ascii_case(host)),
+        }
+    }
+}
+
+/// The host of `url`; `None` when it cannot be parsed or names none.
+#[must_use]
+pub fn url_host(url: &str) -> Option<String> {
+    let uri: ureq::http::Uri = url.parse().ok()?;
+    uri.host().map(str::to_owned)
+}
+
 pub struct UreqHttp {
     agent: ureq::Agent,
-    auth_header: Option<String>,
+    auth_header: Option<AuthHeader>,
     text_call: Duration,
 }
 
 impl UreqHttp {
-    /// `auth_header` is sent as `Authorization` when given; sanitize it first
-    /// (see `domain::http_header`).
+    /// `auth_header` is sent as `Authorization` when given, to the hosts it
+    /// allows; sanitize it first (see `domain::http_header`).
     #[must_use]
-    pub fn new(auth_header: Option<String>) -> Self {
+    pub fn new(auth_header: Option<AuthHeader>) -> Self {
         Self::from_builder(ureq::Agent::config_builder(), TIMEOUTS, auth_header)
     }
 
     /// Like [`Self::new`], but bounded at a few seconds; meant to be used
     /// without retries, on the automatic paths.
     #[must_use]
-    pub fn quick(auth_header: Option<String>) -> Self {
+    pub fn quick(auth_header: Option<AuthHeader>) -> Self {
         Self::from_builder(ureq::Agent::config_builder(), QUICK_TIMEOUTS, auth_header)
     }
 
     /// Like [`Self::new`], but ignoring `HTTP_PROXY` and friends, so a test
     /// reaches its local server whatever the environment says.
     #[cfg(test)]
-    fn unproxied(auth_header: Option<String>) -> Self {
+    fn unproxied(auth_header: Option<AuthHeader>) -> Self {
         Self::unproxied_within(TIMEOUTS, auth_header)
     }
 
     /// Like [`Self::unproxied`], with `timeouts` instead of the real ones.
     #[cfg(test)]
-    fn unproxied_within(timeouts: Timeouts, auth_header: Option<String>) -> Self {
+    fn unproxied_within(timeouts: Timeouts, auth_header: Option<AuthHeader>) -> Self {
         let builder = ureq::Agent::config_builder().proxy(None);
         Self::from_builder(builder, timeouts, auth_header)
     }
@@ -71,7 +96,7 @@ impl UreqHttp {
     fn from_builder(
         builder: ureq::config::ConfigBuilder<ureq::typestate::AgentScope>,
         timeouts: Timeouts,
-        auth_header: Option<String>,
+        auth_header: Option<AuthHeader>,
     ) -> Self {
         // Like curl: the credentials follow a redirect to the same host only.
         // Like curl: trust the system certificate store, so a corporate CA
@@ -135,8 +160,12 @@ impl UreqHttp {
             .timeout_global(limits.whole_call)
             .https_only(limits.https_only)
             .build();
-        if let Some(value) = &self.auth_header {
-            request = request.header("Authorization", value);
+        if let Some(auth) = self
+            .auth_header
+            .as_ref()
+            .filter(|auth| auth.applies_to(url))
+        {
+            request = request.header("Authorization", &auth.value);
         }
         match request.call() {
             Ok(mut response) => read(response.body_mut().with_config().limit(limits.bytes))

@@ -105,6 +105,7 @@ impl Lab {
         let context = Context::new(&self.fs, &self.env)
             .with_process(&process)
             .with_http(&http)
+            .with_third_party_http(&http, &http)
             .with_policy_flags(self.policy_flags.clone());
         let channel = FakeScriptChannel::default();
         if self.in_function {

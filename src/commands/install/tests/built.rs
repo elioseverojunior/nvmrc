@@ -74,6 +74,7 @@ impl Built {
         );
         let context = Context::new(self.fs.as_ref(), &self.env)
             .with_http(&self.http)
+            .with_third_party_http(&self.http, &self.http)
             .with_digest(&self.digest)
             .with_archive(&archive)
             .with_process(&process)

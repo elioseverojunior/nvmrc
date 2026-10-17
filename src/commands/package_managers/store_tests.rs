@@ -50,7 +50,7 @@ fn installs_pnpm_with_its_commands_linked() {
     let env = FakeEnv::default().with_var("NVM_DIR", "/nvm");
     let (http, archive) = (pnpm_http(), pnpm_archive(&fs));
     let context = Context::new(&fs, &env)
-        .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_archive(&archive);
     let pinned = version("v9.12.0");
     assert!(!is_installed(&context, Tool::Pnpm, &pinned));
@@ -73,6 +73,22 @@ fn installs_pnpm_with_its_commands_linked() {
 }
 
 #[test]
+fn the_tarball_is_downloaded_with_the_third_party_client() {
+    let fs = FakeFileSystem::default();
+    let env = FakeEnv::default().with_var("NVM_DIR", "/nvm");
+    let (regular, third_party) = (FakeHttp::default(), pnpm_http());
+    let archive = pnpm_archive(&fs);
+    let context = Context::new(&fs, &env)
+        .with_http(&regular)
+        .with_third_party_http(&third_party, &third_party)
+        .with_archive(&archive);
+    install_tool(&context, Tool::Pnpm, &version("v9.12.0")).unwrap();
+    let tarball = "https://t.test/pnpm.tgz".to_owned();
+    assert_eq!(third_party.requests().last(), Some(&tarball));
+    assert!(regular.requests().is_empty());
+}
+
+#[test]
 fn yarn_berry_comes_from_cli_dist() {
     let fs = FakeFileSystem::default();
     let env = FakeEnv::default().with_var("NVM_DIR", "/nvm");
@@ -88,7 +104,7 @@ fn yarn_berry_comes_from_cli_dist() {
     ];
     let archive = FakeArchive::new(&fs).with_archive(partial, &files);
     let context = Context::new(&fs, &env)
-        .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_archive(&archive);
     let pinned = version("v4.5.0");
     install_tool(&context, Tool::Yarn, &pinned).unwrap();
@@ -103,7 +119,7 @@ fn a_tarball_that_fails_integrity_leaves_nothing_in_the_store() {
     let http = pnpm_http().with_bytes("https://t.test/pnpm.tgz", b"tampered");
     let archive = pnpm_archive(&fs);
     let context = Context::new(&fs, &env)
-        .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_archive(&archive);
     let error = install_tool(&context, Tool::Pnpm, &version("v9.12.0")).unwrap_err();
     assert!(error.contains("sha512"), "{error}");
@@ -116,7 +132,7 @@ fn a_broken_install_is_replaced() {
     let env = FakeEnv::default().with_var("NVM_DIR", "/nvm");
     let (http, archive) = (pnpm_http(), pnpm_archive(&fs));
     let context = Context::new(&fs, &env)
-        .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_archive(&archive);
     let pinned = version("v9.12.0");
     assert!(!is_installed(&context, Tool::Pnpm, &pinned));
@@ -132,7 +148,7 @@ fn a_failed_install_keeps_the_existing_one() {
     let http = pnpm_http().with_bytes("https://t.test/pnpm.tgz", b"tampered");
     let archive = pnpm_archive(&fs);
     let context = Context::new(&fs, &env)
-        .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_archive(&archive);
     install_tool(&context, Tool::Pnpm, &version("v9.12.0")).unwrap_err();
     assert!(fs.is_file(&Path::new(PNPM_DIR).join("stale")));
@@ -150,7 +166,7 @@ fn the_registry_variable_is_used() {
         .with_bytes("https://t.test/pnpm.tgz", TARBALL_BYTES);
     let archive = pnpm_archive(&fs);
     let context = Context::new(&fs, &env)
-        .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_archive(&archive);
     install_tool(&context, Tool::Pnpm, &version("v9.12.0")).unwrap();
     assert_eq!(http.requests()[0], "https://mirror.test/npm/pnpm/9.12.0");
@@ -185,7 +201,7 @@ fn a_command_linked_outside_the_package_refuses_the_install() {
     let archive = LinkingArchive { fs: &fs, inner };
     let http = pnpm_http();
     let context = Context::new(&fs, &env)
-        .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_archive(&archive);
     let error = install_tool(&context, Tool::Pnpm, &version("v9.12.0")).unwrap_err();
     assert!(error.contains("outside"), "{error}");
@@ -208,7 +224,7 @@ fn a_package_without_the_tools_own_command_is_refused() {
         .with_bytes("https://t.test/pnpm.tgz", TARBALL_BYTES);
     let archive = pnpm_archive(&fs);
     let context = Context::new(&fs, &env)
-        .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_archive(&archive);
     let error = install_tool(&context, Tool::Pnpm, &version("v9.12.0")).unwrap_err();
     assert!(error.contains("pnpm"), "{error}");
@@ -224,7 +240,7 @@ fn stale_work_areas_are_cleared_and_the_old_copy_does_not_linger() {
     let env = FakeEnv::default().with_var("NVM_DIR", "/nvm");
     let (http, archive) = (pnpm_http(), pnpm_archive(&fs));
     let context = Context::new(&fs, &env)
-        .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_archive(&archive);
     install_tool(&context, Tool::Pnpm, &version("v9.12.0")).unwrap();
     assert!(fs.read_dir(Path::new(&format!("{PNPM_DIR}.old"))).is_err());

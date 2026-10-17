@@ -92,7 +92,7 @@ fn build(
 fn download(context: &Context<'_>, manifest: &Manifest, partial: &Path) -> Result<PathBuf, String> {
     let location = &manifest.tarball;
     let bytes = context
-        .http()
+        .third_party_http()
         .get_secure_bytes(location)
         .map_err(|error| format!("{location}: {error}"))?;
     verify(&manifest.integrity, &bytes).map_err(|error| format!("{location}: {error}"))?;

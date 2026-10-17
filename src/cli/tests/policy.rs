@@ -17,7 +17,9 @@ fn run_installed(args: &[&str]) -> (u8, String, String) {
 fn run_in(fs: &FakeFileSystem, env: &FakeEnv, args: &[&str]) -> (u8, String, String) {
     let http = FakeHttp::default().with_empty_advisories();
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    let context = Context::new(fs, env).with_http(&http);
+    let context = Context::new(fs, env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
     let code = run(args, &context, &mut out, &mut err);
     (
         code,

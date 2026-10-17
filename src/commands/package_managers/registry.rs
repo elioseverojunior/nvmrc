@@ -85,7 +85,7 @@ pub fn fetch_manifest(
     version: &Version,
 ) -> Result<Manifest, FetchError> {
     let url = manifest_url(&registry_base(context)?, tool, version);
-    let text = fetch_text(context.http(), &url)?;
+    let text = fetch_text(context.third_party_http(), &url)?;
     parse_manifest(&text).map_err(|error| invalid(&url, &error))
 }
 
@@ -110,6 +110,10 @@ pub fn fetch_release_day(
 mod tests {
     use super::*;
     use crate::fakes::{FakeEnv, FakeFileSystem, FakeHttp};
+
+    const NPM_URL: &str = "https://registry.npmjs.org/npm/10.9.0";
+    const NPM_MANIFEST: &str = r#"{"bin": {"npm": "bin/npm-cli.js"},
+        "dist": {"tarball": "https://t/npm.tgz", "integrity": "sha512-x"}}"#;
 
     fn base_with(registry: Option<&str>) -> Result<String, FetchError> {
         let fs = FakeFileSystem::default();
@@ -141,21 +145,33 @@ mod tests {
 
     #[test]
     fn a_manifest_is_fetched_from_the_registry_and_parsed() {
-        let body = r#"{"bin": {"npm": "bin/npm-cli.js"},
-            "dist": {"tarball": "https://t/npm.tgz", "integrity": "sha512-x"}}"#;
-        let http = FakeHttp::default().with_body("https://registry.npmjs.org/npm/10.9.0", body);
+        let http = FakeHttp::default().with_body(NPM_URL, NPM_MANIFEST);
         let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
-        let context = Context::new(&fs, &env).with_http(&http);
+        let context = Context::new(&fs, &env).with_third_party_http(&http, &http);
         let version: Version = "v10.9.0".parse().unwrap();
         let manifest = fetch_manifest(&context, Tool::Npm, &version).unwrap();
         assert_eq!(manifest.tarball, "https://t/npm.tgz");
     }
 
     #[test]
+    fn registry_requests_use_the_third_party_client() {
+        let regular = FakeHttp::default();
+        let third_party = FakeHttp::default().with_body(NPM_URL, NPM_MANIFEST);
+        let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
+        let context = Context::new(&fs, &env)
+            .with_http(&regular)
+            .with_third_party_http(&third_party, &third_party);
+        let version: Version = "v10.9.0".parse().unwrap();
+        assert!(fetch_manifest(&context, Tool::Npm, &version).is_ok());
+        assert_eq!(third_party.requests(), [NPM_URL]);
+        assert!(regular.requests().is_empty());
+    }
+
+    #[test]
     fn a_failed_request_names_the_url() {
         let http = FakeHttp::default().with_status("https://registry.npmjs.org/npm/1.0.0", 404);
         let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
-        let context = Context::new(&fs, &env).with_http(&http);
+        let context = Context::new(&fs, &env).with_third_party_http(&http, &http);
         let version: Version = "v1.0.0".parse().unwrap();
         let error = fetch_manifest(&context, Tool::Npm, &version).unwrap_err();
         assert_eq!(

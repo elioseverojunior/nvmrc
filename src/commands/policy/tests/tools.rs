@@ -78,6 +78,7 @@ fn a_pinned_pnpm_below_the_minimum_exits_7() {
     );
     let context = Context::new(&fs, &env)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(flags(&["--min-pnpm", "9.12.0"]));
     let (gate, stderr) = run(&context, &requested("v22.11.0", pnpm("9.1.0")));
     assert!(stopped(&gate), "{gate:?}");
@@ -93,6 +94,7 @@ fn a_tool_that_is_not_pinned_is_not_checked() {
     );
     let context = Context::new(&fs, &env)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(flags(&["--min-yarn", "4.0.0"]));
     let (gate, stderr) = run(&context, &requested("v22.11.0", pnpm("9.1.0")));
     assert!(matches!(gate, Ok(Gate::Pass)), "{gate:?}");
@@ -109,6 +111,7 @@ fn bundled_npm_of_an_installed_node_is_read_from_its_package_json() {
     let (env, http) = (env(), FakeHttp::default().with_empty_advisories());
     let context = Context::new(&fs, &env)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(flags(&["--min-npm", "10.5.0"]));
     let (gate, stderr) = run(&context, &requested("v20.10.0", ProjectPins::default()));
     assert!(stopped(&gate), "{gate:?}");
@@ -125,7 +128,9 @@ fn bundled_npm_of_an_installed_node_is_read_from_its_package_json() {
 fn bundled_npm_for_install_comes_from_the_index() {
     let (fs, env) = (FakeFileSystem::default(), env());
     let http = FakeHttp::default().with_body(INDEX_URL, &index_text(&[("v20.10.0", "Iron")]));
-    let context = Context::new(&fs, &env).with_http(&http);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
     let request = requested("v20.10.0", ProjectPins::default());
     let npm = bundled_npm(&context, &request).unwrap();
     assert_eq!(npm.to_string(), "v10.0.0");
@@ -150,6 +155,7 @@ fn bundled_npm_is_not_looked_up_without_an_npm_rule() {
     );
     let context = Context::new(&fs, &env)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(flags(&["--min-pnpm", "9.12.0"]));
     let (gate, _) = run(&context, &requested("v20.10.0", ProjectPins::default()));
     assert!(matches!(gate, Ok(Gate::Pass)), "{gate:?}");
@@ -172,7 +178,10 @@ fn an_age_rule_fetches_the_packument_and_fails_when_too_recent() {
     let http = FakeHttp::default()
         .with_empty_advisories()
         .with_body(PACKUMENT_URL, packument);
-    let context = Context::new(&fs, &env).with_http(&http).with_clock(&clock);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http)
+        .with_clock(&clock);
     let (gate, stderr) = run(&context, &requested("v22.11.0", pnpm("9.12.0")));
     assert!(stopped(&gate), "{gate:?}");
     let expected = [
@@ -188,7 +197,10 @@ fn an_age_rule_fetches_the_packument_and_fails_when_too_recent() {
 fn an_unreachable_registry_with_an_age_rule_exits_9() {
     let (fs, env, clock) = age_world();
     let http = FakeHttp::default().with_empty_advisories();
-    let context = Context::new(&fs, &env).with_http(&http).with_clock(&clock);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http)
+        .with_clock(&clock);
     let error = run(&context, &requested("v22.11.0", pnpm("9.12.0")))
         .0
         .unwrap_err();
@@ -200,7 +212,10 @@ fn an_unreachable_registry_with_an_age_rule_exits_9() {
 fn offline_with_an_age_rule_exits_9() {
     let (fs, env, clock) = age_world();
     let http = FakeHttp::default().with_empty_advisories();
-    let context = Context::new(&fs, &env).with_http(&http).with_clock(&clock);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http)
+        .with_clock(&clock);
     let request = Requested {
         offline: true,
         ..requested("v22.11.0", pnpm("9.12.0"))
@@ -220,6 +235,7 @@ fn a_node_violation_with_an_unknown_tool_still_exits_7() {
     let http = FakeHttp::default().with_empty_advisories();
     let context = Context::new(&fs, &env)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_clock(&clock)
         .with_policy_flags(flags(&["--min-node", "22"]));
     let (gate, stderr) = run(&context, &requested("v20.10.0", pnpm("9.12.0")));
@@ -238,6 +254,7 @@ fn node_and_pnpm_violations_are_reported_together() {
     );
     let context = Context::new(&fs, &env)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(flags(&["--min-node", "22", "--min-pnpm", "9.12.0"]));
     let request = Requested {
         origin: Origin::Nvmrc("/p/.nvmrc".into()),
@@ -263,6 +280,7 @@ fn the_auto_path_warns_about_a_tool_and_passes() {
     );
     let context = Context::new(&fs, &env)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(flags(&["--min-pnpm", "9.12.0"]))
         .advisory();
     let (gate, stderr) = run(&context, &requested("v22.11.0", pnpm("9.1.0")));

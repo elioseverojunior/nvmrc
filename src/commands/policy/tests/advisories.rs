@@ -43,7 +43,9 @@ fn gate_under(limit: &str, version: &str) -> (Result<Gate, CliError>, String, Ve
         FakeFileSystem::default(),
         served(advisories_json()),
     );
-    let context = Context::new(&fs, &env).with_http(&http);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
     let (gate, stderr) = run(&context, &requested(version, false));
     (gate, stderr, http.requests())
 }
@@ -103,7 +105,9 @@ fn findings_below_the_limit_are_also_named_when_the_gate_stops() {
       "2": {"cve": ["CVE-B"], "vulnerable": "22.x", "severity": "low"}
     }"#;
     let (fs, http) = (FakeFileSystem::default(), served(index));
-    let context = Context::new(&fs, &env).with_http(&http);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
     let (gate, stderr) = run(&context, &requested(AFFECTED, false));
     assert!(matches!(gate, Ok(Gate::Stop(_))));
     assert_eq!(
@@ -126,7 +130,9 @@ fn an_unreachable_index_is_a_failure_to_know() {
         FakeFileSystem::default(),
         FakeHttp::default(),
     );
-    let context = Context::new(&fs, &env).with_http(&http);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
     let error = run(&context, &requested(AFFECTED, false)).0.unwrap_err();
     assert_eq!(error.exit_code().code(), 9);
 }
@@ -134,7 +140,9 @@ fn an_unreachable_index_is_a_failure_to_know() {
 #[test]
 fn an_invalid_index_names_its_location() {
     let (env, fs, http) = (limit_env("high"), FakeFileSystem::default(), served("[]"));
-    let context = Context::new(&fs, &env).with_http(&http);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
     let error = run(&context, &requested(AFFECTED, false)).0.unwrap_err();
     assert_eq!(error.exit_code().code(), 9);
     assert!(error.to_string().starts_with(&format!(
@@ -149,7 +157,9 @@ fn offline_with_a_remote_index_is_a_failure_to_know() {
         FakeFileSystem::default(),
         served(advisories_json()),
     );
-    let context = Context::new(&fs, &env).with_http(&http);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
     let error = run(&context, &requested(AFFECTED, true)).0.unwrap_err();
     assert_eq!(error.exit_code().code(), 9);
     assert!(error.to_string().contains("offline"), "{error}");
@@ -167,7 +177,9 @@ fn offline_with_an_uppercase_https_index_is_a_failure_to_know() {
         .with_var("PWD", "/w")
         .with_current_dir("/w");
     let http = FakeHttp::default().with_body("HTTPS://sec/vuln.json", advisories_json());
-    let context = Context::new(&fs, &env).with_http(&http);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
     let error = run(&context, &requested(AFFECTED, true)).0.unwrap_err();
     assert!(error.to_string().contains("offline"), "{error}");
     assert!(http.requests().is_empty());
@@ -186,7 +198,9 @@ fn offline_with_a_local_index_is_checked() {
         .with_var("PWD", "/w")
         .with_current_dir("/w");
     let http = FakeHttp::default();
-    let context = Context::new(&fs, &env).with_http(&http);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
     let (gate, stderr) = run(&context, &requested(AFFECTED, true));
     assert!(matches!(gate, Ok(Gate::Stop(_))));
     assert!(stderr.contains("  - CVE-2026-58043 (high)"), "{stderr}");
@@ -200,7 +214,10 @@ fn an_automatic_path_warns_on_a_finding_and_passes() {
         FakeFileSystem::default(),
         served(advisories_json()),
     );
-    let context = Context::new(&fs, &env).with_http(&http).advisory();
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http)
+        .advisory();
     let (gate, stderr) = run(&context, &requested(AFFECTED, false));
     assert!(matches!(gate, Ok(Gate::Pass)));
     assert!(
@@ -216,7 +233,9 @@ fn legacy_mode_never_fetches_the_index() {
         .with_var("NVM_DIR", "/n")
         .with_var("NVM_MIN_VERSION", "18");
     let (fs, http) = (FakeFileSystem::default(), served(advisories_json()));
-    let context = Context::new(&fs, &env).with_http(&http);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
     let (gate, _) = run(&context, &requested(AFFECTED, false));
     assert!(matches!(gate, Ok(Gate::Pass)));
     assert!(http.requests().is_empty());

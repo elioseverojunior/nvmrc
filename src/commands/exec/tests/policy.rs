@@ -9,6 +9,7 @@ fn exec_under(flags: &[&str], path: &str, process: &FakeProcess, args: &[&str]) 
     let context = Context::new(&fs, &env)
         .with_process(process)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(policy_flags(flags));
     run(&context, &strings(args)).expect("nvm exec runs")
 }
@@ -63,6 +64,7 @@ fn exec_in_under(fs: &FakeFileSystem, path: &str, args: &[&str]) -> Output {
     let context = Context::new(fs, &env)
         .with_process(&process)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(policy_flags(&["--min-node", "22"]));
     run(&context, &strings(args)).expect("nvm exec runs")
 }
@@ -89,6 +91,7 @@ fn exec_with_a_pinned_pnpm_below_the_minimum_runs_nothing() {
     let context = Context::new(&fs, &env)
         .with_process(&process)
         .with_http(&http)
+        .with_third_party_http(&http, &http)
         .with_policy_flags(policy_flags(&["--min-pnpm", "9.12.0"]));
     let output = run(&context, &strings(&["18", "node", "-v"])).expect("nvm exec runs");
     assert_eq!(output.status, NvmExitCode::BelowVersionFloor);

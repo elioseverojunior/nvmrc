@@ -68,7 +68,7 @@ fn redirects_are_followed() {
 #[test]
 fn the_auth_header_is_sent_when_given() {
     let (base, server) = serve(vec![ok("secret")]);
-    let http = UreqHttp::unproxied(Some("Bearer token123".to_owned()));
+    let http = UreqHttp::unproxied(Some(header(None)));
     assert_eq!(http.get_text(&format!("{base}/x")).unwrap(), "secret");
     let requests = server.join().unwrap();
     assert!(
@@ -85,7 +85,7 @@ fn the_auth_header_follows_a_redirect_to_the_same_host() {
     let location =
         "HTTP/1.1 302 Found\r\nLocation: /final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
     let (base, server) = serve(vec![location.to_owned(), ok("kept")]);
-    let http = UreqHttp::unproxied(Some("Bearer token123".to_owned()));
+    let http = UreqHttp::unproxied(Some(header(None)));
     assert_eq!(http.get_text(&format!("{base}/start")).unwrap(), "kept");
     let requests = server.join().unwrap();
     assert!(
@@ -95,6 +95,47 @@ fn the_auth_header_follows_a_redirect_to_the_same_host() {
         "{}",
         requests[1]
     );
+}
+
+fn header(host: Option<&str>) -> AuthHeader {
+    AuthHeader {
+        value: "Bearer token123".to_owned(),
+        host: host.map(str::to_owned),
+    }
+}
+
+fn carries_the_header(request: &str) -> bool {
+    request
+        .to_lowercase()
+        .contains("authorization: bearer token123")
+}
+
+#[test]
+fn a_scoped_header_is_sent_only_to_its_host() {
+    let (base, server) = serve(vec![ok("mine"), ok("theirs")]);
+    let own = UreqHttp::unproxied(Some(header(Some("127.0.0.1"))));
+    let other = UreqHttp::unproxied(Some(header(Some("registry.test"))));
+    assert_eq!(own.get_text(&format!("{base}/a")).unwrap(), "mine");
+    assert_eq!(other.get_text(&format!("{base}/b")).unwrap(), "theirs");
+    let requests = server.join().unwrap();
+    assert!(carries_the_header(&requests[0]), "{}", requests[0]);
+    assert!(!carries_the_header(&requests[1]), "{}", requests[1]);
+}
+
+#[test]
+fn an_unscoped_header_is_sent_everywhere() {
+    let (base, server) = serve(vec![ok("one")]);
+    let http = UreqHttp::unproxied(Some(header(None)));
+    assert_eq!(http.get_text(&format!("{base}/a")).unwrap(), "one");
+    let requests = server.join().unwrap();
+    assert!(carries_the_header(&requests[0]), "{}", requests[0]);
+}
+
+#[test]
+fn a_scoped_host_matches_whatever_its_case() {
+    assert!(header(Some("Registry.NPMJS.org")).applies_to("https://registry.npmjs.org/npm"));
+    assert!(!header(Some("registry.npmjs.org")).applies_to("https://evil.test/registry.npmjs.org"));
+    assert!(!header(Some("registry.npmjs.org")).applies_to("not a url"));
 }
 
 /// Answers one connection with `response`, sent as raw bytes.
