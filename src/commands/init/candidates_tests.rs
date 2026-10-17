@@ -157,10 +157,10 @@ fn an_unreachable_index_is_a_failure_to_know() {
     let http = FakeHttp::default().with_status(INDEX_URL, 503);
     let context = Context::new(&fs, &env).with_http(&http);
     let error = node_candidates(&context).unwrap_err();
-    assert_eq!(
+    assert!(matches!(
         error,
-        PolicyError::ReleaseInfoUnavailable(INDEX_URL.to_owned())
-    );
+        CliError::Policy(PolicyError::ReleaseInfoUnavailable(location)) if location == INDEX_URL
+    ));
 }
 
 #[test]
@@ -190,8 +190,32 @@ fn a_version_without_a_time_entry_under_an_age_rule_is_a_failure_to_know() {
     let candidates = tool_candidates(&context, Tool::Npm, &version("10.9.0")).unwrap();
     let mut judge = judged(&context);
     let result = newest_allowed(&context, &mut judge, Tool::Npm, &candidates);
-    assert!(matches!(
+    assert_eq!(
         result,
-        Err(PolicyError::ReleaseInfoUnavailable(_))
-    ));
+        Err(PolicyError::ReleaseInfoUnavailable(
+            "npm 10.9.0 has no publish date in the registry".to_owned()
+        ))
+    );
+}
+
+#[test]
+fn a_packument_that_will_not_parse_names_its_url() {
+    let (fs, env) = policy_files("");
+    let http = FakeHttp::default().with_body(NPM_URL, "not json");
+    let context = registry_context(&fs, &env, &http);
+    let error = tool_candidates(&context, Tool::Npm, &version("10.9.0")).unwrap_err();
+    let expected = format!(
+        "nvm: cannot check the policy: the release information is unavailable: {NPM_URL}: \
+         not valid JSON: "
+    );
+    assert!(error.to_string().starts_with(&expected), "{error}");
+}
+
+#[test]
+fn node_candidates_without_an_nvm_directory_say_so() {
+    let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
+    let http = FakeHttp::default().with_body(INDEX_URL, &node_index());
+    let context = Context::new(&fs, &env).with_http(&http);
+    let error = node_candidates(&context).unwrap_err();
+    assert!(matches!(error, CliError::NvmDirUnresolved), "{error}");
 }

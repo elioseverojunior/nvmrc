@@ -2,7 +2,7 @@
 //! the mode resolved once, the vulnerability index read at most once.
 
 use super::advisories::{load_advisories, vulnerable};
-use super::enforce::today;
+use super::enforce::{index_location, today};
 use super::mode::{EnforcedPolicy, Mode, resolve_mode};
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
@@ -53,9 +53,7 @@ impl Judge {
         let mut found = policy
             .tool(tool)
             .violations(version, Some(release), today(context))
-            .map_err(|MissingReleaseInfo| {
-                PolicyError::ReleaseInfoUnavailable("release data".to_owned())
-            })?;
+            .map_err(|MissingReleaseInfo| missing_release_info(context, tool, version))?;
         if tool == Tool::Node && version.flavor == Flavor::Node {
             found.extend(self.node_vulnerability(context, version)?);
         }
@@ -78,4 +76,17 @@ impl Judge {
         };
         Ok(vulnerable(context, advisories, version, &policy.cve.limit).0)
     }
+}
+
+/// Where the release data a rule needs should have come from: the node
+/// index, or the registry entry of a package manager.
+fn missing_release_info(context: &Context<'_>, tool: Tool, version: &Version) -> PolicyError {
+    PolicyError::ReleaseInfoUnavailable(match tool {
+        Tool::Node => index_location(context),
+        _ => format!(
+            "{} {} has no publish date in the registry",
+            tool.name(),
+            tool.show(version)
+        ),
+    })
 }

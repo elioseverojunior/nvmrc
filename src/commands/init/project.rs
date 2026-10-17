@@ -154,10 +154,10 @@ fn candidates_of(
     context: &Context<'_>,
     tool: Tool,
     package_of: &Version,
-) -> Result<Vec<Candidate>, PolicyError> {
+) -> Result<Vec<Candidate>, CliError> {
     match tool {
         Tool::Node => node_candidates(context),
-        _ => tool_candidates(context, tool, package_of),
+        _ => Ok(tool_candidates(context, tool, package_of)?),
     }
 }
 

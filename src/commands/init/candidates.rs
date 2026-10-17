@@ -9,7 +9,7 @@ use crate::domain::policy::{ReleaseInfo, Violation};
 use crate::domain::registry::published_versions;
 use crate::domain::tool::Tool;
 use crate::domain::version::{Flavor, Version};
-use crate::error::PolicyError;
+use crate::error::{CliError, PolicyError};
 
 /// A release that exists, with what the policy needs to judge it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,10 +29,11 @@ pub enum Exact {
 /// The releases of the node index, newest version first.
 ///
 /// # Errors
-/// [`PolicyError::ReleaseInfoUnavailable`] when the index cannot be had.
-pub fn node_candidates(context: &Context<'_>) -> Result<Vec<Candidate>, PolicyError> {
+/// [`PolicyError::ReleaseInfoUnavailable`] when the index cannot be had;
+/// [`CliError::NvmDirUnresolved`] when there is no nvm directory.
+pub fn node_candidates(context: &Context<'_>) -> Result<Vec<Candidate>, CliError> {
     let unavailable = || PolicyError::ReleaseInfoUnavailable(index_location(context));
-    let fetched = remote_index::fetch(context, Flavor::Node).map_err(|_| unavailable())?;
+    let fetched = remote_index::fetch(context, Flavor::Node)?;
     let releases = fetched.releases.filter(|found| !found.is_empty());
     let mut candidates: Vec<Candidate> = releases
         .ok_or_else(unavailable)?
@@ -62,10 +63,10 @@ pub fn tool_candidates(
     tool: Tool,
     package_of: &Version,
 ) -> Result<Vec<Candidate>, PolicyError> {
-    let text = fetch_packument(context, tool, package_of)
+    let (url, text) = fetch_packument(context, tool, package_of)
         .map_err(|error| PolicyError::ReleaseInfoUnavailable(error.location))?;
     let published = published_versions(&text)
-        .map_err(|error| PolicyError::ReleaseInfoUnavailable(error.to_string()))?;
+        .map_err(|error| PolicyError::ReleaseInfoUnavailable(format!("{url}: {error}")))?;
     Ok(published
         .into_iter()
         .rev()

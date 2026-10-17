@@ -167,3 +167,20 @@ fn a_failed_index_read_is_retried_on_the_next_call() {
     assert!(violations(&mut judge, &context, Tool::Node, AFFECTED).is_err());
     assert_eq!(http.requests(), [DEFAULT_INDEX, DEFAULT_INDEX]);
 }
+
+#[test]
+fn a_node_release_without_a_date_names_the_index() {
+    let (fs, env) = policy_world(
+        r#"{ "schemaVersion": 1, "tools": { "node": { "minimumReleaseAgeDays": 7 } } }"#,
+    );
+    let http = FakeHttp::default().with_empty_advisories();
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
+    let mut judge = loaded(&context);
+    let error = violations(&mut judge, &context, Tool::Node, "v22.11.0").unwrap_err();
+    assert_eq!(
+        error,
+        PolicyError::ReleaseInfoUnavailable("https://nodejs.org/dist/index.tab".to_owned())
+    );
+}

@@ -111,7 +111,7 @@ pub fn fetch_manifest(
 }
 
 /// The packument of the package that ships `tool` at `version`, read with the
-/// third-party client.
+/// third-party client, and the URL it came from.
 ///
 /// # Errors
 /// When the registry is refused or the request fails.
@@ -119,8 +119,8 @@ pub fn fetch_packument(
     context: &Context<'_>,
     tool: Tool,
     version: &Version,
-) -> Result<String, FetchError> {
-    packument_with(context, context.third_party_http(), tool, version).map(|(_, text)| text)
+) -> Result<(String, String), FetchError> {
+    packument_with(context, context.third_party_http(), tool, version)
 }
 
 /// The packument and the URL it came from, asked of `http`.
