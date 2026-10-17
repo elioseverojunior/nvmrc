@@ -132,6 +132,9 @@ impl FileSystem for FakeFileSystem {
             .borrow_mut()
             .retain(|file, _| !file.starts_with(path));
         self.dirs.borrow_mut().retain(|dir| !dir.starts_with(path));
+        self.links
+            .borrow_mut()
+            .retain(|link, _| !link.starts_with(path));
         Ok(())
     }
 
@@ -156,6 +159,8 @@ impl FileSystem for FakeFileSystem {
     }
 
     fn file_info(&self, path: &Path) -> io::Result<FileInfo> {
+        let path = self.resolve(path).unwrap_or_else(|| path.to_path_buf());
+        let path = path.as_path();
         let modified = self.modified.borrow().get(path).copied();
         if let Some(contents) = self.files.borrow().get(path) {
             return Ok(FileInfo {
@@ -189,6 +194,12 @@ impl FileSystem for FakeFileSystem {
         }
         move_paths(&mut self.executables.borrow_mut(), from, &moved);
         move_paths(&mut self.dirs.borrow_mut(), from, &moved);
+        let mut links = self.links.borrow_mut();
+        for name in under(links.keys(), from) {
+            if let Some(target) = links.remove(&name) {
+                links.insert(moved(&name), target);
+            }
+        }
         Ok(())
     }
 
@@ -218,6 +229,13 @@ impl FileSystem for FakeFileSystem {
     fn read_link(&self, link: &Path) -> io::Result<PathBuf> {
         let found = self.links.borrow().get(link).cloned();
         found.ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
+    }
+
+    fn make_executable(&self, path: &Path) -> io::Result<()> {
+        let resolved = self.resolve(path).unwrap_or_else(|| path.to_path_buf());
+        self.file_info(&resolved)?;
+        self.set_executable(&resolved);
+        Ok(())
     }
 
     fn same_directory(&self, a: &Path, b: &Path) -> bool {

@@ -106,6 +106,13 @@ pub trait FileSystem {
     /// missing or is not a symbolic link).
     fn read_link(&self, link: &Path) -> io::Result<PathBuf>;
 
+    /// Adds the execute bits wherever the read bits are set (Unix); the file
+    /// `path` resolves to is changed.
+    ///
+    /// # Errors
+    /// Propagates the underlying I/O error (for example when `path` is missing).
+    fn make_executable(&self, path: &Path) -> io::Result<()>;
+
     /// Whether `a` and `b` are one existing directory, symlinks followed
     /// (the same device and inode on Unix).
     fn same_directory(&self, a: &Path, b: &Path) -> bool;

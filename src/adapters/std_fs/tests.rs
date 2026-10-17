@@ -122,3 +122,16 @@ fn canonicalize_resolves_a_chain_of_links_and_refuses_a_dangling_one() {
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn make_executable_adds_execute_bits() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let file = root.path().join("script");
+    fs::write(&file, "x").unwrap();
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+    StdFileSystem.make_executable(&file).unwrap();
+    let mode = fs::metadata(&file).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o755);
+}

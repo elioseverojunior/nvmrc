@@ -85,6 +85,14 @@ impl FileSystem for StdFileSystem {
         fs::read_link(link)
     }
 
+    fn make_executable(&self, path: &Path) -> io::Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = fs::metadata(path)?.permissions();
+        let mode = permissions.mode();
+        permissions.set_mode(mode | ((mode & 0o444) >> 2));
+        fs::set_permissions(path, permissions)
+    }
+
     fn same_directory(&self, a: &Path, b: &Path) -> bool {
         use std::os::unix::fs::MetadataExt;
         match (fs::metadata(a), fs::metadata(b)) {
