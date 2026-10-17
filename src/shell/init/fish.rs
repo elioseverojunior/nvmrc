@@ -25,6 +25,7 @@ set -gx NVM_DIR $NVM_DIR
 const FUNCTION: &str = r#"function nvm --description 'Node Version Manager (nvmrc)'
     set -l nvmrc_command
     set -l nvmrc_skip 0
+    set -l nvmrc_arg
     for nvmrc_arg in $argv
         if test $nvmrc_skip = 1
             set nvmrc_skip 0

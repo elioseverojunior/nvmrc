@@ -229,3 +229,12 @@ fn every_function_routes_on_the_first_argument_that_is_not_a_policy_flag() {
         assert!(!text.contains("\"${1-}\""), "{name}");
     }
 }
+
+#[test]
+fn the_fish_function_keeps_its_loop_variable_local() {
+    let text = snippet(Shell::Fish, &InitOptions::default());
+    assert!(
+        text.contains("    set -l nvmrc_arg\n    for nvmrc_arg in $argv\n"),
+        "{text}"
+    );
+}
