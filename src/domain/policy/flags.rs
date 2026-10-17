@@ -90,6 +90,9 @@ fn take_flags(
                 .into_string()
                 .map_err(|_| FlagError::NotUtf8(flag.to_owned()))?,
         };
+        if value.is_empty() {
+            return Err(FlagError::MissingValue(flag.to_owned()));
+        }
         flags.insert(flag, value)?;
     }
     Ok(())

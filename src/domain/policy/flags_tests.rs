@@ -52,6 +52,14 @@ fn a_missing_or_repeated_value_is_an_error() {
     );
 }
 
+#[test]
+fn an_empty_value_is_an_error() {
+    for input in [&["nvm", "--policy="][..], &["nvm", "--min-node", ""][..]] {
+        let message = extract(args(input)).unwrap_err().to_string();
+        assert!(message.ends_with(" needs a value."), "{message}");
+    }
+}
+
 #[cfg(unix)]
 #[test]
 fn a_value_that_is_not_utf8_is_an_error() {
