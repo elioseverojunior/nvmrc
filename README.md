@@ -311,8 +311,8 @@ The limit is the lowest severity that fails. It comes from
 `--fail-on-severity <critical|high|medium|low|none>`,
 `NVMRC_FAIL_ON_SEVERITY`, and `cve.failOnSeverity` in the central and the
 repository policy. The strictest wins (`low` is stricter than `high`, `none`
-is the loosest), the default is `high`, and a looser source is ignored with
-a warning. A non-blank `NVMRC_FAIL_ON_SEVERITY` turns policy mode on, as a
+is the loosest), the default is `high`, and a looser override is ignored
+with a warning. A non-blank `NVMRC_FAIL_ON_SEVERITY` turns policy mode on, as a
 flag does.
 
 ```text
