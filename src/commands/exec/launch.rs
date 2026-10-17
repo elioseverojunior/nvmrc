@@ -101,11 +101,7 @@ fn installed(
         path: &path,
     };
     link_current(context, &nvm_dir, &directory, &mut transcript);
-    if !options.silent {
-        let npm = prefixes.npm_suffix(&mut transcript);
-        let resolved = version.to_string();
-        transcript.out(running(options, &selection.version, &resolved, &npm));
-    }
+    prefixes.announce(options, &selection.version, &mut transcript);
     if !prefixes.accept(false, &mut transcript) {
         return Ok(transcript.finish(NvmExitCode::NotFound));
     }
@@ -146,6 +142,16 @@ impl Prefixes<'_, '_> {
         } else {
             String::new()
         }
+    }
+
+    /// The `Running ...` line for `requested` (`VERSION`), unless silent.
+    fn announce(&self, options: &Options, requested: &str, transcript: &mut Transcript) {
+        if options.silent {
+            return;
+        }
+        let npm = self.npm_suffix(transcript);
+        let resolved = self.version.to_string();
+        transcript.out(running(options, requested, &resolved, &npm));
     }
 }
 

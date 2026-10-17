@@ -159,12 +159,8 @@ impl UreqHttp {
             .timeout_global(limits.whole_call)
             .https_only(limits.https_only)
             .build();
-        if let Some(auth) = self
-            .auth_header
-            .as_ref()
-            .filter(|auth| auth.applies_to(url))
-        {
-            request = request.header("Authorization", &auth.value);
+        if let Some(value) = self.authorization(url) {
+            request = request.header("Authorization", value);
         }
         match request.call() {
             Ok(mut response) => read(response.body_mut().with_config().limit(limits.bytes))
@@ -175,6 +171,14 @@ impl UreqHttp {
             }),
             Err(error) => Err(transport(url, error)),
         }
+    }
+
+    /// The `Authorization` value to send to `url`, if any applies to it.
+    fn authorization(&self, url: &str) -> Option<&str> {
+        self.auth_header
+            .as_ref()
+            .filter(|auth| auth.applies_to(url))
+            .map(|auth| auth.value.as_str())
     }
 }
 

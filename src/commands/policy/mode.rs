@@ -61,18 +61,7 @@ pub fn resolve_mode(context: &Context<'_>) -> Result<(Mode, Vec<String>), Policy
     }
     let mut central = central_layer(context)?;
     let mut repository = repository_layer(context)?;
-    let mut layers = Vec::new();
-    layers.extend(central.node.take());
-    layers.extend(repository.node.take());
-    layers.extend(minimum_layer(
-        Source::Flag(MINIMUM_FLAG),
-        context.policy_flags().get(MINIMUM_FLAG).map(str::to_owned),
-    )?);
-    layers.extend(minimum_layer(
-        Source::Variable(MINIMUM_VARIABLE),
-        context.env.var(MINIMUM_VARIABLE),
-    )?);
-    layers.extend(file_layer(context)?);
+    let layers = node_layers(context, central.node.take(), repository.node.take())?;
     let (node, mut warnings) = merge(Tool::Node, layers);
     let mut package = |tool| {
         let (policy, tool_warnings) = package_policy(context, tool, &mut central, &mut repository)?;
@@ -94,6 +83,28 @@ pub fn resolve_mode(context: &Context<'_>) -> Result<(Mode, Vec<String>), Policy
         cve,
     };
     Ok((Mode::Enforced(enforced), warnings))
+}
+
+/// The node layers of both policies, `--min-node`, `NVM_MIN_VERSION` and
+/// `$NVM_DIR/min-version`, in that order.
+fn node_layers(
+    context: &Context<'_>,
+    central: Option<ToolLayer>,
+    repository: Option<ToolLayer>,
+) -> Result<Vec<ToolLayer>, PolicyError> {
+    let mut layers = Vec::new();
+    layers.extend(central);
+    layers.extend(repository);
+    layers.extend(minimum_layer(
+        Source::Flag(MINIMUM_FLAG),
+        context.policy_flags().get(MINIMUM_FLAG).map(str::to_owned),
+    )?);
+    layers.extend(minimum_layer(
+        Source::Variable(MINIMUM_VARIABLE),
+        context.env.var(MINIMUM_VARIABLE),
+    )?);
+    layers.extend(file_layer(context)?);
+    Ok(layers)
 }
 
 /// Merges the CVE layers of both policies, the severity flag and the variable.

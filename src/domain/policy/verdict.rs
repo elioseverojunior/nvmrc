@@ -117,21 +117,7 @@ impl ToolPolicy {
                 source: rule.source.clone(),
             }));
         }
-        let semver = nodejs_semver::Version::parse(format!(
-            "{}.{}.{}",
-            version.major, version.minor, version.patch
-        ));
-        for rule in &self.allow {
-            let inside = semver
-                .as_ref()
-                .is_ok_and(|parsed| rule.value.0.satisfies(parsed));
-            if !inside {
-                found.push(Violation::OutsideRange(Sourced {
-                    value: rule.value.1.clone(),
-                    source: rule.source.clone(),
-                }));
-            }
-        }
+        found.extend(self.range_violations(version));
         found.extend(
             self.deny
                 .iter()
@@ -139,6 +125,28 @@ impl ToolPolicy {
                 .map(|rule| Violation::Denied(rule.source.clone())),
         );
         found
+    }
+
+    /// Each allowed range `version` is outside of.
+    fn range_violations(&self, version: &Version) -> Vec<Violation> {
+        let semver = nodejs_semver::Version::parse(format!(
+            "{}.{}.{}",
+            version.major, version.minor, version.patch
+        ));
+        self.allow
+            .iter()
+            .filter(|rule| {
+                !semver
+                    .as_ref()
+                    .is_ok_and(|parsed| rule.value.0.satisfies(parsed))
+            })
+            .map(|rule| {
+                Violation::OutsideRange(Sourced {
+                    value: rule.value.1.clone(),
+                    source: rule.source.clone(),
+                })
+            })
+            .collect()
     }
 
     fn release_violations(
