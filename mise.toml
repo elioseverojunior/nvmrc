@@ -37,12 +37,12 @@ yq = { version = "latest" }
 # is the whole platform gate. The separate `arch` key does NOT filter (verified:
 # arch = ["ppc64"] still resolves on an x64 host); it documents intent only.
 "hk" = { version = "latest", os = [
-    "linux",
-    "windows",
-    "macos/arm64",
+  "linux",
+  "windows",
+  "macos/arm64",
 ], arch = [
-    "arm64",
-    "x64",
+  "arm64",
+  "x64",
 ], locked = false }
 
 [env]
@@ -243,7 +243,10 @@ fi
   # file is only ever about stepping aside for the system package manager.
 } > "$local_cfg"
 
-mise lock
+# Same reason as the lock at the top: mise.local.toml now disables the brewed
+# tools, and a bare `mise lock` would re-resolve their "latest" pins to whatever
+# Homebrew has installed on this machine.
+MISE_DISABLE_TOOLS= mise lock
 mise install
 mise deps
 refresh_fp
