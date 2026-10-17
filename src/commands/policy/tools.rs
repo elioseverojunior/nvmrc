@@ -1,11 +1,13 @@
 //! The rules of npm, yarn and pnpm against the versions in effect: each
 //! pinned one, and the npm bundled with node when npm has a rule but no pin.
-//! Release dates come from the registry, only for an age rule.
+//! With the system node no pin is in effect (none is put on its `PATH`): only
+//! the system npm is. Release dates come from the registry, only for an age
+//! rule.
 
 use std::path::PathBuf;
 
 use super::bundled::bundled_npm;
-use super::enforce::{Requested, today};
+use super::enforce::{Origin, Requested, today};
 use super::mode::EnforcedPolicy;
 use crate::commands::package_managers::registry::{fetch_release_day, registry_base};
 use crate::context::Context;
@@ -21,6 +23,8 @@ pub enum ToolOrigin {
     Nvmrc(PathBuf),
     /// The npm bundled with this node version.
     Bundled(Version),
+    /// The npm beside the system node.
+    System,
 }
 
 /// A package manager version in effect and the rules it breaks.
@@ -64,12 +68,15 @@ fn check_tool(
 }
 
 /// The pinned version, else for npm the one bundled with node; a tool that
-/// is neither is not in effect.
+/// is neither is not in effect. With the system node, only its npm is.
 fn in_effect(
     context: &Context<'_>,
     requested: &Requested,
     tool: Tool,
 ) -> Result<Option<(Version, ToolOrigin)>, PolicyError> {
+    if requested.origin == Origin::System {
+        return system_tool(context, requested, tool);
+    }
     if let Some(version) = requested.pins.pins.get(tool) {
         let nvmrc = requested.pins.nvmrc.clone().unwrap_or_default();
         return Ok(Some((version, ToolOrigin::Nvmrc(nvmrc))));
@@ -79,6 +86,18 @@ fn in_effect(
     }
     let bundled = bundled_npm(context, requested)?;
     Ok(Some((bundled, ToolOrigin::Bundled(requested.version))))
+}
+
+/// The system npm; yarn and pnpm are not in effect with the system node.
+fn system_tool(
+    context: &Context<'_>,
+    requested: &Requested,
+    tool: Tool,
+) -> Result<Option<(Version, ToolOrigin)>, PolicyError> {
+    if tool != Tool::Npm {
+        return Ok(None);
+    }
+    Ok(Some((bundled_npm(context, requested)?, ToolOrigin::System)))
 }
 
 /// The release date from the registry, fetched only for an age rule.

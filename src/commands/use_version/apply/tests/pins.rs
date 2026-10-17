@@ -52,10 +52,12 @@ fn now_using_shows_the_pinned_npm() {
 #[test]
 fn use_system_adds_no_pins() {
     let nvmrc = lab().with_file("/proj/.nvmrc", "system\npnpm=9.12.0\n");
-    let fs = with_tool(nvmrc, "pnpm", "9.12.0");
+    let fs = with_tool(nvmrc, "pnpm", "9.12.0").with_executable("/sys/bin/node", "");
     let env = env_on(&format!("{PNPM_BIN}:/sys/bin:/usr/bin"));
     let output = use_in(&fs, &env, &npm_versions(), &["system"]);
-    assert!(!output.script.render().contains("package-managers"));
+    assert_eq!(output.status, NvmExitCode::Success);
+    let expected = format!("export PATH='/sys/bin:/usr/bin'\n{HASH}unset NVM_BIN\nunset NVM_INC\n");
+    assert_eq!(output.script.render(), expected);
 }
 
 #[test]

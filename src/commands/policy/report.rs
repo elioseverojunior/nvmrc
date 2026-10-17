@@ -110,12 +110,14 @@ fn tool_origin_text(origin: &ToolOrigin) -> String {
     match origin {
         ToolOrigin::Nvmrc(path) => format!("(from {})", path.display()),
         ToolOrigin::Bundled(node) => format!("(bundled with node {node})"),
+        ToolOrigin::System => "(system)".to_owned(),
     }
 }
 
 fn tool_fix_text(tool: Tool, origin: &ToolOrigin) -> String {
     match origin {
         ToolOrigin::Nvmrc(path) => format!("Raise {} to an allowed version.", path.display()),
+        ToolOrigin::System => format!("Use an allowed {}.", tool.name()),
         ToolOrigin::Bundled(_) => {
             let name = tool.name();
             format!("Pin an allowed {name} in .nvmrc ({name}=<version>).")

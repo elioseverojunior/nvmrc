@@ -248,6 +248,40 @@ fn use_system_checks_the_npm_beside_the_system_node() {
     let path = "/sys/bin:/usr/bin:/bin";
     let output = switch_under(&["--min-npm", "10.5.0"], path, &process, &["system"]);
     assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
-    let header = "nvm: npm 10.1.0 (bundled with node v22.0.0) is not allowed by policy:";
+    let header = "nvm: npm 10.1.0 (system) is not allowed by policy:";
     assert!(output.stderr.contains(header), "{}", output.stderr);
+}
+
+/// `nvm use system` under `flags`, from a project whose `.nvmrc` holds
+/// `nvmrc`, with npm 10.9.0 in the store and npm 9.8.1 beside the system node.
+fn use_system_pinning(nvmrc: &str, flags: &[&str]) -> Output {
+    let fs = lab()
+        .with_file("/proj/.nvmrc", nvmrc)
+        .with_file("/n/package-managers/npm/10.9.0/package/package.json", "{}")
+        .with_executable("/n/package-managers/npm/10.9.0/bin/npm", "#!/bin/sh");
+    let process = npm_versions()
+        .with_run("/sys/bin/node", "--version", true, "v22.0.0\n")
+        .with_run("/sys/bin/npm", "--version", true, "9.8.1\n");
+    let env = env_on("/sys/bin:/usr/bin:/bin");
+    let http = FakeHttp::default().with_empty_advisories();
+    let context = Context::new(&fs, &env)
+        .with_process(&process)
+        .with_http(&http)
+        .with_third_party_http(&http, &http)
+        .with_policy_flags(policy_flags(flags));
+    run_and_target(&context, &strings(&["system"])).unwrap().0
+}
+
+#[test]
+fn use_system_checks_the_system_npm_not_the_pinned_one() {
+    let output = use_system_pinning("system\nnpm=10.9.0\n", &["--min-npm", "10.5.0"]);
+    assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
+    let header = "nvm: npm 9.8.1 (system) is not allowed by policy:";
+    assert!(output.stderr.contains(header), "{}", output.stderr);
+}
+
+#[test]
+fn use_system_leaves_the_pinned_pnpm_unchecked() {
+    let output = use_system_pinning("system\npnpm=9.1.0\n", &["--min-pnpm", "9.12.0"]);
+    assert_eq!(output.status, NvmExitCode::Success, "{}", output.stderr);
 }
