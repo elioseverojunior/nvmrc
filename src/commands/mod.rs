@@ -17,6 +17,7 @@ pub mod migrate;
 pub mod npm;
 pub mod nvm_exec;
 pub mod nvmrc_file;
+pub mod package_managers;
 pub mod policy;
 pub mod project_pins;
 pub mod rc_version;
