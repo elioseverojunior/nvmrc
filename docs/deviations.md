@@ -241,6 +241,18 @@ nvmrc additions; nvm.sh ignores `npm=`, `yarn=` and `pnpm=` lines in
 - `NVM_AUTH_HEADER` is not sent to the npm registry, tarball hosts or the
   built-in vulnerability index; `NVMRC_NPM_AUTH_HEADER` goes to the registry
   host only.
+- `install --save` and `use --save` (`-w`) replace only the bare version
+  line of `.nvmrc` and keep every other line (pins, other keys, comments);
+  nvm.sh rewrites the whole file. A file with nothing else is written as
+  `<version>` alone, as nvm.sh does, and an `.nvmrc` that cannot be read is
+  left alone (status 3). (`saving_keeps_the_pins_and_the_other_lines`,
+  `saving_over_a_lone_version_writes_just_the_version`,
+  `an_unreadable_nvmrc_is_left_alone` in `src/commands/nvmrc_file.rs`)
+- An `.nvmrc` that cannot be read gives
+  `nvm: warning: <path> cannot be read: <reason>` and no pins; the bundled
+  npm is then checked when an npm rule exists.
+  (`an_unreadable_nvmrc_is_a_warning_and_no_pins` in
+  `src/commands/project_pins.rs`)
 
 ### Colors
 

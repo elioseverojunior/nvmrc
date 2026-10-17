@@ -361,9 +361,10 @@ pnpm=9.12.0
 ```
 
 Each pin is an exact `major.minor.patch` of digits: no `v`, no prerelease, no
-range. Yarn and pnpm together is an error. The pins come from the nearest
-`.nvmrc` and are read by `install`, `use`, `exec` and `run` with or without
-a policy, even when the node version is given on the command line.
+range. Yarn and pnpm together is an error, and so is a tool pinned twice. The
+pins come from the nearest `.nvmrc` and are read by `install`, `use`, `exec`
+and `run` with or without a policy, even when the node version is given on
+the command line.
 
 When yarn or pnpm is pinned and a `package.json` sits beside that `.nvmrc`,
 its `packageManager` must be `<name>@<version>` for the same tool and
@@ -379,14 +380,21 @@ versions. The packages are `npm`, `pnpm`, `yarn` below 2.0.0 and
 `@yarnpkg/cli-dist` from 2.0.0. The tarball must match a `sha512` entry of
 `dist.integrity`, a command may not point outside its package, and a failed
 install keeps the previous one. With `--offline`, a pinned tool that is not
-in the store fails.
+in the store fails. A pinned tool that fails to install, or is missing under
+`--offline`, makes `install` exit 1; the automatic paths only warn.
 
 `use`, `exec` and `run` on an installed node put each pinned tool's `bin`
-ahead of node's on `PATH` and drop the tool entries of other projects.
-`use system` adds none, and `deactivate` removes them.
+ahead of node's on `PATH`, in the order npm, yarn, pnpm, then node, and drop
+the tool entries of other projects. `use system` adds none, and `deactivate`
+removes them.
+
+`install --save` and `use --save` (`-w`) replace only the version line of
+`.nvmrc` and keep the pin lines and every other line.
 
 The registry is `NVMRC_NPM_REGISTRY` (default `https://registry.npmjs.org`,
-https only). `NVMRC_NPM_AUTH_HEADER` is sent only to the registry's host.
+https only). Put registry credentials in `NVMRC_NPM_AUTH_HEADER`, not in the
+URL: a URL's user information can appear in error messages.
+`NVMRC_NPM_AUTH_HEADER` is sent only to the registry's host.
 `NVM_AUTH_HEADER` is never sent to the npm registry, a tarball host or the
 built-in vulnerability index; it still goes to the Node mirrors, a central
 policy and a configured `cve.source`.
@@ -396,9 +404,12 @@ The policy rules for these tools (`minimum`, `allow`, `deny`,
 `--min-npm`, `--min-yarn` and `--min-pnpm`, and tighten the same way;
 `ltsOnly` does not apply and their CVEs are not checked. A tool is checked
 when pinned. Without an npm pin, the npm bundled with the node in use is
-checked, and only when an npm rule exists. The release age uses the
-registry's `time` metadata. A violation exits 7, a check that cannot be made
-exits 9.
+checked, and only when an npm rule exists. With the system node no pin is in
+effect: the npm beside the system node is checked, and yarn and pnpm are
+not. `install --offline` with an npm rule and no npm pin needs that node
+already installed, since otherwise the bundled npm comes from the remote
+index (exit 9). The release age uses the registry's `time` metadata. A
+violation exits 7, a check that cannot be made exits 9.
 
 ## Commands
 
