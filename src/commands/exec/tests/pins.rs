@@ -29,6 +29,15 @@ fn a_missing_pinned_tool_stops_exec_with_3() {
 }
 
 #[test]
+fn a_bad_pin_stops_exec_with_3_after_the_earlier_messages() {
+    let fs = lab().with_file("/proj/.nvmrc", "20\npnpm=9.12\n");
+    let output = exec_in(&fs, &env_on(BASE_PATH), &["npm", "-v"]);
+    let text = "nvm: /proj/.nvmrc: 'pnpm=9.12' is not an exact version (major.minor.patch).";
+    let found = "Found '/proj/.nvmrc' with version <20>";
+    assert_stops(&output, found, text, NvmExitCode::InvalidVersion);
+}
+
+#[test]
 fn exec_on_the_system_node_drops_tool_bins_and_adds_none() {
     let nvmrc = lab().with_file("/proj/.nvmrc", "system\npnpm=9.12.0\n");
     let fs = with_tool(nvmrc, "pnpm", "9.12.0");

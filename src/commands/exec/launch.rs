@@ -28,9 +28,9 @@ pub(super) fn launch(
         return Ok(transcript.finish(NvmExitCode::Failure));
     }
     let resolution = nvm_version(context, &selection.version)?;
-    let pins = match resolution {
-        Resolution::Version(_) | Resolution::System => read_for(context, &mut transcript)?,
-        _ => ProjectPins::default(),
+    let pins = match pins_for(context, &resolution, &mut transcript) {
+        Ok(pins) => pins,
+        Err(error) => return Ok(stopped(&error, transcript)),
     };
     if let Gate::Stop(status) = gate(context, &resolution, &selection, &pins, &mut transcript)? {
         return Ok(transcript.finish(status));
@@ -43,6 +43,19 @@ pub(super) fn launch(
         Resolution::Loop | Resolution::NotAvailable | Resolution::Inactive => {
             Ok(transcript.finish(NvmExitCode::Failure))
         }
+    }
+}
+
+/// The pins of the project when `resolution` names a node to run (none
+/// otherwise).
+fn pins_for(
+    context: &Context<'_>,
+    resolution: &Resolution,
+    transcript: &mut Transcript,
+) -> Result<ProjectPins, CliError> {
+    match resolution {
+        Resolution::Version(_) | Resolution::System => read_for(context, transcript),
+        _ => Ok(ProjectPins::default()),
     }
 }
 
