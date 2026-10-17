@@ -11,6 +11,7 @@ pub enum Tool {
 }
 
 impl Tool {
+    pub const ALL: [Self; 4] = [Self::Node, Self::Npm, Self::Yarn, Self::Pnpm];
     pub const PACKAGE_MANAGERS: [Self; 3] = [Self::Npm, Self::Yarn, Self::Pnpm];
 
     /// The name used in policy fields, flags and messages.

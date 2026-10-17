@@ -32,6 +32,7 @@ pub mod set_colors;
 pub mod transcript;
 pub mod unalias;
 pub mod uninstall;
+pub mod upgrade;
 pub mod use_version;
 pub mod version;
 pub mod version_remote;

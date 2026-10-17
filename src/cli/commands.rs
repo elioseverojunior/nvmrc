@@ -130,6 +130,15 @@ pub(super) enum Command {
         #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,
     },
+    /// Move the tools pinned in the nearest `.nvmrc` to newer allowed
+    /// releases. With no tool flag every pinned tool moves; `--node`,
+    /// `--npm`, `--yarn` or `--pnpm` pick some. A tool stays in its major;
+    /// `--major` allows any major, and `--major=<N>` (with exactly one tool)
+    /// picks major N.
+    Upgrade {
+        #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+        args: Vec<String>,
+    },
     /// Report the shell startup files that still load nvm.sh or define an
     /// `nvm` that competes with nvmrc (`--shell <name>` limits the scan to
     /// one shell). Exits 1 when it finds a conflict; never writes a file.
@@ -185,6 +194,7 @@ pub(super) fn dispatch(command: &Command, context: &Context<'_>) -> Result<Outpu
         Command::Exec { args } => commands::exec::run(context, args),
         Command::Run { args } => commands::run::run(context, args),
         Command::Init { args } => commands::init::run(context, args),
+        Command::Upgrade { args } => commands::upgrade::run(context, args),
         Command::Doctor { args } => commands::doctor::run(context, args),
         Command::Migrate { args } => commands::migrate::run(context, args),
         Command::Auto { args } => commands::auto::run(context, args),
