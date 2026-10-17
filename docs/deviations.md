@@ -254,6 +254,21 @@ nvmrc additions; nvm.sh ignores `npm=`, `yarn=` and `pnpm=` lines in
   (`an_unreadable_nvmrc_is_a_warning_and_no_pins` in
   `src/commands/project_pins.rs`)
 
+### Starting a project
+
+nvm.sh has no project mode for `init`; this is an nvmrc addition.
+
+- `nvm init` with `--node`, `--npm`, `--yarn` or `--pnpm` and no shell
+  writes the newest allowed release (LTS for node), or the exact version
+  given, into the working directory's `.nvmrc`, and sets `packageManager` in
+  an existing `package.json` for yarn or pnpm. `nvm init <shell>` is
+  unchanged.
+- Mixing a shell name with a project flag, `--yarn` with `--pnpm`, a
+  repeated flag, or `--no-use`/`--install` with a project flag exits 6.
+- Exit 3 for an inexact or unpublished version, a pin conflict (yarn over
+  pnpm or the reverse) and a malformed pin or `package.json`; 7 when not
+  allowed; 9 when the answer cannot be known. Nothing is written on failure.
+
 ### Colors
 
 - An invalid `NVM_COLORS` letter warns once; an unknown `TERM` is silent.

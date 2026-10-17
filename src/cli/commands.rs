@@ -121,7 +121,11 @@ pub(super) enum Command {
     /// Print the shell code that defines the `nvm` function, for
     /// `eval "$(nvm init bash)"` (bash, zsh, sh, dash, ksh) or
     /// `nvm init fish | source` in the shell's startup file (`--no-use`
-    /// skips switching to the default version; `--install` installs it).
+    /// skips switching to the default version; `--install` installs it). With
+    /// `--node`, `--npm`, `--yarn` or `--pnpm` (each `[=<version>]`) and no
+    /// shell, pin the newest allowed release, or the exact version given, in
+    /// the working directory's `.nvmrc`, and set `packageManager` in an
+    /// existing `package.json` for yarn or pnpm.
     Init {
         #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
         args: Vec<String>,

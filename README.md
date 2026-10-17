@@ -411,6 +411,52 @@ already installed, since otherwise the bundled npm comes from the remote
 index (exit 9). The release age uses the registry's `time` metadata. A
 violation exits 7, a check that cannot be made exits 9.
 
+## Starting a project
+
+`nvm init` with no shell name and one or more of `--node[=<version>]`,
+`--npm[=<version>]`, `--yarn[=<version>]` and `--pnpm[=<version>]` pins the
+tools in the working directory:
+
+```sh
+nvm init --node --pnpm
+nvm init --node=22.11.0 --npm=10.9.0
+nvm --min-pnpm 9.12.0 init --pnpm
+```
+
+Without a version, a tool gets the newest allowed release. For node that is
+the newest allowed LTS release, whether or not `ltsOnly` is set (by version,
+not by release date). For npm, yarn and pnpm it is the newest allowed stable
+`major.minor.patch` in the registry; prereleases are never chosen, and yarn
+comes from `@yarnpkg/cli-dist`. With a version, it must be exact (node:
+`20.11.1` or `v20.11.1`; the others: digits only, as pins), published, and
+allowed (yarn below 2.0.0 is the `yarn` package). Without a policy every
+published version is allowed; the legacy floor applies to `install` only.
+The policy flags (`--policy`, `--min-*`) apply as in `install`.
+
+`nvm init` writes `.nvmrc` in the working directory, creating it when absent,
+and changes only the requested lines: the bare version line for node and the
+`npm=`, `yarn=` or `pnpm=` line for the others. Every other line, comment and
+the order are kept. When yarn or pnpm is requested and a `package.json`
+exists in the working directory, its `packageManager` is set to
+`<name>@<version>`; nothing else in it changes, and a missing `package.json`
+is not created. Every check runs before anything is written, so a failure
+leaves both files untouched:
+
+```text
+Wrote /p/.nvmrc: node v22.11.0, pnpm 9.12.0
+Set packageManager to "pnpm@9.12.0" in /p/package.json
+```
+
+Asking for yarn when the `.nvmrc` already pins pnpm (or the reverse) is
+refused, never switched, and so is a malformed pin line until it is fixed.
+
+Exit codes: 3 for a version that is not exact or not published, a pin
+conflict, or a malformed pin or `package.json`; 6 for a usage error (a shell
+name with a project flag, `--yarn` with `--pnpm`, a repeated flag,
+`--no-use` or `--install` with a project flag); 7 when the version is not
+allowed or no release is allowed; 9 when the index, the registry or the
+policy cannot be read.
+
 ## Commands
 
 As nvm.sh: `version`, `current`, `ls`/`list`, `ls-remote`/`list-remote`,
