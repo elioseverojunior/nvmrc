@@ -83,8 +83,15 @@ fn file_layer(context: &Context<'_>) -> Result<Option<NodeLayer>, PolicyError> {
         return Ok(None);
     };
     let path = directory.join("min-version");
-    let Ok(text) = context.fs.read_to_string(&path) else {
-        return Ok(None);
+    let text = match context.fs.read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(PolicyError::Unreadable {
+                location: path.display().to_string(),
+                reason: error.to_string(),
+            });
+        }
     };
     let first_line = text.lines().next().map(str::to_owned);
     minimum_layer(Source::MinVersionFile(path), first_line)

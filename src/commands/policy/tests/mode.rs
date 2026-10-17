@@ -107,3 +107,27 @@ fn a_tie_is_attributed_to_the_central_policy() {
         Source::CentralPolicy(_)
     ));
 }
+
+#[test]
+fn a_min_version_file_that_cannot_be_read_is_an_error() {
+    use crate::ports::FileSystem;
+    let fs = FakeFileSystem::default();
+    fs.write_bytes(std::path::Path::new("/n/min-version"), &[0xff, 0xfe])
+        .unwrap();
+    let env = FakeEnv::default().with_var("NVM_DIR", "/n");
+    let context = context(&fs, &env).with_policy_flags(flags(&["--min-node", "20"]));
+    let error = resolve_mode(&context).unwrap_err();
+    assert!(
+        matches!(&error, PolicyError::Unreadable { location, .. } if location == "/n/min-version")
+    );
+}
+
+#[test]
+fn a_missing_min_version_file_is_no_layer() {
+    let fs = FakeFileSystem::default();
+    let env = FakeEnv::default().with_var("NVM_DIR", "/n");
+    let context = context(&fs, &env).with_policy_flags(flags(&["--min-node", "20"]));
+    let (mode, warnings) = resolve_mode(&context).unwrap();
+    assert!(enforced(mode).minimum.is_some());
+    assert!(warnings.is_empty());
+}

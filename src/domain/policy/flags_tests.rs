@@ -53,10 +53,24 @@ fn a_missing_or_repeated_value_is_an_error() {
 }
 
 #[test]
-fn an_empty_value_is_an_error() {
-    for input in [&["nvm", "--policy="][..], &["nvm", "--min-node", ""][..]] {
-        let message = extract(args(input)).unwrap_err().to_string();
-        assert!(message.ends_with(" needs a value."), "{message}");
+fn an_empty_or_blank_value_is_an_error() {
+    let cases = [
+        (&["nvm", "--policy="][..], "nvm: --policy needs a value."),
+        (
+            &["nvm", "--min-node", ""][..],
+            "nvm: --min-node needs a value.",
+        ),
+        (
+            &["nvm", "--policy", " "][..],
+            "nvm: --policy needs a value.",
+        ),
+        (
+            &["nvm", "--min-node=  "][..],
+            "nvm: --min-node needs a value.",
+        ),
+    ];
+    for (input, message) in cases {
+        assert_eq!(extract(args(input)).unwrap_err().to_string(), message);
     }
 }
 
