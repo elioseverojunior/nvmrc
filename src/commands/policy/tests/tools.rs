@@ -1,6 +1,7 @@
 //! The rules of npm, yarn and pnpm: checked on the pinned versions, and on
 //! the npm bundled with node when npm has a rule but no pin.
 
+use super::flags;
 use crate::commands::policy::bundled::bundled_npm;
 use crate::commands::policy::enforce::{Gate, Origin, Requested, enforce_node};
 use crate::commands::project_pins::ProjectPins;
@@ -8,11 +9,10 @@ use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::fixtures::index_text;
 use crate::domain::nvmrc::pins::Pins;
-use crate::domain::policy::{DEFAULT_INDEX, PolicyFlags, extract};
+use crate::domain::policy::DEFAULT_INDEX;
 use crate::domain::timestamp::days_from_iso_date;
 use crate::error::{CliError, NvmExitCode};
 use crate::fakes::{FakeClock, FakeEnv, FakeFileSystem, FakeHttp};
-use std::ffi::OsString;
 
 const INDEX_URL: &str = "https://nodejs.org/dist/index.tab";
 const PACKUMENT_URL: &str = "https://registry.npmjs.org/pnpm";
@@ -23,11 +23,6 @@ const PNPM_BLOCK: [&str; 3] = [
     "  - below the minimum 9.12.0 (from --min-pnpm)",
     "Raise /p/.nvmrc to an allowed version.",
 ];
-
-fn flags(values: &[&str]) -> PolicyFlags {
-    let args = std::iter::once("nvm").chain(values.iter().copied());
-    extract(args.map(OsString::from).collect()).unwrap().0
-}
 
 fn pinned(pins: Pins) -> ProjectPins {
     ProjectPins {
