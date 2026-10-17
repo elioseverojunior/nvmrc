@@ -87,6 +87,10 @@ fn check_beside(
         .map_err(|error| package_manager_error(error, tool, version, &package_json, nvmrc).into())
 }
 
+fn shown(path: &Path) -> String {
+    path.display().to_string()
+}
+
 fn package_manager_error(
     error: PackageManagerError,
     tool: Tool,
@@ -94,10 +98,7 @@ fn package_manager_error(
     package_json: &Path,
     nvmrc: &Path,
 ) -> PinsError {
-    let (package_json, nvmrc) = (
-        package_json.display().to_string(),
-        nvmrc.display().to_string(),
-    );
+    let (package_json, nvmrc) = (shown(package_json), shown(nvmrc));
     let expected = package_manager_field(tool, version);
     match error {
         PackageManagerError::Malformed(reason) => PinsError::UnreadablePackageJson {
