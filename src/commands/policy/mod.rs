@@ -8,7 +8,7 @@ pub mod gate;
 pub mod judge;
 pub mod load;
 pub mod mode;
-mod report;
+pub mod report;
 mod tool_layers;
 pub mod tools;
 

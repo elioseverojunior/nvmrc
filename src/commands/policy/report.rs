@@ -7,6 +7,7 @@ use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::policy::Violation;
 use crate::domain::tool::Tool;
+use crate::domain::version::Version;
 use crate::error::NvmExitCode;
 
 /// What the check found: the violations of node (its rules and its known
@@ -80,6 +81,24 @@ fn tool_block(prefix: &str, finding: &ToolFinding, transcript: &mut Transcript) 
         &tool_fix_text(*tool, origin),
         transcript,
     );
+}
+
+/// The block for `version` of `tool` given on the command line, as
+/// `nvm init` prints it.
+pub fn argument_block(
+    tool: Tool,
+    version: &Version,
+    violations: &[Violation],
+    transcript: &mut Transcript,
+) {
+    let origin = Origin::Argument;
+    let subject = format!(
+        "nvm: {} {} {}",
+        tool.name(),
+        tool.show(version),
+        origin_text(&origin)
+    );
+    block(&subject, violations, &fix_text(&origin), transcript);
 }
 
 fn block(subject: &str, violations: &[Violation], fix: &str, transcript: &mut Transcript) {

@@ -74,7 +74,7 @@ pub fn read_for(
     }
 }
 
-fn pin_error(error: PinError, nvmrc: &Path) -> PinsError {
+pub(crate) fn pin_error(error: PinError, nvmrc: &Path) -> PinsError {
     let nvmrc = nvmrc.display().to_string();
     match error {
         PinError::NotExact { line } => PinsError::NotExact { nvmrc, line },

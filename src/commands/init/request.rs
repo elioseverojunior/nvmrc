@@ -28,7 +28,6 @@ pub struct ProjectRequest {
 
 impl ProjectRequest {
     #[must_use]
-    #[allow(dead_code)] // read by project mode, which comes with the next task
     pub fn get(&self, tool: Tool) -> Option<&Wanted> {
         match tool {
             Tool::Node => self.node.as_ref(),
@@ -62,10 +61,11 @@ pub enum InitMode {
 /// [`CliError::Usage`] without a shell or project flag, or for an
 /// unsupported shell; [`CliError::Unsupported`] for an unknown option or a
 /// second shell; [`CliError::InvalidOptions`] for a shell with a project
-/// flag, yarn with pnpm, or a flag given twice;
+/// flag, `--no-use` or `--install` with a project flag, yarn with pnpm, or a
+/// flag given twice;
 /// [`CliError::InvalidVersionArgument`] for a version that is not exact.
 pub fn parse(args: &[String]) -> Result<InitMode, CliError> {
-    let mut options = InitOptions::default();
+    let mut options: Option<InitOptions> = None;
     let mut shell_name: Option<&str> = None;
     let mut request = ProjectRequest::default();
     let mut asked = false;
@@ -79,8 +79,8 @@ pub fn parse(args: &[String]) -> Result<InitMode, CliError> {
             continue;
         }
         match arg.as_str() {
-            "--no-use" => options = auto_step(true, false),
-            "--install" => options = auto_step(false, true),
+            "--no-use" => options = Some(auto_step(true, false)),
+            "--install" => options = Some(auto_step(false, true)),
             word if word.starts_with('-') || shell_name.is_some() => {
                 let message = format!("nvm init: unsupported argument \"{word}\".\n{USAGE}");
                 return Err(CliError::Unsupported(message));
@@ -96,10 +96,10 @@ fn auto_step(no_use: bool, install: bool) -> InitOptions {
 }
 
 /// Settles the mode once every argument is read; `request` is `Some` when
-/// a project flag was given.
+/// a project flag was given, `options` when `--no-use` or `--install` was.
 fn finish(
     shell_name: Option<&str>,
-    options: InitOptions,
+    options: Option<InitOptions>,
     request: Option<ProjectRequest>,
 ) -> Result<InitMode, CliError> {
     match (shell_name, request) {
@@ -107,7 +107,10 @@ fn finish(
             "nvm init: a shell name cannot be combined with --node, --npm, --yarn or --pnpm."
                 .to_owned(),
         )),
-        (Some(name), None) => Ok(InitMode::Shell(name.parse()?, options)),
+        (Some(name), None) => Ok(InitMode::Shell(name.parse()?, options.unwrap_or_default())),
+        (None, Some(_)) if options.is_some() => Err(CliError::InvalidOptions(
+            "nvm init: --no-use and --install apply to the shell snippet only.".to_owned(),
+        )),
         (None, Some(request)) if request.yarn.is_some() && request.pnpm.is_some() => {
             Err(CliError::InvalidOptions(
                 "nvm init: --yarn and --pnpm cannot be used together.".to_owned(),
@@ -225,6 +228,18 @@ mod tests {
         let (code, message) = failure(&["--npm", "--npm=10.9.0"]);
         assert_eq!(code, 6);
         assert_eq!(message, "nvm init: --npm is given twice.");
+    }
+
+    #[test]
+    fn shell_options_with_a_project_flag_are_a_usage_error() {
+        for args in [["--node", "--no-use"], ["--install", "--pnpm"]] {
+            let (code, message) = failure(&args);
+            assert_eq!(code, 6, "{args:?}");
+            assert_eq!(
+                message,
+                "nvm init: --no-use and --install apply to the shell snippet only."
+            );
+        }
     }
 
     #[test]

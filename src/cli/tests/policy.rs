@@ -95,3 +95,26 @@ fn a_policy_flag_after_the_program_of_exec_reaches_the_program() {
     assert_eq!(code, 0, "{}", String::from_utf8_lossy(&err));
     assert_eq!(process.spawned().len(), 1);
 }
+
+#[test]
+fn policy_flags_reach_init() {
+    let packument = r#"{"versions": {"9.1.0": {}, "9.11.0": {}}}"#;
+    let http = FakeHttp::default().with_body("https://registry.npmjs.org/pnpm", packument);
+    let fs = FakeFileSystem::default().with_dir("/w");
+    let env = FakeEnv::default()
+        .with_var("NVM_DIR", "/n")
+        .with_var("PWD", "/w")
+        .with_current_dir("/w");
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_third_party_http(&http, &http);
+    let (mut out, mut err) = (Vec::new(), Vec::new());
+    let args = ["nvm", "--min-pnpm", "9.12.0", "init", "--pnpm"];
+    let code = run(args, &context, &mut out, &mut err);
+    let err = String::from_utf8(err).unwrap();
+    assert_eq!(
+        (code, err.trim_end()),
+        (7, "nvm init: no allowed pnpm release.")
+    );
+    assert!(!fs.is_file(std::path::Path::new("/w/.nvmrc")));
+}
