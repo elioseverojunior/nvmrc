@@ -98,6 +98,7 @@ pub fn argument_block(
     let subject = subject(tool, version, &origin_text(&origin));
     let reasons = refusal_reasons(refused);
     block(&subject, &reasons, &fix_text(&origin), transcript);
+    bundled_note(&refused.bundled, transcript);
 }
 
 /// The block for `version`, the newest release of `tool` in `major` (in
@@ -117,6 +118,7 @@ pub fn newest_block(
     };
     let subject = subject(tool, version, &scope);
     block(&subject, &refusal_reasons(refused), fix, transcript);
+    bundled_note(&refused.bundled, transcript);
 }
 
 /// `nvm: node v20.18.0 (from the command line)`.
@@ -148,10 +150,17 @@ fn refusal_reasons(refused: &Refusal) -> Vec<String> {
     found
 }
 
+/// The warning of a bundled npm that could not be checked, after the block.
+fn bundled_note(bundled: &BundledNpm, transcript: &mut Transcript) {
+    if let BundledNpm::Unchecked(note) = bundled {
+        transcript.err(note.clone());
+    }
+}
+
 /// `  - the npm it bundles, npm 9.8.1, is below the minimum 10.0.0 (from …)`.
 fn bundled_reasons(bundled: &BundledNpm) -> Vec<String> {
     match bundled {
-        BundledNpm::Allowed => Vec::new(),
+        BundledNpm::Allowed | BundledNpm::Unchecked(_) => Vec::new(),
         BundledNpm::Unknown => {
             vec!["  - the npm it bundles is unknown, and npm has rules".to_owned()]
         }

@@ -24,6 +24,9 @@ pub enum BundledNpm {
         npm: Version,
         violations: Vec<Violation>,
     },
+    /// The check failed on a release its own violations already refuse;
+    /// the warning to print after the block.
+    Unchecked(String),
 }
 
 impl BundledNpm {

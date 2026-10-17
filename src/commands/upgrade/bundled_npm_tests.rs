@@ -2,7 +2,9 @@
 //! release bundles must be allowed too, or the install would refuse it.
 
 use super::tests::upgrade_in;
-use crate::commands::project::test_support::{MIN_NPM, file, project, served_bundling};
+use crate::commands::project::test_support::{
+    MIN_NPM, NODE_22_NPM_AGED, NPM_UNCHECKED, file, project, served_bundling,
+};
 use crate::fakes::FakeHttp;
 
 /// Major 20 with its newest release bundling an npm below [`MIN_NPM`].
@@ -55,6 +57,27 @@ fn no_node_with_an_allowed_bundled_npm_writes_nothing() {
          nvm: node v20.18.0 (the newest in major 20) is not allowed by policy:\n  \
          - the npm it bundles, npm 10.4.0, is below the minimum 11.0.0 (from policy /policy.json)\n\
          No major has an allowed node release."
+    );
+    assert_eq!(file(&fs, "/p/.nvmrc").as_deref(), Some("v20.11.1\n"));
+}
+
+#[test]
+fn a_no_target_block_with_node_violations_survives_an_npm_that_cannot_be_checked() {
+    let http = served_bundling(&[
+        ("v20.18.0", "Iron", "10.4.0"),
+        ("v20.11.1", "Iron", "10.2.4"),
+    ]);
+    let (fs, env) = project(&[("/p/.nvmrc", "v20.11.1\n")], NODE_22_NPM_AGED);
+    let (output, _) = upgrade_in(&fs, &env, &http, &["--node"]);
+    assert_eq!(output.status.code(), 7, "{}", output.stderr);
+    assert_eq!(
+        output.stderr,
+        format!(
+            "nvm upgrade: no allowed node release in major 20.\n\
+             nvm: node v20.18.0 (the newest in major 20) is not allowed by policy:\n  \
+             - below the minimum v22.0.0 (from policy /policy.json)\n\
+             No major has an allowed node release.\n{NPM_UNCHECKED}"
+        )
     );
     assert_eq!(file(&fs, "/p/.nvmrc").as_deref(), Some("v20.11.1\n"));
 }

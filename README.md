@@ -448,7 +448,11 @@ nvm: node v20.18.0 (from the command line) is not allowed by policy:
 Use an allowed version.
 ```
 
-or `- the npm it bundles is unknown, and npm has rules`.
+or `- the npm it bundles is unknown, and npm has rules`. When the npm cannot
+be checked (say, the registry date an age rule needs is unavailable) on a
+node its own rules already refuse, the refusal stands (exit 7) and
+`nvm: warning: cannot check npm: <reason>` follows the block, as in the
+`install` gate; with no other reason it fails with exit 9.
 
 `nvm init` writes `.nvmrc` in the working directory, creating it when absent,
 and changes only the requested lines: the bare version line for node and the

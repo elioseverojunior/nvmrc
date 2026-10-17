@@ -17,6 +17,14 @@ pub const MIN_PNPM: &str =
     r#"{ "schemaVersion": 1, "tools": { "pnpm": { "minimum": "9.12.0" } } }"#;
 pub const MIN_NPM: &str = r#"{ "schemaVersion": 1, "tools": { "npm": { "minimum": "10.5.0" } } }"#;
 
+/// Node at least 22, and an npm age rule that needs the npm registry.
+pub const NODE_22_NPM_AGED: &str = r#"{ "schemaVersion": 1, "tools": {
+    "node": { "minimum": "22.0.0" }, "npm": { "minimumReleaseAgeDays": 7 } } }"#;
+
+/// What is printed when the registry cannot date the bundled npm.
+pub const NPM_UNCHECKED: &str = "nvm: warning: cannot check npm: the release \
+    information is unavailable: https://registry.npmjs.org/npm";
+
 fn node_index() -> String {
     index_text_dated(&[
         ("v23.0.0", "2024-05-01", "-"),

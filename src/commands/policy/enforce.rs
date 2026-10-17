@@ -125,7 +125,7 @@ fn settle(mut checked: Checked, unknown: Vec<Unknown>) -> Result<Checked, Policy
     Ok(checked)
 }
 
-fn unknown_note(what: &str, error: &PolicyError) -> String {
+pub(crate) fn unknown_note(what: &str, error: &PolicyError) -> String {
     let text = error.to_string();
     let reason = text.trim_start_matches("nvm: cannot check the policy: ");
     format!("nvm: warning: cannot check {what}: {reason}")

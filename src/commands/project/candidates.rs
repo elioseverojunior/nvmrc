@@ -3,8 +3,8 @@
 use std::collections::BTreeSet;
 
 use crate::commands::package_managers::registry::fetch_packument;
-use crate::commands::policy::enforce::index_location;
-use crate::commands::policy::judge::{Judge, Refusal};
+use crate::commands::policy::enforce::{index_location, unknown_note};
+use crate::commands::policy::judge::{BundledNpm, Judge, Refusal};
 use crate::commands::remote_index;
 use crate::context::Context;
 use crate::domain::policy::ReleaseInfo;
@@ -140,7 +140,9 @@ fn is_allowed(
 }
 
 /// Why the policy refuses `candidate`: its violations and, for node, what
-/// it says of the npm the release bundles; empty when it is allowed.
+/// it says of the npm the release bundles; empty when it is allowed. As in
+/// the gate, an npm that cannot be checked fails only when nothing else
+/// refuses the release; otherwise it is a warning.
 ///
 /// # Errors
 /// [`PolicyError`] when the policy cannot judge the candidate.
@@ -151,7 +153,11 @@ pub fn refusal(
     candidate: &Candidate,
 ) -> Result<Refusal, PolicyError> {
     let violations = judge.violations(context, tool, &candidate.version, &candidate.release)?;
-    let bundled = judge.bundled_npm(context, tool, candidate.npm.as_ref())?;
+    let bundled = match judge.bundled_npm(context, tool, candidate.npm.as_ref()) {
+        Ok(bundled) => bundled,
+        Err(error) if !violations.is_empty() => BundledNpm::Unchecked(unknown_note("npm", &error)),
+        Err(error) => return Err(error),
+    };
     Ok(Refusal {
         violations,
         bundled,

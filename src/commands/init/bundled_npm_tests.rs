@@ -1,7 +1,9 @@
 //! `nvm init --node=<version>` with an npm rule and no npm pin: the npm the
 //! release bundles must be allowed too, or the install would refuse it.
 
-use crate::commands::project::test_support::{MIN_NPM, file, init, project, served_bundling};
+use crate::commands::project::test_support::{
+    MIN_NPM, NODE_22_NPM_AGED, NPM_UNCHECKED, file, init, project, served_bundling,
+};
 
 #[test]
 fn an_exact_node_whose_bundled_npm_is_refused_writes_nothing() {
@@ -42,4 +44,21 @@ fn an_exact_node_with_npm_set_in_the_same_run_is_allowed() {
     let output = init(&fs, &env, &http, &["--node=20.18.0", "--npm=10.9.0"]);
     assert_eq!(output.status.code(), 0, "{}", output.stderr);
     assert_eq!(output.stdout, "Wrote /p/.nvmrc: node v20.18.0, npm 10.9.0");
+}
+
+#[test]
+fn an_exact_node_with_its_own_violation_is_refused_when_npm_cannot_be_checked() {
+    let http = served_bundling(&[("v20.18.0", "Iron", "10.4.0")]);
+    let (fs, env) = project(&[], NODE_22_NPM_AGED);
+    let output = init(&fs, &env, &http, &["--node=20.18.0"]);
+    assert_eq!(output.status.code(), 7, "{}", output.stderr);
+    assert_eq!(
+        output.stderr,
+        format!(
+            "nvm: node v20.18.0 (from the command line) is not allowed by policy:\n  \
+             - below the minimum v22.0.0 (from policy /policy.json)\n\
+             Use an allowed version.\n{NPM_UNCHECKED}"
+        )
+    );
+    assert_eq!(file(&fs, "/p/.nvmrc"), None);
 }
