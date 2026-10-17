@@ -1,13 +1,12 @@
 //! Where one tool moves to: the newest allowed release in the requested major.
 
-use crate::commands::policy::judge::Judge;
+use crate::commands::policy::judge::{Judge, Refusal};
 use crate::commands::project::{
-    CLI_DIST, Candidate, YARN_ONE, first_allowed, in_major, majors, node_candidates,
+    CLI_DIST, Candidate, YARN_ONE, first_allowed, in_major, majors, node_candidates, refusal,
     tool_candidates,
 };
 use crate::commands::upgrade::request::Major;
 use crate::context::Context;
-use crate::domain::policy::Violation;
 use crate::domain::tool::Tool;
 use crate::domain::version::Version;
 use crate::error::{CliError, PolicyError};
@@ -23,7 +22,7 @@ pub enum Target {
         /// The major searched; `None` when every major was.
         major: Option<u64>,
         /// The newest release of the major and why the policy refuses it.
-        newest: Option<(Version, Vec<Violation>)>,
+        newest: Option<(Version, Refusal)>,
         /// The lowest major with an allowed release.
         lowest: Option<u64>,
     },
@@ -55,7 +54,7 @@ pub fn target(
             Target::Move(found.version)
         });
     }
-    let newest = newest_violations(context, judge, tool, &pool)?;
+    let newest = newest_refusal(context, judge, tool, &pool)?;
     let scanned = lowest_scan(context, tool, major, all)?;
     let lowest = lowest_allowed_major(context, judge, tool, &scanned)?;
     Ok(Target::NoneInMajor {
@@ -124,18 +123,18 @@ fn lowest_scan(
     Ok(found)
 }
 
-/// The newest candidate of `pool` and the rules it breaks.
-fn newest_violations(
+/// The newest candidate of `pool` and why the policy refuses it.
+fn newest_refusal(
     context: &Context<'_>,
     judge: &mut Judge,
     tool: Tool,
     pool: &[Candidate],
-) -> Result<Option<(Version, Vec<Violation>)>, PolicyError> {
+) -> Result<Option<(Version, Refusal)>, PolicyError> {
     let Some(newest) = pool.first() else {
         return Ok(None);
     };
-    let found = judge.violations(context, tool, &newest.version, &newest.release)?;
-    Ok(Some((newest.version, found)))
+    let refused = refusal(context, judge, tool, newest)?;
+    Ok(Some((newest.version, refused)))
 }
 
 /// The lowest major among `candidates` that has an allowed release.

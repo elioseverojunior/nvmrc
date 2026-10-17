@@ -2,6 +2,7 @@
 //! the rules it breaks and the fix.
 
 use super::enforce::{Gate, Origin, Requested};
+use super::judge::{BundledNpm, Refusal};
 use super::tools::{ToolFinding, ToolOrigin};
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
@@ -68,16 +69,18 @@ fn node_block(
         requested.version,
         origin_text(origin)
     );
-    block(&subject, violations, &fix_text(origin), transcript);
+    let reasons = reasons(violations);
+    block(&subject, &reasons, &fix_text(origin), transcript);
 }
 
 fn tool_block(prefix: &str, finding: &ToolFinding, transcript: &mut Transcript) {
     let (tool, version, origin, violations) = finding;
     let (name, shown) = (tool.name(), tool.show(version));
     let subject = format!("{prefix} {name} {shown} {}", tool_origin_text(origin));
+    let reasons = reasons(violations);
     block(
         &subject,
-        violations,
+        &reasons,
         &tool_fix_text(*tool, origin),
         transcript,
     );
@@ -88,23 +91,23 @@ fn tool_block(prefix: &str, finding: &ToolFinding, transcript: &mut Transcript) 
 pub fn argument_block(
     tool: Tool,
     version: &Version,
-    violations: &[Violation],
+    refused: &Refusal,
     transcript: &mut Transcript,
 ) {
     let origin = Origin::Argument;
     let subject = subject(tool, version, &origin_text(&origin));
-    block(&subject, violations, &fix_text(&origin), transcript);
+    let reasons = refusal_reasons(refused);
+    block(&subject, &reasons, &fix_text(&origin), transcript);
 }
 
 /// The block for `version`, the newest release of `tool` in `major` (in
 /// any major for `None`), ending in `fix`, as `nvm upgrade` prints it when
-/// nothing there is allowed. A node release refused with no rule of its
-/// own is refused for the npm it bundles.
+/// nothing there is allowed.
 pub fn newest_block(
     tool: Tool,
     version: &Version,
     major: Option<u64>,
-    violations: &[Violation],
+    refused: &Refusal,
     fix: &str,
     transcript: &mut Transcript,
 ) {
@@ -113,13 +116,7 @@ pub fn newest_block(
         None => "(the newest release)".to_owned(),
     };
     let subject = subject(tool, version, &scope);
-    if violations.is_empty() {
-        transcript.err(format!("{subject} is not allowed by policy:"));
-        transcript.err("  - the npm it bundles is not allowed by policy".to_owned());
-        transcript.err(fix.to_owned());
-        return;
-    }
-    block(&subject, violations, fix, transcript);
+    block(&subject, &refusal_reasons(refused), fix, transcript);
 }
 
 /// `nvm: node v20.18.0 (from the command line)`.
@@ -127,12 +124,45 @@ fn subject(tool: Tool, version: &Version, origin: &str) -> String {
     format!("nvm: {} {} {origin}", tool.name(), tool.show(version))
 }
 
-fn block(subject: &str, violations: &[Violation], fix: &str, transcript: &mut Transcript) {
+fn block(subject: &str, reasons: &[String], fix: &str, transcript: &mut Transcript) {
     transcript.err(format!("{subject} is not allowed by policy:"));
-    for violation in violations {
-        transcript.err(format!("  - {violation}"));
-    }
+    reasons
+        .iter()
+        .for_each(|reason| transcript.err(reason.clone()));
     transcript.err(fix.to_owned());
+}
+
+/// A bullet for each violation.
+fn reasons(violations: &[Violation]) -> Vec<String> {
+    violations
+        .iter()
+        .map(|violation| format!("  - {violation}"))
+        .collect()
+}
+
+/// The bullets of the release's own violations, then those of the npm it
+/// bundles.
+fn refusal_reasons(refused: &Refusal) -> Vec<String> {
+    let mut found = reasons(&refused.violations);
+    found.extend(bundled_reasons(&refused.bundled));
+    found
+}
+
+/// `  - the npm it bundles, npm 9.8.1, is below the minimum 10.0.0 (from …)`.
+fn bundled_reasons(bundled: &BundledNpm) -> Vec<String> {
+    match bundled {
+        BundledNpm::Allowed => Vec::new(),
+        BundledNpm::Unknown => {
+            vec!["  - the npm it bundles is unknown, and npm has rules".to_owned()]
+        }
+        BundledNpm::NotAllowed { npm, violations } => {
+            let shown = Tool::Npm.show(npm);
+            violations
+                .iter()
+                .map(|violation| format!("  - the npm it bundles, npm {shown}, is {violation}"))
+                .collect()
+        }
+    }
 }
 
 fn origin_text(origin: &Origin) -> String {

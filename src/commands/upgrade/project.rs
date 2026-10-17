@@ -102,8 +102,8 @@ fn no_target(tool: Tool, found: &Target, transcript: &mut Transcript) -> bool {
     });
     let hint = hint(name, *lowest);
     match newest {
-        Some((version, violations)) => {
-            newest_block(tool, version, *major, violations, &hint, transcript);
+        Some((version, refused)) => {
+            newest_block(tool, version, *major, refused, &hint, transcript);
         }
         None => transcript.err(hint),
     }

@@ -438,7 +438,17 @@ When the policy has an npm rule and npm will not be pinned (no `npm=` line
 in the `.nvmrc` and no `--npm` in the same run), the newest node is chosen
 only among releases whose bundled npm (the `npm` column of the release
 index) the policy allows, since that npm is the one in effect; a release
-whose bundled npm is unknown is skipped.
+whose bundled npm is unknown is skipped. An exact node given with
+`--node=<version>` is refused for the same reasons (exit 7), and the block
+names them after node's own rules:
+
+```text
+nvm: node v20.18.0 (from the command line) is not allowed by policy:
+  - the npm it bundles, npm 10.4.0, is below the minimum 10.5.0 (from policy /policy.json)
+Use an allowed version.
+```
+
+or `- the npm it bundles is unknown, and npm has rules`.
 
 `nvm init` writes `.nvmrc` in the working directory, creating it when absent,
 and changes only the requested lines: the bare version line for node and the
@@ -538,10 +548,10 @@ The lowest major with an allowed release is 10. Run `nvm upgrade --pnpm --major=
 
 or `No major has an allowed pnpm release.` With `--major` the first line is
 `nvm upgrade: no allowed pnpm release.` and the block names
-`(the newest release)`. A node release refused only for its bundled npm has
-the bullet `- the npm it bundles is not allowed by policy`. For yarn the
-lowest major considers both packages, so from yarn 1 the hint can point at
-`--major=4`, and from yarn 4 at `--major=1`.
+`(the newest release)`. For node, the reasons of its bundled npm follow its
+own rules, as in `nvm init` (see above). For yarn the lowest major considers
+both packages, so from yarn 1 the hint can point at `--major=4`, and from
+yarn 4 at `--major=1`.
 
 The files are written first, then the changes are printed, in node, npm,
 yarn, pnpm order; a tool already on its target is reported as up to date:

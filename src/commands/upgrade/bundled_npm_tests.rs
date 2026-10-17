@@ -53,7 +53,7 @@ fn no_node_with_an_allowed_bundled_npm_writes_nothing() {
         output.stderr,
         "nvm upgrade: no allowed node release in major 20.\n\
          nvm: node v20.18.0 (the newest in major 20) is not allowed by policy:\n  \
-         - the npm it bundles is not allowed by policy\n\
+         - the npm it bundles, npm 10.4.0, is below the minimum 11.0.0 (from policy /policy.json)\n\
          No major has an allowed node release."
     );
     assert_eq!(file(&fs, "/p/.nvmrc").as_deref(), Some("v20.11.1\n"));

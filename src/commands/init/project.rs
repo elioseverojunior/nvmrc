@@ -111,8 +111,8 @@ fn resolve(
             let message = not_published(tool, version);
             Err(refuse(transcript, &message, NvmExitCode::InvalidVersion))
         }
-        Exact::NotAllowed(violations) => {
-            argument_block(tool, version, &violations, transcript);
+        Exact::NotAllowed(refused) => {
+            argument_block(tool, version, &refused, transcript);
             Err(Stop::Refused(NvmExitCode::BelowVersionFloor))
         }
     }
@@ -193,3 +193,7 @@ fn checked_pins(
 #[cfg(test)]
 #[path = "project_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "bundled_npm_tests.rs"]
+mod bundled_npm_tests;

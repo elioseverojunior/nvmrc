@@ -1,6 +1,7 @@
 use super::*;
 use crate::commands::transcript::Transcript;
 use crate::domain::fixtures::index_text_dated;
+use crate::domain::policy::Violation;
 use crate::fakes::{FakeEnv, FakeFileSystem, FakeHttp};
 
 const INDEX_URL: &str = "https://nodejs.org/dist/index.tab";
@@ -99,14 +100,14 @@ fn no_allowed_release_in_the_major_names_the_newest_and_the_lowest_major() {
     let found = node(policy, "20.11.1", Major::Same);
     let Target::NoneInMajor {
         major: Some(major),
-        newest: Some((newest, violations)),
+        newest: Some((newest, refused)),
         lowest,
     } = found
     else {
         panic!("expected NoneInMajor, got {found:?}");
     };
     assert_eq!((major, newest, lowest), (20, version("20.18.0"), Some(22)));
-    assert!(matches!(violations[..], [Violation::Denied(_)]));
+    assert!(matches!(refused.violations[..], [Violation::Denied(_)]));
 }
 
 #[test]

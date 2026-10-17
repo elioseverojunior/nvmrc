@@ -4,10 +4,10 @@ use std::collections::BTreeSet;
 
 use crate::commands::package_managers::registry::fetch_packument;
 use crate::commands::policy::enforce::index_location;
-use crate::commands::policy::judge::Judge;
+use crate::commands::policy::judge::{Judge, Refusal};
 use crate::commands::remote_index;
 use crate::context::Context;
-use crate::domain::policy::{ReleaseInfo, Violation};
+use crate::domain::policy::ReleaseInfo;
 use crate::domain::registry::published_versions;
 use crate::domain::tool::Tool;
 use crate::domain::version::{Flavor, Version};
@@ -44,7 +44,7 @@ pub struct Candidate {
 pub enum Exact {
     Allowed,
     NotPublished,
-    NotAllowed(Vec<Violation>),
+    NotAllowed(Refusal),
 }
 
 /// The releases of the node index, newest version first.
@@ -122,7 +122,8 @@ pub fn first_allowed(
 }
 
 /// Whether `candidate` has no violation and, for node, bundles an npm the
-/// policy allows (see [`Judge::allows_bundled_npm`]).
+/// policy allows (see [`Judge::bundled_npm`]); the npm is judged only for
+/// a release with no violation of its own.
 fn is_allowed(
     context: &Context<'_>,
     judge: &mut Judge,
@@ -130,7 +131,31 @@ fn is_allowed(
     candidate: &Candidate,
 ) -> Result<bool, PolicyError> {
     let found = judge.violations(context, tool, &candidate.version, &candidate.release)?;
-    Ok(found.is_empty() && judge.allows_bundled_npm(context, tool, candidate.npm.as_ref())?)
+    if !found.is_empty() {
+        return Ok(false);
+    }
+    Ok(judge
+        .bundled_npm(context, tool, candidate.npm.as_ref())?
+        .is_allowed())
+}
+
+/// Why the policy refuses `candidate`: its violations and, for node, what
+/// it says of the npm the release bundles; empty when it is allowed.
+///
+/// # Errors
+/// [`PolicyError`] when the policy cannot judge the candidate.
+pub fn refusal(
+    context: &Context<'_>,
+    judge: &mut Judge,
+    tool: Tool,
+    candidate: &Candidate,
+) -> Result<Refusal, PolicyError> {
+    let violations = judge.violations(context, tool, &candidate.version, &candidate.release)?;
+    let bundled = judge.bundled_npm(context, tool, candidate.npm.as_ref())?;
+    Ok(Refusal {
+        violations,
+        bundled,
+    })
 }
 
 /// The first candidate with no violation; for node, among those with an LTS
@@ -173,7 +198,8 @@ pub fn majors(candidates: &[Candidate]) -> Vec<u64> {
     found.into_iter().collect()
 }
 
-/// Whether `version` is published and allowed.
+/// Whether `version` is published and allowed, the npm a node release
+/// bundles included.
 ///
 /// # Errors
 /// [`PolicyError`] when the policy cannot judge the version.
@@ -190,11 +216,11 @@ pub fn exact(
     else {
         return Ok(Exact::NotPublished);
     };
-    let found = judge.violations(context, tool, version, &candidate.release)?;
-    Ok(if found.is_empty() {
+    let refused = refusal(context, judge, tool, candidate)?;
+    Ok(if refused.is_empty() {
         Exact::Allowed
     } else {
-        Exact::NotAllowed(found)
+        Exact::NotAllowed(refused)
     })
 }
 

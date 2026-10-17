@@ -12,6 +12,43 @@ use crate::domain::tool::Tool;
 use crate::domain::version::{Flavor, Version};
 use crate::error::PolicyError;
 
+/// What the policy says of the npm a node release bundles, when npm is not
+/// pinned.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BundledNpm {
+    Allowed,
+    /// npm has rules, is not pinned, and the index gives no npm for the
+    /// release.
+    Unknown,
+    NotAllowed {
+        npm: Version,
+        violations: Vec<Violation>,
+    },
+}
+
+impl BundledNpm {
+    #[must_use]
+    pub fn is_allowed(&self) -> bool {
+        matches!(self, Self::Allowed)
+    }
+}
+
+/// Why the policy refuses a release: the rules it breaks and, for node,
+/// what it says of the npm the release bundles.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refusal {
+    pub violations: Vec<Violation>,
+    pub bundled: BundledNpm,
+}
+
+impl Refusal {
+    /// Whether nothing is refused.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.violations.is_empty() && self.bundled.is_allowed()
+    }
+}
+
 /// Decides whether a version is allowed; without a policy everything is.
 pub struct Judge {
     policy: Option<EnforcedPolicy>,
@@ -46,36 +83,42 @@ impl Judge {
         Self { npm_pinned, ..self }
     }
 
-    /// Whether the npm bundled with a release of `tool` is allowed: always
-    /// for a tool other than node, with npm pinned or without an npm rule;
-    /// never when the bundled npm is unknown.
+    /// What the policy says of the npm bundled with a release of `tool`:
+    /// allowed for a tool other than node, with npm pinned or without an
+    /// npm rule; never when the bundled npm is unknown.
     ///
     /// # Errors
     /// [`PolicyError`] when the release date an npm age rule needs cannot
     /// be had.
-    pub fn allows_bundled_npm(
+    pub fn bundled_npm(
         &mut self,
         context: &Context<'_>,
         tool: Tool,
         bundled: Option<&Version>,
-    ) -> Result<bool, PolicyError> {
+    ) -> Result<BundledNpm, PolicyError> {
         let Some(policy) = self.policy.as_ref().filter(|_| tool == Tool::Node) else {
-            return Ok(true);
+            return Ok(BundledNpm::Allowed);
         };
         let rules = policy.tool(Tool::Npm);
         if self.npm_pinned || rules.is_unrestricted() {
-            return Ok(true);
+            return Ok(BundledNpm::Allowed);
         }
         let Some(npm) = bundled else {
-            return Ok(false);
+            return Ok(BundledNpm::Unknown);
         };
         let release = release_info(context, false, rules, npm)?.unwrap_or(ReleaseInfo {
             lts: None,
             published_day: None,
         });
-        Ok(self
-            .violations(context, Tool::Npm, npm, &release)?
-            .is_empty())
+        let violations = self.violations(context, Tool::Npm, npm, &release)?;
+        Ok(if violations.is_empty() {
+            BundledNpm::Allowed
+        } else {
+            BundledNpm::NotAllowed {
+                npm: *npm,
+                violations,
+            }
+        })
     }
 
     /// Why `version` of `tool` is not allowed; empty when it is. For node
