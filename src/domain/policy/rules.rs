@@ -4,9 +4,9 @@ use std::fmt::Display;
 
 use nodejs_semver::Range;
 
-use super::document::{DocumentError, NodeRules};
+use super::document::{DocumentError, NodeRules, parse_exact, parse_minimum, parse_range};
 use super::source::{Source, Sourced};
-use crate::domain::version::{Version, VersionPattern};
+use crate::domain::version::Version;
 
 /// The node rules one source contributes.
 #[derive(Debug, Clone)]
@@ -26,8 +26,16 @@ impl NodeLayer {
     pub fn from_rules(source: Source, rules: &NodeRules) -> Result<Self, DocumentError> {
         Ok(Self {
             source,
-            minimum: parse_minimum(rules.minimum.as_deref())?,
-            allow: parse_allow(rules.allow.as_deref())?,
+            minimum: rules
+                .minimum
+                .as_deref()
+                .map(|text| parse_minimum("tools.node.minimum".into(), text))
+                .transpose()?,
+            allow: rules
+                .allow
+                .as_deref()
+                .map(|text| parse_range("tools.node.allow".into(), text))
+                .transpose()?,
             allow_text: rules.allow.clone(),
             deny: parse_deny(rules.deny.as_deref().unwrap_or_default())?,
             lts_only: rules.lts_only,
@@ -49,41 +57,12 @@ impl NodeLayer {
     }
 }
 
-fn parse_minimum(text: Option<&str>) -> Result<Option<Version>, DocumentError> {
-    text.map(|text| {
-        text.parse::<VersionPattern>()
-            .map(|pattern| pattern.lowest())
-            .map_err(|_| invalid_version("tools.node.minimum".into(), text))
-    })
-    .transpose()
-}
-
-fn parse_allow(text: Option<&str>) -> Result<Option<Range>, DocumentError> {
-    text.map(|text| {
-        Range::parse(text).map_err(|_| DocumentError::InvalidRange {
-            field: "tools.node.allow".into(),
-            value: text.to_owned(),
-        })
-    })
-    .transpose()
-}
-
 fn parse_deny(entries: &[String]) -> Result<Vec<Version>, DocumentError> {
     entries
         .iter()
         .enumerate()
-        .map(|(index, text)| {
-            text.parse::<Version>()
-                .map_err(|_| invalid_version(format!("tools.node.deny[{index}]"), text))
-        })
+        .map(|(index, text)| parse_exact(format!("tools.node.deny[{index}]"), text))
         .collect()
-}
-
-fn invalid_version(field: String, value: &str) -> DocumentError {
-    DocumentError::InvalidVersion {
-        field,
-        value: value.to_owned(),
-    }
 }
 
 /// The merged node rules, each with the source that decided it.

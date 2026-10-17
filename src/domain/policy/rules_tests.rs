@@ -127,3 +127,15 @@ fn sources_display_as_users_know_them() {
     );
     assert!(!Source::CentralPolicy(String::new()).is_override());
 }
+
+#[test]
+fn a_layer_rejects_a_blank_allow_and_iojs_versions() {
+    let source = || Source::CentralPolicy("/p.json".into());
+    for rules in [
+        allow(""),
+        minimum("iojs-v3"),
+        Rules::with(|_| {}).deny(&["iojs-v3.0.0"]),
+    ] {
+        assert!(NodeLayer::from_rules(source(), &rules.0).is_err());
+    }
+}

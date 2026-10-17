@@ -89,6 +89,40 @@ fn versions_and_ranges_are_validated() {
 }
 
 #[test]
+fn a_blank_allow_is_rejected_rather_than_allowing_everything() {
+    for allow in ["", "  "] {
+        let text = format!(r#"{{"schemaVersion":1,"tools":{{"node":{{"allow":"{allow}"}}}}}}"#);
+        assert_eq!(
+            parse_document(&text),
+            Err(DocumentError::InvalidRange {
+                field: "tools.node.allow".into(),
+                value: allow.into(),
+            })
+        );
+    }
+}
+
+#[test]
+fn an_iojs_minimum_or_deny_entry_is_rejected() {
+    let minimum = r#"{"schemaVersion":1,"tools":{"node":{"minimum":"iojs-v3"}}}"#;
+    let deny = r#"{"schemaVersion":1,"tools":{"node":{"deny":["iojs-v3.0.0"]}}}"#;
+    assert_eq!(
+        parse_document(minimum),
+        Err(DocumentError::InvalidVersion {
+            field: "tools.node.minimum".into(),
+            value: "iojs-v3".into(),
+        })
+    );
+    assert_eq!(
+        parse_document(deny),
+        Err(DocumentError::InvalidVersion {
+            field: "tools.node.deny[0]".into(),
+            value: "iojs-v3.0.0".into(),
+        })
+    );
+}
+
+#[test]
 fn invalid_fields_are_named_by_their_json_path() {
     let text = r#"{"schemaVersion":1,"tools":{"yarn":{"deny":["4.0.0","4"]}}}"#;
     assert_eq!(

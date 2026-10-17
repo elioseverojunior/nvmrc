@@ -4,7 +4,7 @@
 use nodejs_semver::Range;
 use serde::Deserialize;
 
-use crate::domain::version::{Version, VersionPattern};
+use crate::domain::version::{Flavor, Version, VersionPattern};
 
 const SUPPORTED_SCHEMA_VERSION: u32 = 1;
 
@@ -161,22 +161,54 @@ impl PackageRules {
 
 fn validate_rules(prefix: &str, rules: &CommonRules<'_>) -> Result<(), DocumentError> {
     if let Some(minimum) = rules.minimum {
-        minimum
-            .parse::<VersionPattern>()
-            .map_err(|_| invalid_version(format!("{prefix}.minimum"), minimum))?;
+        parse_minimum(format!("{prefix}.minimum"), minimum)?;
     }
     if let Some(allow) = rules.allow {
-        Range::parse(allow).map_err(|_| DocumentError::InvalidRange {
-            field: format!("{prefix}.allow"),
-            value: allow.to_owned(),
-        })?;
+        parse_range(format!("{prefix}.allow"), allow)?;
     }
     for (index, entry) in rules.deny.iter().enumerate() {
-        entry
-            .parse::<Version>()
-            .map_err(|_| invalid_version(format!("{prefix}.deny[{index}]"), entry))?;
+        parse_exact(format!("{prefix}.deny[{index}]"), entry)?;
     }
     Ok(())
+}
+
+/// A minimum: a Node version, partial or full, standing for its lowest
+/// release. An `iojs-` version would never match a Node release.
+///
+/// # Errors
+/// Returns [`DocumentError::InvalidVersion`] naming `field`.
+pub fn parse_minimum(field: String, text: &str) -> Result<Version, DocumentError> {
+    text.parse::<VersionPattern>()
+        .ok()
+        .filter(|pattern| pattern.flavor.is_none())
+        .map(|pattern| pattern.lowest())
+        .ok_or_else(|| invalid_version(field, text))
+}
+
+/// A deny entry: an exact Node version.
+///
+/// # Errors
+/// Returns [`DocumentError::InvalidVersion`] naming `field`.
+pub fn parse_exact(field: String, text: &str) -> Result<Version, DocumentError> {
+    text.parse::<Version>()
+        .ok()
+        .filter(|version| version.flavor == Flavor::Node)
+        .ok_or_else(|| invalid_version(field, text))
+}
+
+/// An allowed range; a blank one, which semver reads as `*`, is rejected so a
+/// typo never allows everything.
+///
+/// # Errors
+/// Returns [`DocumentError::InvalidRange`] naming `field`.
+pub fn parse_range(field: String, text: &str) -> Result<Range, DocumentError> {
+    Some(text)
+        .filter(|text| !text.trim().is_empty())
+        .and_then(|text| Range::parse(text).ok())
+        .ok_or_else(|| DocumentError::InvalidRange {
+            field,
+            value: text.to_owned(),
+        })
 }
 
 fn invalid_version(field: String, value: &str) -> DocumentError {
