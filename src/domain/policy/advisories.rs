@@ -117,6 +117,7 @@ pub fn findings(advisories: &[Advisory], version: &Version, os: Option<&str>) ->
 
 fn applies_to_platform(advisory: &Advisory, os: Option<&str>) -> bool {
     let Some(os) = os else { return true };
+    // An empty list names no scope, so it counts everywhere: fail-safe.
     advisory.environments.is_empty()
         || advisory
             .environments

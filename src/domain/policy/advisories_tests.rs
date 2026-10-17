@@ -124,6 +124,15 @@ fn a_none_severity_in_the_index_is_a_failure_to_know() {
 }
 
 #[test]
+fn an_empty_environment_list_counts_on_every_platform() {
+    let text = entry_with(r#""affectedEnvironments": []"#);
+    let advisories = parse_advisories(&text).unwrap();
+    for os in [Some("linux"), Some("win32"), Some("darwin"), None] {
+        assert_eq!(findings(&advisories, &v("v22.0.0"), os).len(), 1, "{os:?}");
+    }
+}
+
+#[test]
 fn an_empty_patched_range_means_no_fix() {
     let text = entry_with(r#""patched": """#);
     assert!(parse_advisories(&text).unwrap()[0].patched.is_none());
