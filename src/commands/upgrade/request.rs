@@ -4,6 +4,9 @@
 use crate::domain::tool::Tool;
 use crate::error::CliError;
 
+/// The refusal of `--major=<N>` for a selection that is not one tool.
+pub const ONE_TOOL: &str = "--major=<N> applies to one tool; name exactly one.";
+
 /// Which major release each selected tool moves within.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Major {
@@ -53,9 +56,7 @@ pub fn parse(args: &[String]) -> Result<UpgradeRequest, CliError> {
         .collect();
     let major = major.unwrap_or(Major::Same);
     if matches!(major, Major::Exactly(_)) && tools.len() > 1 {
-        return Err(invalid(
-            "--major=<N> applies to one tool; name exactly one.".to_owned(),
-        ));
+        return Err(invalid(ONE_TOOL.to_owned()));
     }
     Ok(UpgradeRequest { tools, major })
 }

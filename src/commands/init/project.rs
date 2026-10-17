@@ -43,11 +43,7 @@ pub fn run_project(context: &Context<'_>, request: &ProjectRequest) -> Result<Ou
     let mut transcript = Transcript::default();
     let status = match set_up(context, request, &mut transcript) {
         Ok(()) => NvmExitCode::Success,
-        Err(Stop::Refused(status)) => status,
-        Err(Stop::Error(error)) => {
-            transcript.err(error.to_string());
-            error.exit_code()
-        }
+        Err(stop) => stop.printed(&mut transcript),
     };
     Ok(transcript.finish(status))
 }
@@ -144,8 +140,7 @@ fn candidates_of(
 }
 
 fn refuse(transcript: &mut Transcript, message: &str, status: NvmExitCode) -> Stop {
-    transcript.err(message.to_owned());
-    Stop::Refused(status)
+    Stop::refuse(transcript, message.to_owned(), status)
 }
 
 fn no_allowed_release(tool: Tool) -> String {

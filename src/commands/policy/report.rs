@@ -1,6 +1,8 @@
 //! What the gate prints: one block per offending tool, node first, each with
 //! the rules it breaks and the fix.
 
+use std::path::Path;
+
 use super::enforce::{Gate, Origin, Requested};
 use super::tools::{ToolFinding, ToolOrigin};
 use crate::commands::transcript::Transcript;
@@ -99,6 +101,26 @@ pub fn argument_block(
         origin_text(&origin)
     );
     block(&subject, violations, &fix_text(&origin), transcript);
+}
+
+/// The block for `version` of `tool` pinned in the `.nvmrc` at `nvmrc`,
+/// ending in `fix`, as `nvm upgrade` prints it.
+pub fn nvmrc_block(
+    tool: Tool,
+    version: &Version,
+    nvmrc: &Path,
+    violations: &[Violation],
+    fix: &str,
+    transcript: &mut Transcript,
+) {
+    let origin = Origin::Nvmrc(nvmrc.to_path_buf());
+    let subject = format!(
+        "nvm: {} {} {}",
+        tool.name(),
+        tool.show(version),
+        origin_text(&origin)
+    );
+    block(&subject, violations, fix, transcript);
 }
 
 fn block(subject: &str, violations: &[Violation], fix: &str, transcript: &mut Transcript) {
