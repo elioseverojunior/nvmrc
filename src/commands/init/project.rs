@@ -22,9 +22,6 @@ use crate::domain::tool::Tool;
 use crate::domain::version::Version;
 use crate::error::{CliError, NvmExitCode};
 
-/// The tools in the order they are chosen, written and reported.
-const ORDER: [Tool; 4] = [Tool::Node, Tool::Npm, Tool::Yarn, Tool::Pnpm];
-
 /// Sets up the project as `request` asks; whatever stops it is printed on
 /// stderr with its status, after any warning the policy gave.
 ///
@@ -49,9 +46,7 @@ fn set_up(
     })?;
     let files = ProjectFiles::in_directory(&directory);
     let current = current_nvmrc(context, &files.nvmrc)?;
-    let pins =
-        parse_pins(&current).map_err(|error| CliError::from(pin_error(error, &files.nvmrc)))?;
-    refuse_switch(&pins, &files.nvmrc, request, transcript)?;
+    let pins = checked_pins(&current, &files.nvmrc, request, transcript)?;
     let npm_pinned = pins.npm.is_some() || request.get(Tool::Npm).is_some();
     let chosen = choose(context, request, npm_pinned, transcript)?;
     let nvmrc_text = new_nvmrc(current, &chosen);
@@ -72,7 +67,7 @@ fn set_up(
     Ok(())
 }
 
-/// The version of each requested tool, in [`ORDER`]; whether npm is pinned
+/// The version of each requested tool, in [`Tool::ALL`] order; whether npm is pinned
 /// once the files are written decides whether the npm bundled with node is
 /// judged.
 fn choose(
@@ -83,7 +78,7 @@ fn choose(
 ) -> Result<Vec<(Tool, Version)>, Stop> {
     let mut judge = Judge::load(context, transcript)?.with_npm_pinned(npm_pinned);
     let mut chosen = Vec::new();
-    for tool in ORDER {
+    for tool in Tool::ALL {
         if let Some(wanted) = request.get(tool) {
             let version = resolve(context, &mut judge, tool, wanted, transcript)?;
             if tool == Tool::Node {
@@ -164,15 +159,17 @@ fn listed(chosen: &[(Tool, Version)]) -> String {
     shown.join(", ")
 }
 
-/// Refuses yarn over a pnpm pin or pnpm over a yarn pin: the switch is the
-/// user's to make. Like a malformed pin, it is known before any request.
-fn refuse_switch(
-    pins: &Pins,
+/// The pins of `current`, the `.nvmrc` at `path`. Refuses a malformed pin,
+/// and yarn over a pnpm pin or pnpm over a yarn pin: the switch is the
+/// user's to make. Both are known before any request.
+fn checked_pins(
+    current: &str,
     path: &Path,
     request: &ProjectRequest,
     transcript: &mut Transcript,
-) -> Result<(), Stop> {
-    for tool in ORDER
+) -> Result<Pins, Stop> {
+    let pins = parse_pins(current).map_err(|error| CliError::from(pin_error(error, path)))?;
+    for tool in Tool::ALL
         .into_iter()
         .filter(|tool| request.get(*tool).is_some())
     {
@@ -190,7 +187,7 @@ fn refuse_switch(
             return Err(refuse(transcript, &message, NvmExitCode::InvalidVersion));
         }
     }
-    Ok(())
+    Ok(pins)
 }
 
 #[cfg(test)]
