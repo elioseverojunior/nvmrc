@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 
 use super::pinned::{Pinned, Project, read_project, select};
-use super::request::UpgradeRequest;
+use super::request::{Major, UpgradeRequest};
 use super::target::{Target, target};
 use crate::commands::policy::judge::Judge;
 use crate::commands::policy::report::newest_block;
@@ -40,19 +40,7 @@ pub fn upgrade(
 ) -> Result<Upgraded, Stop> {
     let project = read_project(context, transcript)?;
     let selected = select(&project, request, transcript)?;
-    let npm_pinned = project.pinned.iter().any(|pinned| pinned.tool == Tool::Npm);
-    let mut judge = Judge::load(context, transcript)?.with_npm_pinned(npm_pinned);
-    let mut planned = Vec::new();
-    for pinned in selected {
-        let found = target(
-            context,
-            &mut judge,
-            pinned.tool,
-            &pinned.version,
-            request.major,
-        )?;
-        planned.push((pinned, found));
-    }
+    let planned = plan_targets(context, &project, selected, request.major, transcript)?;
     refuse_missing(&planned, transcript)?;
     let (lines, moves) = changes(&planned);
     let upgraded = if moves.is_empty() {
@@ -63,6 +51,25 @@ pub fn upgrade(
     // Reported only once the files are as the lines say.
     lines.into_iter().for_each(|line| transcript.out(line));
     Ok(upgraded)
+}
+
+/// The target of each `selected` tool, judged with the npm bundled with
+/// node unless the `.nvmrc` pins npm.
+fn plan_targets(
+    context: &Context<'_>,
+    project: &Project,
+    selected: Vec<Pinned>,
+    major: Major,
+    transcript: &mut Transcript,
+) -> Result<Vec<(Pinned, Target)>, Stop> {
+    let npm_pinned = project.pinned.iter().any(|pinned| pinned.tool == Tool::Npm);
+    let mut judge = Judge::load(context, transcript)?.with_npm_pinned(npm_pinned);
+    let mut planned = Vec::new();
+    for pinned in selected {
+        let found = target(context, &mut judge, pinned.tool, &pinned.version, major)?;
+        planned.push((pinned, found));
+    }
+    Ok(planned)
 }
 
 /// Prints the block of every tool without a target and stops with exit 7
