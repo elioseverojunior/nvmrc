@@ -34,7 +34,7 @@ fn editing_keeps_comments_keys_and_line_endings() {
     let edited = with_pin(&edited, Tool::Npm, &version("10.9.0"));
     assert_eq!(
         edited,
-        "# project\r\nv22.11.0\r\nnpm=10.9.0\r\nlts=iron\r\n"
+        "# project\r\nv22.11.0 # lts\r\nnpm=10.9.0\r\nlts=iron\r\n"
     );
 }
 
@@ -49,4 +49,21 @@ fn appending_uses_the_line_ending_of_the_file() {
 #[test]
 fn with_version_on_an_empty_file_is_just_the_version() {
     assert_eq!(with_version("", "v22.11.0"), "v22.11.0\n");
+}
+
+#[test]
+fn with_version_keeps_the_comment_on_the_version_line() {
+    assert_eq!(
+        with_version("v20.11.1 # reason\n", "v22.11.0"),
+        "v22.11.0 # reason\n"
+    );
+    assert_eq!(
+        with_version("20\t# lts\nnpm=10.8.0\n", "v22.11.0"),
+        "v22.11.0\t# lts\nnpm=10.8.0\n"
+    );
+}
+
+#[test]
+fn with_version_over_a_lone_version_is_just_the_version() {
+    assert_eq!(with_version("20\r\n\r\n", "v22.11.0"), "v22.11.0\n");
 }

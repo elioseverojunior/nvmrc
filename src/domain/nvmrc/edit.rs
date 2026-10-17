@@ -6,22 +6,27 @@ use crate::domain::tool::Tool;
 use crate::domain::version::Version;
 
 /// What `--save` writes over `contents`: its bare version line replaced by
-/// `version`, every other line (pins, other keys, comments) kept in place.
-/// Without a bare line the version goes first. With no other line the result
-/// is exactly `<version>\n`, as nvm.sh writes it.
+/// `version` (its trailing comment kept), every other line (pins, other keys,
+/// comments) kept in place. Without a bare line the version goes first. With
+/// no other line the result is that one line ending in `\n`: exactly
+/// `<version>\n`, as nvm.sh writes it, when it has no comment.
 #[must_use]
 pub fn with_version(contents: &str, version: &str) -> String {
     let (mut lines, default_ending) = split_lines(contents);
     let bare = lines.iter().position(|line| is_bare(content_of(line)));
     let index = bare.unwrap_or(0);
-    match bare {
-        Some(index) => lines[index] = format!("{version}{}", ending_of(&lines[index])),
-        None => lines.insert(0, format!("{version}{default_ending}")),
-    }
+    let line = bare.map_or_else(
+        || version.to_owned(),
+        |index| replaced(&lines[index], version),
+    );
     let alone = (lines.iter().enumerate())
-        .all(|(other, line)| other == index || trim_space(line).is_empty());
+        .all(|(other, text)| bare == Some(other) || trim_space(text).is_empty());
     if alone {
-        return format!("{version}\n");
+        return format!("{line}\n");
+    }
+    match bare {
+        Some(index) => lines[index] = format!("{line}{}", ending_of(&lines[index])),
+        None => lines.insert(index, format!("{line}{default_ending}")),
     }
     lines.concat()
 }
@@ -79,8 +84,8 @@ fn ending_of(line: &str) -> &'static str {
     }
 }
 
-/// `pin` followed by the comment of `line`, if it has one, and the space
-/// that stood before the comment.
+/// `pin` (a version or `<tool>=<version>`) followed by the comment of
+/// `line`, if it has one, and the space that stood before the comment.
 fn replaced(line: &str, pin: &str) -> String {
     let body = line.trim_end_matches(['\r', '\n']);
     match body.find('#') {

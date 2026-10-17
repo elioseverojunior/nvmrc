@@ -181,7 +181,7 @@ fn saving_replaces_only_the_bare_line() {
     let contents = "# project\n20 # lts\nnpm=10.9.0\nlts=iron\n\npnpm=9.12.0\n";
     assert_eq!(
         with_version(contents, "v22.11.0"),
-        "# project\nv22.11.0\nnpm=10.9.0\nlts=iron\n\npnpm=9.12.0\n"
+        "# project\nv22.11.0 # lts\nnpm=10.9.0\nlts=iron\n\npnpm=9.12.0\n"
     );
 }
 
