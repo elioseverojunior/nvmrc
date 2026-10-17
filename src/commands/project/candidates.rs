@@ -13,6 +13,23 @@ use crate::domain::tool::Tool;
 use crate::domain::version::{Flavor, Version};
 use crate::error::{CliError, PolicyError};
 
+/// The yarn release whose package (`@yarnpkg/cli-dist`) lists yarn 2 and
+/// later.
+pub const CLI_DIST: Version = Version {
+    flavor: Flavor::Node,
+    major: 2,
+    minor: 0,
+    patch: 0,
+};
+
+/// The yarn release whose package (`yarn`) lists yarn 1.
+pub const YARN_ONE: Version = Version {
+    flavor: Flavor::Node,
+    major: 1,
+    minor: 0,
+    patch: 0,
+};
+
 /// A release that exists, with what the policy needs to judge it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Candidate {

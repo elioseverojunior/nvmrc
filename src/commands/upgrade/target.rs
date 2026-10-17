@@ -2,13 +2,14 @@
 
 use crate::commands::policy::judge::Judge;
 use crate::commands::project::{
-    Candidate, first_allowed, in_major, majors, node_candidates, tool_candidates,
+    CLI_DIST, Candidate, YARN_ONE, first_allowed, in_major, majors, node_candidates,
+    tool_candidates,
 };
 use crate::commands::upgrade::request::Major;
 use crate::context::Context;
 use crate::domain::policy::Violation;
 use crate::domain::tool::Tool;
-use crate::domain::version::{Flavor, Version};
+use crate::domain::version::Version;
 use crate::error::{CliError, PolicyError};
 
 /// What an upgrade does with one tool.
@@ -30,9 +31,9 @@ pub enum Target {
 
 /// The newest allowed release of `tool` in the major `major` asks for.
 ///
-/// Yarn reads the `yarn` package for the major it already uses and
-/// `@yarnpkg/cli-dist` for any other. A `current` that the policy refuses
-/// still moves to the target, even a lower one.
+/// Yarn reads the package of the major searched (`yarn` for 1,
+/// `@yarnpkg/cli-dist` for later ones), or both for any major. A `current`
+/// that the policy refuses still moves to the target, even a lower one.
 ///
 /// # Errors
 /// [`CliError`] when the releases cannot be had or the policy cannot judge one.
@@ -55,7 +56,7 @@ pub fn target(
         });
     }
     let newest = newest_violations(context, judge, tool, &pool)?;
-    let scanned = lowest_scan(context, tool, all)?;
+    let scanned = lowest_scan(context, tool, major, all)?;
     let lowest = lowest_allowed_major(context, judge, tool, &scanned)?;
     Ok(Target::NoneInMajor {
         major: wanted,
@@ -79,16 +80,12 @@ fn candidates(
     current: &Version,
     major: Major,
 ) -> Result<Vec<Candidate>, CliError> {
-    if tool == Tool::Node {
-        return node_candidates(context);
-    }
-    let package_of = match major {
-        Major::Same => *current,
-        Major::Any => Version {
-            major: 2,
-            ..*current
-        },
-        Major::Exactly(number) => Version {
+    let package_of = match (tool, major) {
+        (Tool::Node, _) => return node_candidates(context),
+        (Tool::Yarn, Major::Any) => return Ok(both_yarn_packages(context)?),
+        (_, Major::Same) => *current,
+        (_, Major::Any) => CLI_DIST,
+        (_, Major::Exactly(number)) => Version {
             major: number,
             ..*current
         },
@@ -96,23 +93,34 @@ fn candidates(
     Ok(tool_candidates(context, tool, &package_of)?)
 }
 
-/// The candidates to scan for the lowest allowed major: yarn 1 releases come
-/// from the `yarn` package, so the later majors are added from `cli-dist`.
+/// The releases of `@yarnpkg/cli-dist` and of `yarn`, newest first.
+fn both_yarn_packages(context: &Context<'_>) -> Result<Vec<Candidate>, PolicyError> {
+    let mut found = tool_candidates(context, Tool::Yarn, &CLI_DIST)?;
+    found.extend(tool_candidates(context, Tool::Yarn, &YARN_ONE)?);
+    found.sort_by_key(|candidate| std::cmp::Reverse(candidate.version));
+    found.dedup_by_key(|candidate| candidate.version);
+    Ok(found)
+}
+
+/// The candidates to scan for the lowest allowed major: for yarn, the
+/// releases of the other package are added, unless any major was searched
+/// and both are already in.
 fn lowest_scan(
     context: &Context<'_>,
     tool: Tool,
+    major: Major,
     mut found: Vec<Candidate>,
 ) -> Result<Vec<Candidate>, PolicyError> {
-    let from_yarn_package = found.iter().all(|candidate| candidate.version.major < 2);
-    if tool == Tool::Yarn && from_yarn_package {
-        let cli_dist = Version {
-            major: 2,
-            minor: 0,
-            patch: 0,
-            flavor: Flavor::Node,
-        };
-        found.extend(tool_candidates(context, tool, &cli_dist)?);
+    if tool != Tool::Yarn || major == Major::Any {
+        return Ok(found);
     }
+    let from_yarn_package = found.iter().all(|candidate| candidate.version.major < 2);
+    let other = if from_yarn_package {
+        CLI_DIST
+    } else {
+        YARN_ONE
+    };
+    found.extend(tool_candidates(context, tool, &other)?);
     Ok(found)
 }
 

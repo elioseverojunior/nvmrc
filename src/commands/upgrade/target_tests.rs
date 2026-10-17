@@ -134,10 +134,57 @@ fn yarn_one_stays_on_yarn_and_major_moves_to_cli_dist() {
     assert!(http.requests().iter().all(|url| url == YARN_URL));
     let any = pick(&http, "", Tool::Yarn, "1.22.21", Major::Any).unwrap();
     assert_eq!(any, Target::Move(version("4.5.0")));
-    assert_eq!(
-        http.requests().last().map(String::as_str),
-        Some(CLI_DIST_URL)
-    );
+    assert!(http.requests().iter().any(|url| url == CLI_DIST_URL));
+}
+
+fn both_yarn_packages() -> FakeHttp {
+    FakeHttp::default()
+        .with_body(YARN_URL, r#"{"versions": {"1.22.19": {}, "1.22.22": {}}}"#)
+        .with_body(CLI_DIST_URL, r#"{"versions": {"4.1.0": {}, "4.5.0": {}}}"#)
+        .with_empty_advisories()
+}
+
+#[test]
+fn major_any_searches_both_yarn_packages() {
+    let policy = r#"{ "schemaVersion": 1, "tools": { "yarn": { "allow": "<2" } } }"#;
+    for current in ["1.22.19", "4.1.0"] {
+        let http = both_yarn_packages();
+        let found = pick(&http, policy, Tool::Yarn, current, Major::Any).unwrap();
+        assert_eq!(found, Target::Move(version("1.22.22")), "from {current}");
+    }
+}
+
+#[test]
+fn the_lowest_major_of_a_cli_dist_yarn_considers_yarn_one() {
+    let policy = r#"{ "schemaVersion": 1, "tools": { "yarn": { "allow": "<2" } } }"#;
+    let found = pick(
+        &both_yarn_packages(),
+        policy,
+        Tool::Yarn,
+        "4.1.0",
+        Major::Same,
+    )
+    .unwrap();
+    assert!(matches!(
+        found,
+        Target::NoneInMajor {
+            major: Some(4),
+            lowest: Some(1),
+            ..
+        }
+    ));
+}
+
+#[test]
+fn major_n_reads_the_package_of_that_yarn_major() {
+    let http = both_yarn_packages();
+    let found = pick(&http, "", Tool::Yarn, "1.22.19", Major::Exactly(4)).unwrap();
+    assert_eq!(found, Target::Move(version("4.5.0")));
+    assert_eq!(http.requests(), [CLI_DIST_URL]);
+    let http = both_yarn_packages();
+    let found = pick(&http, "", Tool::Yarn, "4.1.0", Major::Exactly(1)).unwrap();
+    assert_eq!(found, Target::Move(version("1.22.22")));
+    assert_eq!(http.requests(), [YARN_URL]);
 }
 
 #[test]

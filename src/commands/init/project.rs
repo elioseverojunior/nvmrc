@@ -11,28 +11,19 @@ use crate::commands::Output;
 use crate::commands::policy::judge::Judge;
 use crate::commands::policy::report::argument_block;
 use crate::commands::project::{
-    Candidate, Exact, ProjectFiles, Stop, current_nvmrc, exact, new_nvmrc, new_package_json,
-    newest_allowed, node_candidates, save, tool_candidates,
+    CLI_DIST, Candidate, Exact, ProjectFiles, Stop, current_nvmrc, exact, new_nvmrc,
+    new_package_json, newest_allowed, node_candidates, save, tool_candidates,
 };
 use crate::commands::project_pins::pin_error;
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::nvmrc::pins::{Pins, parse_pins};
 use crate::domain::tool::Tool;
-use crate::domain::version::{Flavor, Version};
+use crate::domain::version::Version;
 use crate::error::{CliError, NvmExitCode};
 
 /// The tools in the order they are chosen, written and reported.
 const ORDER: [Tool; 4] = [Tool::Node, Tool::Npm, Tool::Yarn, Tool::Pnpm];
-
-/// The yarn release whose package (`@yarnpkg/cli-dist`) lists the releases
-/// the newest search picks from.
-const CLI_DIST: Version = Version {
-    flavor: Flavor::Node,
-    major: 2,
-    minor: 0,
-    patch: 0,
-};
 
 /// Sets up the project as `request` asks; whatever stops it is printed on
 /// stderr with its status, after any warning the policy gave.
