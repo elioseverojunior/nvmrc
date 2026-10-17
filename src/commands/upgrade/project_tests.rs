@@ -9,6 +9,15 @@ use crate::fakes::{FakeEnv, FakeFileSystem, FakeHttp};
 const PINNED: &str = "v20.11.1\npnpm=9.1.0\n";
 const PNPM_9: &str = "{ \"packageManager\": \"pnpm@9.1.0\" }";
 
+/// What [`PINNED`] moves to by default: node and pnpm.
+fn pinned_moves() -> Vec<(Tool, Version)> {
+    let version = |text: &str| text.parse::<Version>().unwrap();
+    vec![
+        (Tool::Node, version("v20.18.0")),
+        (Tool::Pnpm, version("v9.12.0")),
+    ]
+}
+
 /// Runs `nvm upgrade args`: what it printed, with its status, and what it did.
 pub(super) fn upgrade_in(
     fs: &FakeFileSystem,
@@ -39,8 +48,8 @@ fn upgrades_every_pinned_tool_by_default() {
         output.stdout,
         "node v20.11.1 -> v20.18.0\npnpm 9.1.0 -> 9.12.0"
     );
-    let nvmrc = PathBuf::from("/p/.nvmrc");
-    assert_eq!(upgraded, Some(Upgraded::Written { nvmrc }));
+    let (nvmrc, moved) = (PathBuf::from("/p/.nvmrc"), pinned_moves());
+    assert_eq!(upgraded, Some(Upgraded::Written { nvmrc, moved }));
     assert_eq!(
         file(&fs, "/p/.nvmrc").as_deref(),
         Some("v20.18.0\npnpm=9.12.0\n")
@@ -186,8 +195,8 @@ fn the_nvmrc_in_a_parent_directory_is_the_one_rewritten() {
         .with_current_dir("/p/app");
     let (output, upgraded) = upgrade_in(&fs, &env, &served(), &[]);
     assert_eq!(output.status.code(), 0, "{}", output.stderr);
-    let nvmrc = PathBuf::from("/p/.nvmrc");
-    assert_eq!(upgraded, Some(Upgraded::Written { nvmrc }));
+    let (nvmrc, moved) = (PathBuf::from("/p/.nvmrc"), pinned_moves());
+    assert_eq!(upgraded, Some(Upgraded::Written { nvmrc, moved }));
     assert_eq!(
         file(&fs, "/p/.nvmrc").as_deref(),
         Some("v20.18.0\npnpm=9.12.0\n")

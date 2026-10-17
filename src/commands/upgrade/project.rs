@@ -21,8 +21,12 @@ use crate::error::NvmExitCode;
 pub enum Upgraded {
     /// Every selected tool is on its target.
     Nothing,
-    /// The `.nvmrc` rewritten, and `package.json` beside it if it changed.
-    Written { nvmrc: PathBuf },
+    /// The `.nvmrc` rewritten, and `package.json` beside it if it changed;
+    /// `moved` holds each tool moved and its target, all allowed.
+    Written {
+        nvmrc: PathBuf,
+        moved: Vec<(Tool, Version)>,
+    },
 }
 
 /// Moves the tools `request` selects to their targets, printing each change
@@ -171,7 +175,10 @@ fn write(
         edit,
         transcript,
     )?;
-    Ok(Upgraded::Written { nvmrc: files.nvmrc })
+    Ok(Upgraded::Written {
+        nvmrc: files.nvmrc,
+        moved: moves.to_vec(),
+    })
 }
 
 #[cfg(test)]

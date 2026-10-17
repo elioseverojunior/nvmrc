@@ -13,11 +13,12 @@ use crate::commands::Output;
 use crate::commands::install;
 use crate::commands::install::pinned::install_pins;
 use crate::commands::project::current_nvmrc;
-use crate::commands::project_pins::pin_error;
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
-use crate::domain::nvmrc::pins::{Pins, parse_pins};
+use crate::domain::nvmrc::pins::Pins;
 use crate::domain::nvmrc::{NvmrcContent, process_content};
+use crate::domain::tool::Tool;
+use crate::domain::version::Version;
 use crate::error::{CliError, NvmExitCode};
 use project::{Upgraded, upgrade};
 use request::parse;
@@ -31,7 +32,9 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
     let request = parse(args)?;
     let mut transcript = Transcript::default();
     let status = match upgrade(context, &request, &mut transcript) {
-        Ok(Upgraded::Written { nvmrc }) => install_written(context, &nvmrc, &mut transcript),
+        Ok(Upgraded::Written { nvmrc, moved }) => {
+            install_written(context, &nvmrc, &moved, &mut transcript)
+        }
         Ok(Upgraded::Nothing) => NvmExitCode::Success,
         Err(stop) => stop.printed(&mut transcript),
     };
@@ -39,18 +42,20 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
 }
 
 /// Installs what the rewritten `.nvmrc` asks for, as `nvm install` would,
-/// or only its pins when it has no node line; its output follows the
+/// or, when it has no node line, only the pins this run `moved` (the
+/// policy allowed them; the others are left alone); its output follows the
 /// upgrade's and its status is the command's. An error of the install is
 /// printed like its output; the files are written either way, and the
 /// report says so.
 fn install_written(
     context: &Context<'_>,
     nvmrc: &Path,
+    moved: &[(Tool, Version)],
     transcript: &mut Transcript,
 ) -> NvmExitCode {
-    let status = match pins_only(context, nvmrc) {
-        Ok(Some(pins)) => install_pins(context, &pins, transcript),
-        Ok(None) => install_all(context, transcript),
+    let status = match has_node_line(context, nvmrc) {
+        Ok(false) => install_pins(context, &moved_pins(moved), transcript),
+        Ok(true) => install_all(context, transcript),
         Err(error) => printed(error, transcript),
     };
     if status != NvmExitCode::Success {
@@ -62,14 +67,25 @@ fn install_written(
     status
 }
 
-/// The pins of the `.nvmrc` at `nvmrc` when it has no node line.
-fn pins_only(context: &Context<'_>, nvmrc: &Path) -> Result<Option<Pins>, CliError> {
+/// Whether the `.nvmrc` at `nvmrc` has a node line.
+fn has_node_line(context: &Context<'_>, nvmrc: &Path) -> Result<bool, CliError> {
     let text = current_nvmrc(context, nvmrc)?;
-    if matches!(process_content(&text), NvmrcContent::Version(_)) {
-        return Ok(None);
+    Ok(matches!(process_content(&text), NvmrcContent::Version(_)))
+}
+
+/// The package managers among `moved`, as pins.
+fn moved_pins(moved: &[(Tool, Version)]) -> Pins {
+    let mut pins = Pins::default();
+    for (tool, version) in moved {
+        let slot = match tool {
+            Tool::Npm => &mut pins.npm,
+            Tool::Yarn => &mut pins.yarn,
+            Tool::Pnpm => &mut pins.pnpm,
+            Tool::Node => continue,
+        };
+        *slot = Some(*version);
     }
-    let pins = parse_pins(&text).map_err(|error| CliError::from(pin_error(error, nvmrc)))?;
-    Ok(Some(pins))
+    pins
 }
 
 /// `nvm install` with no argument.

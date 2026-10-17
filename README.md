@@ -568,8 +568,9 @@ original text back when the `.nvmrc` write fails.
 
 After writing, `install` runs as `nvm install` with no argument would: it
 reads the rewritten `.nvmrc` and installs node and the pins. A `.nvmrc`
-without a node line (as `nvm init --pnpm` writes) has only its pins
-installed. If that fails,
+without a node line (as `nvm init --pnpm` writes) has only the pins this
+run moved installed; the policy allowed them, and the pins left alone are
+not installed. If that fails,
 by its status or by an error such as a policy that cannot be checked, the
 change lines and the error are printed, followed by:
 
