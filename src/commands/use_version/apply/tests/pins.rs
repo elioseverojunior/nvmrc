@@ -57,3 +57,14 @@ fn use_system_adds_no_pins() {
     let output = use_in(&fs, &env, &npm_versions(), &["system"]);
     assert!(!output.script.render().contains("package-managers"));
 }
+
+#[test]
+fn a_missing_pinned_tool_keeps_the_earlier_messages() {
+    let fs = lab().with_file("/proj/.nvmrc", "20\npnpm=9.12.0\n");
+    let output = use_in(&fs, &env_on(BASE_PATH), &npm_versions(), &[]);
+    assert_eq!(output.status, NvmExitCode::InvalidVersion);
+    assert_eq!(output.stdout, "Found '/proj/.nvmrc' with version <20>");
+    let text = "nvm: pnpm 9.12.0 (from /proj/.nvmrc) is not installed. Run `nvm install`.";
+    assert_eq!(output.stderr, text);
+    assert!(output.script.is_empty());
+}

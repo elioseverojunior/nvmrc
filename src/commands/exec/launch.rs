@@ -6,7 +6,7 @@ use super::options::Options;
 use super::select::Selection;
 use crate::commands::Output;
 use crate::commands::install::place::version_path;
-use crate::commands::package_managers::path::pinned_path;
+use crate::commands::package_managers::path::{pinned_path, stopped};
 use crate::commands::policy::enforce::Gate;
 use crate::commands::policy::gate::{gate_installed, gate_system};
 use crate::commands::project_pins::{ProjectPins, read_for};
@@ -76,7 +76,10 @@ fn installed(
     let nvm_dir = context.nvm_dir()?;
     let directory = version_path(context, version)?;
     let switch = Switch::new(&nvm_dir, &directory);
-    let path = pinned_path(context, &switch.path(context)?, pins, &mut transcript)?;
+    let path = match pinned_path(context, &switch.path(context)?, pins, &mut transcript) {
+        Ok(path) => path,
+        Err(error) => return Ok(stopped(&error, transcript)),
+    };
     let prefixes = Prefixes {
         context,
         version,

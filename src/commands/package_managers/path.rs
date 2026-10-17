@@ -1,6 +1,7 @@
 //! The pinned package managers on `PATH`.
 
 use super::store::{bin_dir, is_installed};
+use crate::commands::Output;
 use crate::commands::project_pins::ProjectPins;
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
@@ -34,6 +35,14 @@ pub fn pinned_path(
         }
     }
     Ok(prepend(&strip_tool_bins(path, &nvm_dir), &directories))
+}
+
+/// The output of a command that stops on `error`: what `transcript` holds,
+/// then the error on stderr, with the status of the error.
+#[must_use]
+pub fn stopped(error: &CliError, mut transcript: Transcript) -> Output {
+    transcript.err(error.to_string());
+    transcript.finish(error.exit_code())
 }
 
 /// The error for a pin without an install, or in an advisory context the

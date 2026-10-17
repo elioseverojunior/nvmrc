@@ -13,7 +13,7 @@ use std::path::Path;
 use crate::commands::Output;
 use crate::commands::deactivate::deactivate;
 use crate::commands::npm::Npm;
-use crate::commands::package_managers::path::pinned_path;
+use crate::commands::package_managers::path::{pinned_path, stopped};
 use crate::commands::project_pins::ProjectPins;
 use crate::commands::transcript::Transcript;
 use crate::commands::use_version::prefix::{self, Refusal};
@@ -61,7 +61,10 @@ fn installed(
 ) -> Result<Output, CliError> {
     let nvm_dir = context.nvm_dir()?;
     let switch = Switch::new(&nvm_dir, directory);
-    let path = pinned_path(context, &switch.path(context)?, pins, &mut transcript)?;
+    let path = match pinned_path(context, &switch.path(context)?, pins, &mut transcript) {
+        Ok(path) => path,
+        Err(error) => return Ok(stopped(&error, transcript)),
+    };
     let script = switch.script(context, &path)?;
     link_current(context, &nvm_dir, directory, &mut transcript);
     let message = (!options.silent).then(|| now_using(version, &npm_suffix(context, &path)));
