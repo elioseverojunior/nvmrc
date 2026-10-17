@@ -10,6 +10,7 @@ use super::candidates::{
     Candidate, Exact, exact, newest_allowed, node_candidates, tool_candidates,
 };
 use super::request::{ProjectRequest, Wanted};
+use super::write::{ProjectFiles, current_nvmrc, new_nvmrc, new_package_json, save};
 use crate::commands::Output;
 use crate::commands::policy::judge::Judge;
 use crate::commands::policy::report::argument_block;
@@ -17,11 +18,9 @@ use crate::commands::project_pins::pin_error;
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::nvmrc::pins::parse_pins;
-use crate::domain::nvmrc::{with_pin, with_version};
-use crate::domain::package_json::{package_manager_field, set_package_manager};
 use crate::domain::tool::Tool;
 use crate::domain::version::{Flavor, Version};
-use crate::error::{CliError, NvmExitCode, PinsError, PolicyError};
+use crate::error::{CliError, NvmExitCode, PolicyError};
 
 /// The tools in the order they are chosen, written and reported.
 const ORDER: [Tool; 4] = [Tool::Node, Tool::Npm, Tool::Yarn, Tool::Pnpm];
@@ -35,8 +34,8 @@ const CLI_DIST: Version = Version {
     patch: 0,
 };
 
-/// Why project mode stopped before writing.
-enum Stop {
+/// Why project mode stopped.
+pub enum Stop {
     /// An error, printed as its message.
     Error(CliError),
     /// A refusal already printed, with its status.
@@ -53,13 +52,6 @@ impl From<PolicyError> for Stop {
     fn from(error: PolicyError) -> Self {
         Self::Error(error.into())
     }
-}
-
-/// The new `package.json` text and the `packageManager` value it holds.
-struct PackageEdit {
-    text: String,
-    changed: bool,
-    field: String,
 }
 
 /// Sets up the project as `request` asks; whatever stops it is printed on
@@ -89,17 +81,16 @@ fn set_up(
     let directory = context.working_directory().ok_or_else(|| {
         CliError::InvalidArgument("nvm init: the working directory cannot be read.".to_owned())
     })?;
-    let (nvmrc, package_json) = (directory.join(".nvmrc"), directory.join("package.json"));
-    let nvmrc_text = new_nvmrc(context, &nvmrc, &chosen, transcript)?;
-    let package_edit = new_package_json(context, &package_json, &chosen)?;
-    if let Some(edit) = package_edit.as_ref().filter(|edit| edit.changed) {
-        write(context, &package_json, &edit.text)?;
-    }
-    write(context, &nvmrc, &nvmrc_text)?;
-    transcript.out(format!("Wrote {}: {}", nvmrc.display(), listed(&chosen)));
+    let files = ProjectFiles::in_directory(&directory);
+    let current = current_nvmrc(context, &files.nvmrc)?;
+    refuse_switch(&current, &files.nvmrc, &chosen, transcript)?;
+    let nvmrc_text = new_nvmrc(current, &chosen);
+    let package_edit = new_package_json(context, &files.package_json, &chosen)?;
+    save(context, &files, &nvmrc_text, package_edit.as_ref())?;
+    let nvmrc = files.nvmrc.display();
+    transcript.out(format!("Wrote {nvmrc}: {}", listed(&chosen)));
     if let Some(edit) = package_edit {
-        let (field, path) = (edit.field, package_json.display());
-        transcript.out(format!("Set packageManager to \"{field}\" in {path}"));
+        transcript.out(edit.reported(&files.package_json));
     }
     Ok(())
 }
@@ -190,23 +181,6 @@ fn listed(chosen: &[(Tool, Version)]) -> String {
     shown.join(", ")
 }
 
-/// The `.nvmrc` at `path` (empty when absent) with the chosen keys set.
-fn new_nvmrc(
-    context: &Context<'_>,
-    path: &Path,
-    chosen: &[(Tool, Version)],
-    transcript: &mut Transcript,
-) -> Result<String, Stop> {
-    let current = existing(context, path)?.unwrap_or_default();
-    refuse_switch(&current, path, chosen, transcript)?;
-    Ok(chosen
-        .iter()
-        .fold(current, |text, (tool, version)| match tool {
-            Tool::Node => with_version(&text, &tool.show(version)),
-            _ => with_pin(&text, *tool, version),
-        }))
-}
-
 /// Refuses yarn over a pnpm pin, or pnpm over a yarn pin: the switch is the
 /// user's to make.
 fn refuse_switch(
@@ -232,53 +206,6 @@ fn refuse_switch(
         }
     }
     Ok(())
-}
-
-/// The `package.json` at `path` with `packageManager` set, when it exists
-/// and yarn or pnpm was chosen.
-fn new_package_json(
-    context: &Context<'_>,
-    path: &Path,
-    chosen: &[(Tool, Version)],
-) -> Result<Option<PackageEdit>, CliError> {
-    let manager = chosen
-        .iter()
-        .find(|(tool, _)| matches!(tool, Tool::Yarn | Tool::Pnpm));
-    let Some((tool, version)) = manager else {
-        return Ok(None);
-    };
-    let Some(original) = existing(context, path)? else {
-        return Ok(None);
-    };
-    let field = package_manager_field(*tool, version);
-    let text = set_package_manager(&original, &field).map_err(|error| {
-        CliError::from(PinsError::UnreadablePackageJson {
-            package_json: path.display().to_string(),
-            reason: error.to_string(),
-        })
-    })?;
-    let changed = text != original;
-    Ok(Some(PackageEdit {
-        text,
-        changed,
-        field,
-    }))
-}
-
-/// The text of the file at `path`; `None` when there is none.
-fn existing(context: &Context<'_>, path: &Path) -> Result<Option<String>, CliError> {
-    if !context.fs.is_file(path) {
-        return Ok(None);
-    }
-    let text = context.fs.read_to_string(path);
-    text.map(Some).map_err(|error| CliError::io(path, error))
-}
-
-fn write(context: &Context<'_>, path: &Path, text: &str) -> Result<(), CliError> {
-    context
-        .fs
-        .write_file(path, text)
-        .map_err(|error| CliError::io(path, error))
 }
 
 #[cfg(test)]

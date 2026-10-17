@@ -6,6 +6,9 @@
 mod candidates;
 mod project;
 mod request;
+#[cfg(test)]
+mod test_support;
+mod write;
 
 use crate::commands::Output;
 use crate::context::Context;
