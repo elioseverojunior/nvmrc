@@ -389,7 +389,8 @@ the tool entries of other projects. `use system` adds none, and `deactivate`
 removes them.
 
 `install --save` and `use --save` (`-w`) replace only the version line of
-`.nvmrc` and keep the pin lines and every other line.
+`.nvmrc`, keeping its trailing comment, and keep the pin lines and every
+other line.
 
 The registry is `NVMRC_NPM_REGISTRY` (default `https://registry.npmjs.org`,
 https only). Put registry credentials in `NVMRC_NPM_AUTH_HEADER`, not in the
@@ -436,26 +437,37 @@ The policy flags (`--policy`, `--min-*`) apply as in `install`.
 `nvm init` writes `.nvmrc` in the working directory, creating it when absent,
 and changes only the requested lines: the bare version line for node and the
 `npm=`, `yarn=` or `pnpm=` line for the others. Every other line, comment and
-the order are kept. When yarn or pnpm is requested and a `package.json`
-exists in the working directory, its `packageManager` is set to
-`<name>@<version>`; nothing else in it changes, and a missing `package.json`
-is not created. Every check runs before anything is written, so a failure
-leaves both files untouched:
+the order are kept, as is a comment on the version line. When yarn or pnpm
+is requested and a `package.json` exists in the working directory, its
+`packageManager` is set to `<name>@<version>`; nothing else in it changes,
+a value that already matches (a corepack `+<hash>` included) is left as it
+is, and a missing `package.json` is not created. Every check runs before
+anything is written, so a refusal leaves both files untouched:
 
 ```text
 Wrote /p/.nvmrc: node v22.11.0, pnpm 9.12.0
-Set packageManager to "pnpm@9.12.0" in /p/package.json
+Set packageManager to "pnpm@9.12.0" in /p/package.json (was "pnpm@9.1.0")
 ```
 
-Asking for yarn when the `.nvmrc` already pins pnpm (or the reverse) is
-refused, never switched, and so is a malformed pin line until it is fixed.
+The `Set packageManager` line appears only when the value changes, and
+names the value it replaced, if any. When the chosen node version has known
+vulnerabilities below the severity limit, the same warning as `install`
+prints.
 
-Exit codes: 3 for a version that is not exact or not published, a pin
-conflict, or a malformed pin or `package.json`; 6 for a usage error (a shell
-name with a project flag, `--yarn` with `--pnpm`, a repeated flag,
-`--no-use` or `--install` with a project flag); 7 when the version is not
-allowed or no release is allowed; 9 when the index, the registry or the
-policy cannot be read.
+Asking for yarn when the `.nvmrc` already pins pnpm (or the reverse) is
+refused, never switched, and so is a malformed pin line until it is fixed;
+both are refused before any request is made.
+
+A file that cannot be read or written exits 1. `package.json` is written
+first; when the `.nvmrc` write then fails, `package.json` gets its original
+text back (should that fail too, a line says it was already updated).
+
+Exit codes: 1 for a file that cannot be read or written; 3 for a version
+that is not exact or not published, a pin conflict, or a malformed pin or
+`package.json`; 6 for a usage error (a shell name with a project flag,
+`--yarn` with `--pnpm`, a repeated flag, `--no-use` or `--install` with a
+project flag); 7 when the version is not allowed or no release is allowed;
+9 when the index, the registry or the policy cannot be read.
 
 ## Commands
 

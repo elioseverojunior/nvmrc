@@ -242,10 +242,11 @@ nvmrc additions; nvm.sh ignores `npm=`, `yarn=` and `pnpm=` lines in
   built-in vulnerability index; `NVMRC_NPM_AUTH_HEADER` goes to the registry
   host only.
 - `install --save` and `use --save` (`-w`) replace only the bare version
-  line of `.nvmrc` and keep every other line (pins, other keys, comments);
-  nvm.sh rewrites the whole file. A file with nothing else is written as
-  `<version>` alone, as nvm.sh does, and an `.nvmrc` that cannot be read is
-  left alone (status 3). (`saving_keeps_the_pins_and_the_other_lines`,
+  line of `.nvmrc`, keeping its trailing comment, and keep every other line
+  (pins, other keys, comments); nvm.sh rewrites the whole file. A file with
+  nothing else is written as `<version>` alone (with that comment, if any),
+  as nvm.sh does, and an `.nvmrc` that cannot be read is left alone
+  (status 3). (`saving_keeps_the_pins_and_the_other_lines`,
   `saving_over_a_lone_version_writes_just_the_version`,
   `an_unreadable_nvmrc_is_left_alone` in `src/commands/nvmrc_file.rs`)
 - An `.nvmrc` that cannot be read gives
@@ -267,7 +268,9 @@ nvm.sh has no project mode for `init`; this is an nvmrc addition.
   repeated flag, or `--no-use`/`--install` with a project flag exits 6.
 - Exit 3 for an inexact or unpublished version, a pin conflict (yarn over
   pnpm or the reverse) and a malformed pin or `package.json`; 7 when not
-  allowed; 9 when the answer cannot be known. Nothing is written on failure.
+  allowed; 9 when the answer cannot be known. Nothing is written on a
+  refusal. A file that cannot be read or written exits 1; when the `.nvmrc`
+  write fails after `package.json`'s, `package.json` is restored.
 
 ### Colors
 
