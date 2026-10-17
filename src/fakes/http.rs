@@ -65,7 +65,9 @@ impl Http for FakeHttp {
     }
 
     fn get_secure_text(&self, url: &str) -> Result<String, HttpError> {
-        if !url.starts_with("https://") {
+        // The scheme is case-insensitive, as the http crate parses it.
+        let scheme = url.get(.."https://".len());
+        if !scheme.is_some_and(|scheme| scheme.eq_ignore_ascii_case("https://")) {
             return Err(HttpError::Transport {
                 url: url.to_owned(),
                 message: "not an https URL".to_owned(),

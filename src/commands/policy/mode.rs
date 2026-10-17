@@ -2,7 +2,7 @@
 
 use super::cve_layers::{document_cve_layer, severity_layers};
 use super::load::{
-    absolute, central_location, policy_mode_requested, read_location, repository_policy,
+    absolute, central_location, is_https, policy_mode_requested, read_location, repository_policy,
 };
 use std::path::Path;
 
@@ -89,7 +89,7 @@ fn central_layer(context: &Context<'_>) -> Result<DocumentLayers, PolicyError> {
         return Ok(DocumentLayers::default());
     };
     let text = read_location(context, &location)?;
-    let directory = (!location.starts_with("https://"))
+    let directory = (!is_https(&location))
         .then(|| absolute(context, &location).parent().map(Path::to_path_buf))
         .flatten();
     let source = Source::CentralPolicy(location.clone());

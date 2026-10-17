@@ -156,6 +156,23 @@ fn offline_with_a_remote_index_is_a_failure_to_know() {
 }
 
 #[test]
+fn offline_with_an_uppercase_https_index_is_a_failure_to_know() {
+    let policy = r#"{ "schemaVersion": 1, "cve": { "source": "HTTPS://sec/vuln.json" } }"#;
+    let fs = FakeFileSystem::default()
+        .with_dir("/w")
+        .with_file("/w/.nvmrc-policy.json", policy);
+    let env = FakeEnv::default()
+        .with_var("NVM_DIR", "/n")
+        .with_var("PWD", "/w")
+        .with_current_dir("/w");
+    let http = FakeHttp::default().with_body("HTTPS://sec/vuln.json", advisories_json());
+    let context = Context::new(&fs, &env).with_http(&http);
+    let error = run(&context, &requested(AFFECTED, true)).0.unwrap_err();
+    assert!(error.to_string().contains("offline"), "{error}");
+    assert!(http.requests().is_empty());
+}
+
+#[test]
 fn offline_with_a_local_index_is_checked() {
     let policy =
         r#"{ "schemaVersion": 1, "cve": { "failOnSeverity": "high", "source": "vuln.json" } }"#;

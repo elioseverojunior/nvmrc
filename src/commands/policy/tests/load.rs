@@ -103,3 +103,15 @@ fn a_policy_fetch_refuses_a_redirect_away_from_https() {
         Err(PolicyError::Unreadable { .. })
     ));
 }
+
+#[test]
+fn an_uppercase_https_location_is_fetched_through_the_secure_client() {
+    let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
+    let http = FakeHttp::default().with_body("HTTPS://sec/p.json", POLICY);
+    let with_http = context(&fs, &env).with_http(&http);
+    assert_eq!(
+        read_location(&with_http, "HTTPS://sec/p.json").unwrap(),
+        POLICY
+    );
+    assert_eq!(http.requests(), ["HTTPS://sec/p.json"]);
+}

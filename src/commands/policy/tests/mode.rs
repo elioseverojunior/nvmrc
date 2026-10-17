@@ -251,6 +251,19 @@ fn a_relative_index_in_a_remote_policy_is_invalid() {
 }
 
 #[test]
+fn an_uppercase_https_central_policy_is_remote() {
+    let env = FakeEnv::default().with_var("NVMRC_POLICY", "HTTPS://sec/p.json");
+    let fs = FakeFileSystem::default();
+    let http = crate::fakes::FakeHttp::default()
+        .with_body("HTTPS://sec/p.json", &cve_policy("high", Some("vuln.json")));
+    let context = context(&fs, &env).with_http(&http);
+    assert!(matches!(
+        resolve_mode(&context).unwrap_err(),
+        PolicyError::Invalid { location, .. } if location == "HTTPS://sec/p.json"
+    ));
+}
+
+#[test]
 fn a_central_policy_without_cve_settings_still_decides_the_index() {
     let fs = FakeFileSystem::default()
         .with_file("/central.json", &policy_with_minimum("20"))

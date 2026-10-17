@@ -2,7 +2,7 @@
 //! version split by the severity limit.
 
 use super::enforce::Requested;
-use super::load::read_location;
+use super::load::{is_https, read_location};
 use crate::context::Context;
 use crate::domain::policy::{
     CvePolicy, Finding, Severity, Violation, finding_list, findings, parse_advisories,
@@ -64,7 +64,7 @@ pub(super) fn judge(
     cve: &CvePolicy,
 ) -> Result<Judgement, PolicyError> {
     let location = &cve.index.value;
-    if requested.offline && location.starts_with("https://") {
+    if requested.offline && is_https(location) {
         return Err(PolicyError::ReleaseInfoUnavailable("offline".to_owned()));
     }
     let text = read_location(context, location)?;

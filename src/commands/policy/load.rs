@@ -20,7 +20,7 @@ const CENTRAL_VARIABLE: &str = "NVMRC_POLICY";
 /// [`PolicyError::InsecureUrl`] for a URL that is not https;
 /// [`PolicyError::Unreadable`] when the text cannot be fetched or read.
 pub fn read_location(context: &Context<'_>, location: &str) -> Result<String, PolicyError> {
-    if location.starts_with("https://") {
+    if is_https(location) {
         // Never follows a redirect away from https.
         return context
             .policy_http()
@@ -35,6 +35,14 @@ pub fn read_location(context: &Context<'_>, location: &str) -> Result<String, Po
         .fs
         .read_to_string(&path)
         .map_err(|error| unreadable(location, error))
+}
+
+/// Whether `location` is an https URL; a URL scheme is case-insensitive.
+pub(super) fn is_https(location: &str) -> bool {
+    const SCHEME: &str = "https://";
+    location
+        .get(..SCHEME.len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(SCHEME))
 }
 
 fn unreadable(location: &str, reason: impl std::fmt::Display) -> PolicyError {
