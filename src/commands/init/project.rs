@@ -77,13 +77,13 @@ fn set_up(
     request: &ProjectRequest,
     transcript: &mut Transcript,
 ) -> Result<(), Stop> {
-    let chosen = choose(context, request, transcript)?;
     let directory = context.working_directory().ok_or_else(|| {
         CliError::InvalidArgument("nvm init: the working directory cannot be read.".to_owned())
     })?;
     let files = ProjectFiles::in_directory(&directory);
     let current = current_nvmrc(context, &files.nvmrc)?;
-    refuse_switch(&current, &files.nvmrc, &chosen, transcript)?;
+    refuse_switch(&current, &files.nvmrc, request, transcript)?;
+    let chosen = choose(context, request, transcript)?;
     let nvmrc_text = new_nvmrc(current, &chosen);
     let package_edit = new_package_json(context, &files.package_json, &chosen)?;
     save(context, &files, &nvmrc_text, package_edit.as_ref())?;
@@ -181,16 +181,20 @@ fn listed(chosen: &[(Tool, Version)]) -> String {
     shown.join(", ")
 }
 
-/// Refuses yarn over a pnpm pin, or pnpm over a yarn pin: the switch is the
-/// user's to make.
+/// Refuses a malformed pin in the `.nvmrc`, and yarn over a pnpm pin or
+/// pnpm over a yarn pin: the switch is the user's to make. Both are known
+/// before any request.
 fn refuse_switch(
     current: &str,
     path: &Path,
-    chosen: &[(Tool, Version)],
+    request: &ProjectRequest,
     transcript: &mut Transcript,
 ) -> Result<(), Stop> {
     let pins = parse_pins(current).map_err(|error| CliError::from(pin_error(error, path)))?;
-    for (tool, _) in chosen {
+    for tool in ORDER
+        .into_iter()
+        .filter(|tool| request.get(*tool).is_some())
+    {
         let other = match tool {
             Tool::Yarn => Tool::Pnpm,
             Tool::Pnpm => Tool::Yarn,

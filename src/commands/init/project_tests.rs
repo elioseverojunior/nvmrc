@@ -85,11 +85,11 @@ fn no_allowed_release_writes_nothing() {
 }
 
 #[test]
-fn yarn_over_a_pnpm_pin_is_refused() {
+fn yarn_over_a_pnpm_pin_is_refused_before_any_request() {
     let yarn = "https://registry.npmjs.org/@yarnpkg%2fcli-dist";
     let http = served().with_body(yarn, r#"{"versions": {"4.5.0": {}}}"#);
-    let (fs, env) = project(&[("/p/.nvmrc", "v22.11.0\npnpm=9.12.0\n")], "");
-    let output = init(&fs, &env, &http, &["--yarn"]);
+    let (fs, env) = project(&[("/p/.nvmrc", "v22.11.0\npnpm=9.12.0\n")], MIN_PNPM);
+    let output = init(&fs, &env, &http, &["--node", "--yarn"]);
     assert_eq!(output.status.code(), 3);
     assert_eq!(
         output.stderr,
@@ -99,6 +99,37 @@ fn yarn_over_a_pnpm_pin_is_refused() {
         file(&fs, "/p/.nvmrc").as_deref(),
         Some("v22.11.0\npnpm=9.12.0\n")
     );
+    assert!(http.requests().is_empty(), "{:?}", http.requests());
+}
+
+#[test]
+fn pnpm_over_a_yarn_pin_is_refused_before_any_request() {
+    let package_json = "{ \"packageManager\": \"yarn@4.5.0\" }";
+    let files = [
+        ("/p/.nvmrc", "yarn=4.5.0\n"),
+        ("/p/package.json", package_json),
+    ];
+    let (fs, env) = project(&files, "");
+    let http = served();
+    let output = init(&fs, &env, &http, &["--pnpm"]);
+    assert_eq!(output.status.code(), 3);
+    assert_eq!(
+        output.stderr,
+        "nvm init: /p/.nvmrc pins yarn; remove its yarn= line to pin pnpm."
+    );
+    assert_eq!(file(&fs, "/p/.nvmrc").as_deref(), Some("yarn=4.5.0\n"));
+    assert_eq!(file(&fs, "/p/package.json").as_deref(), Some(package_json));
+    assert!(http.requests().is_empty(), "{:?}", http.requests());
+}
+
+#[test]
+fn a_malformed_pin_is_refused_before_any_request() {
+    let (fs, env) = project(&[("/p/.nvmrc", "v22.11.0\npnpm=nine\n")], "");
+    let http = served();
+    let output = init(&fs, &env, &http, &["--node"]);
+    assert_eq!(output.status.code(), 3, "{}", output.stderr);
+    assert!(output.stderr.contains("/p/.nvmrc"), "{}", output.stderr);
+    assert!(http.requests().is_empty(), "{:?}", http.requests());
 }
 
 #[test]
