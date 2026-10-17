@@ -17,7 +17,7 @@ pub use document::{
 pub use flags::{FlagError, POLICY_FLAGS, PolicyFlag, PolicyFlags, extract};
 pub use rules::{NodeLayer, NodePolicy, merge};
 pub use source::{Source, Sourced};
-pub use verdict::{MissingReleaseInfo, ReleaseInfo, Violation};
+pub use verdict::{MissingReleaseInfo, ReleaseInfo, Violation, finding_list};
 
 #[cfg(test)]
 mod advisories_tests;

@@ -2,7 +2,7 @@ use crate::commands::policy::enforce::{Gate, Origin, Requested, enforce_node};
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::fixtures::index_text_dated;
-use crate::domain::policy::{PolicyFlags, extract};
+use crate::domain::policy::{DEFAULT_INDEX, PolicyFlags, extract};
 use crate::error::{CliError, NvmExitCode};
 use crate::fakes::{FakeClock, FakeEnv, FakeFileSystem, FakeHttp};
 use std::ffi::OsString;
@@ -32,6 +32,13 @@ fn index() -> String {
         ("v23.1.0", "2024-10-24", "-"),
         ("v20.15.1", "2024-07-08", "Iron"),
     ])
+}
+
+/// The release index and an empty vulnerability index.
+fn served() -> FakeHttp {
+    FakeHttp::default()
+        .with_body(INDEX_URL, &index())
+        .with_empty_advisories()
 }
 
 fn env() -> FakeEnv {
@@ -65,8 +72,10 @@ fn legacy_mode_always_passes() {
 
 #[test]
 fn a_violation_stops_with_7_and_names_everything() {
-    let (env, fs) = (env(), FakeFileSystem::default());
-    let context = Context::new(&fs, &env).with_policy_flags(min_flags());
+    let (env, fs, http) = (env(), FakeFileSystem::default(), served());
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_policy_flags(min_flags());
     let origin = Origin::Nvmrc("/w/app/.nvmrc".into());
     let (gate, stderr) = run(&context, &requested("v18.19.0", origin, false));
     assert!(matches!(
@@ -86,8 +95,9 @@ fn a_violation_stops_with_7_and_names_everything() {
 
 #[test]
 fn an_advisory_context_warns_and_passes() {
-    let (env, fs) = (env(), FakeFileSystem::default());
+    let (env, fs, http) = (env(), FakeFileSystem::default(), served());
     let context = Context::new(&fs, &env)
+        .with_http(&http)
         .with_policy_flags(min_flags())
         .advisory();
     let (gate, stderr) = run(&context, &argument("v18.19.0"));
@@ -106,19 +116,19 @@ fn an_advisory_context_warns_and_passes() {
 #[test]
 fn rules_needing_release_info_fetch_the_index_once() {
     let (env, fs) = lts_world();
-    let http = FakeHttp::default().with_body(INDEX_URL, &index());
+    let http = served();
     let clock = FakeClock::at(1_791_110_040);
     let context = Context::new(&fs, &env).with_http(&http).with_clock(&clock);
     let (gate, stderr) = run(&context, &argument("v23.1.0"));
     assert!(matches!(gate, Ok(Gate::Stop(_))));
     assert!(stderr.contains("  - not an LTS release (from policy /p.json)"));
-    assert_eq!(http.requests(), [INDEX_URL]);
+    assert_eq!(http.requests(), [INDEX_URL, DEFAULT_INDEX]);
 }
 
 #[test]
 fn an_lts_release_passes_the_lts_rule() {
     let (env, fs) = lts_world();
-    let http = FakeHttp::default().with_body(INDEX_URL, &index());
+    let http = served();
     let context = Context::new(&fs, &env).with_http(&http);
     assert!(matches!(
         run(&context, &argument("v20.15.1")).0,
@@ -169,7 +179,7 @@ fn an_advisory_failure_to_know_warns_and_passes() {
 fn an_advisory_index_fetch_goes_through_the_quick_client() {
     let (env, fs) = lts_world();
     let regular = FakeHttp::default();
-    let quick = FakeHttp::default().with_body(INDEX_URL, &index());
+    let quick = served();
     let context = Context::new(&fs, &env)
         .with_http(&regular)
         .with_quick_http(&quick)
@@ -177,6 +187,6 @@ fn an_advisory_index_fetch_goes_through_the_quick_client() {
     let (gate, stderr) = run(&context, &argument("v23.1.0"));
     assert!(matches!(gate, Ok(Gate::Pass)));
     assert!(stderr.contains("not an LTS release"), "{stderr}");
-    assert_eq!(quick.requests(), [INDEX_URL]);
+    assert_eq!(quick.requests(), [INDEX_URL, DEFAULT_INDEX]);
     assert!(regular.requests().is_empty());
 }

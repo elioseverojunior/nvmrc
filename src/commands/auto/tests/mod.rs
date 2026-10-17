@@ -100,7 +100,8 @@ impl Lab {
             });
         let http = FakeHttp::default()
             .with_body(NODE_INDEX, &index_text(&[("v18.20.4", "Hydrogen")]))
-            .with_body(IOJS_INDEX, &index_text(&[]));
+            .with_body(IOJS_INDEX, &index_text(&[]))
+            .with_empty_advisories();
         let context = Context::new(&self.fs, &self.env)
             .with_process(&process)
             .with_http(&http)

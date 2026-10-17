@@ -119,3 +119,23 @@ fn an_iojs_version_is_never_allowed() {
     assert_eq!(found, vec![Violation::NotNode]);
     assert_eq!(found[0].to_string(), "io.js is not covered by policy");
 }
+
+#[test]
+fn a_vulnerable_verdict_names_each_finding_and_the_limit() {
+    use crate::domain::policy::{Finding, Severity};
+    let finding = |name: &str| Finding {
+        name: name.into(),
+        severity: Severity::High,
+    };
+    let violation = Violation::Vulnerable {
+        findings: vec![finding("CVE-2024-27983"), finding("CVE-2024-22019")],
+        limit: Sourced {
+            value: Severity::High,
+            source: central(),
+        },
+    };
+    assert_eq!(
+        violation.to_string(),
+        "CVE-2024-27983 (high), CVE-2024-22019 (high); the limit is high (from policy /p.json)"
+    );
+}

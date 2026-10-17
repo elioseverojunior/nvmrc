@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use super::advisories::Finding;
+use super::document::Severity;
 use super::rules::NodePolicy;
 use super::source::{Source, Sourced};
 use crate::domain::version::{Flavor, Version};
@@ -28,6 +30,21 @@ pub enum Violation {
         required: Sourced<u32>,
     },
     NotNode,
+    /// Known vulnerabilities at or above the severity limit.
+    Vulnerable {
+        findings: Vec<Finding>,
+        limit: Sourced<Severity>,
+    },
+}
+
+/// `CVE-1 (high), CVE-2 (low)`: each finding with its severity.
+#[must_use]
+pub fn finding_list(findings: &[Finding]) -> String {
+    findings
+        .iter()
+        .map(|finding| format!("{} ({})", finding.name, finding.severity))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 impl fmt::Display for Violation {
@@ -51,6 +68,13 @@ impl fmt::Display for Violation {
                 required.value, required.source
             ),
             Self::NotNode => formatter.write_str("io.js is not covered by policy"),
+            Self::Vulnerable { findings, limit } => write!(
+                formatter,
+                "{}; the limit is {} (from {})",
+                finding_list(findings),
+                limit.value,
+                limit.source
+            ),
         }
     }
 }

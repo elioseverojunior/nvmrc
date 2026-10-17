@@ -109,6 +109,10 @@ pub enum PolicyError {
     Invalid { location: String, reason: String },
     #[error("nvm: cannot check the policy: the release information is unavailable: {0}")]
     ReleaseInfoUnavailable(String),
+    #[error(
+        "nvm: cannot check the policy: the vulnerability index {location} is not valid: {reason}"
+    )]
+    IndexInvalid { location: String, reason: String },
     #[error("nvm: cannot check the policy: the version of the system node cannot be read.")]
     SystemVersionUnreadable,
 }

@@ -2,7 +2,7 @@
 //! and before anything is downloaded.
 
 use super::*;
-use crate::domain::policy::extract;
+use crate::domain::policy::{DEFAULT_INDEX, extract};
 use std::ffi::OsString;
 
 fn flags(values: &[&str]) -> PolicyFlags {
@@ -45,6 +45,27 @@ fn a_version_from_nvmrc_names_the_file_in_the_message() {
             .stderr
             .ends_with("Raise /p/.nvmrc to an allowed version.")
     );
+}
+
+#[test]
+fn install_of_a_vulnerable_version_stops_before_downloading() {
+    let index = r#"{"1": {"cve": ["CVE-2024-27983"], "vulnerable": "20.x",
+                         "patched": "^20.12.1", "severity": "high"}}"#;
+    let mut world = World::new();
+    world.http = std::mem::take(&mut world.http).with_body(DEFAULT_INDEX, index);
+    world.policy_flags = flags(&["--fail-on-severity", "high"]);
+    let output = world.run("20").unwrap();
+    assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
+    assert_eq!(
+        lines(&output.stderr),
+        [
+            "nvm: node v20.10.0 (from the command line) is not allowed by policy:",
+            "  - CVE-2024-27983 (high); the limit is high (from --fail-on-severity)",
+            "Use an allowed version.",
+        ]
+    );
+    assert!(!world.installed());
+    assert!(!world.http.requests().contains(&TARBALL_URL.to_owned()));
 }
 
 #[test]

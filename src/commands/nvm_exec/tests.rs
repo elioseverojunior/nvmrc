@@ -9,7 +9,7 @@ use crate::commands::exec::tests::{
 };
 use crate::context::Context;
 use crate::error::NvmExitCode;
-use crate::fakes::{FakeEnv, FakeFileSystem};
+use crate::fakes::{FakeEnv, FakeFileSystem, FakeHttp};
 use crate::ports::Invocation;
 
 const UNABLE: &str = "nvm-exec: unable to select a node version\n  Set `NODE_VERSION` \
@@ -18,8 +18,10 @@ const NOT_99: &str = "N/A: version \"v99\" is not yet installed.\n\nYou need to 
 99` to install and use it.";
 
 fn nvm_exec_in(fs: &FakeFileSystem, env: &FakeEnv, command: &[&str]) -> Output {
-    let process = npm_versions();
-    let context = Context::new(fs, env).with_process(&process);
+    let (process, http) = (npm_versions(), FakeHttp::default().with_empty_advisories());
+    let context = Context::new(fs, env)
+        .with_process(&process)
+        .with_http(&http);
     run(&context, &strings(command))
 }
 

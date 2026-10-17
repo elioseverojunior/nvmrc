@@ -12,7 +12,7 @@ use crate::commands::exec::run;
 use crate::context::Context;
 use crate::domain::policy::{PolicyFlags, extract};
 use crate::error::NvmExitCode;
-use crate::fakes::{FakeEnv, FakeFileSystem, FakeProcess};
+use crate::fakes::{FakeEnv, FakeFileSystem, FakeHttp, FakeProcess};
 use crate::ports::Invocation;
 use std::ffi::OsString;
 

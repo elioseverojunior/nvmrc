@@ -10,7 +10,7 @@ use crate::commands::exec::tests::{
 use crate::commands::run::run;
 use crate::context::Context;
 use crate::error::NvmExitCode;
-use crate::fakes::{FakeEnv, FakeFileSystem};
+use crate::fakes::{FakeEnv, FakeFileSystem, FakeHttp};
 
 const RUNNING_18: &str = "Running node v18.20.4 (npm v10.7.0)";
 const N22: &str = "/n/versions/node/v22.3.0";
@@ -267,8 +267,10 @@ fn run_alone_with_an_nvmrc_naming_a_missing_version_is_the_usage() {
 #[test]
 fn run_goes_through_the_same_policy_gate() {
     let (fs, env, process) = (lab(), env_on(BASE_PATH), npm_versions());
+    let http = FakeHttp::default().with_empty_advisories();
     let context = Context::new(&fs, &env)
         .with_process(&process)
+        .with_http(&http)
         .with_policy_flags(policy_flags(&["--min-node", "22"]));
     let output = run(&context, &strings(&["18", "app.js"])).expect("nvm run runs");
     assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
@@ -279,9 +281,13 @@ fn run_goes_through_the_same_policy_gate() {
 #[test]
 fn run_from_an_nvmrc_names_the_file_in_the_policy_message() {
     let (env, process) = (env_on(BASE_PATH), npm_versions());
-    let fs = with_nvmrc("20");
+    let (fs, http) = (
+        with_nvmrc("20"),
+        FakeHttp::default().with_empty_advisories(),
+    );
     let context = Context::new(&fs, &env)
         .with_process(&process)
+        .with_http(&http)
         .with_policy_flags(policy_flags(&["--min-node", "22"]));
     let output = run(&context, &strings(&["app.js"])).expect("nvm run runs");
     assert_eq!(output.status, NvmExitCode::BelowVersionFloor);

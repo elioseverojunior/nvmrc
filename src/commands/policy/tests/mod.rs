@@ -1,3 +1,4 @@
+mod advisories;
 mod enforce;
 mod load;
 mod mode;

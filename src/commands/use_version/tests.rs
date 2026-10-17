@@ -9,8 +9,9 @@ use crate::commands::exec::tests::{
     BASE_PATH, N18, env_on, lab, npm_versions, policy_flags, strings,
 };
 use crate::context::Context;
+use crate::domain::policy::DEFAULT_INDEX;
 use crate::error::NvmExitCode;
-use crate::fakes::FakeProcess;
+use crate::fakes::{FakeHttp, FakeProcess};
 
 fn switch(args: &[&str]) -> (Output, Option<Target>) {
     let (fs, env, process) = (lab(), env_on(BASE_PATH), npm_versions());
@@ -37,8 +38,10 @@ fn a_stop_before_the_switch_returns_no_target() {
 
 fn switch_under(flags: &[&str], path: &str, process: &FakeProcess, args: &[&str]) -> Output {
     let (fs, env) = (lab(), env_on(path));
+    let http = FakeHttp::default().with_empty_advisories();
     let context = Context::new(&fs, &env)
         .with_process(process)
+        .with_http(&http)
         .with_policy_flags(policy_flags(flags));
     run_and_target(&context, &strings(args)).unwrap().0
 }
@@ -50,6 +53,28 @@ fn use_of_a_disallowed_installed_version_stops_without_switching() {
     assert!(output.script.is_empty());
     assert!(
         output.stderr.starts_with("nvm: node v18.20.4 "),
+        "{}",
+        output.stderr
+    );
+}
+
+#[test]
+fn use_of_a_vulnerable_installed_version_stops_without_switching() {
+    let index = r#"{"1": {"cve": ["CVE-2024-27983"], "vulnerable": "18.x",
+                         "patched": "^18.20.5", "severity": "high"}}"#;
+    let (fs, env, process) = (lab(), env_on(BASE_PATH), npm_versions());
+    let http = FakeHttp::default().with_body(DEFAULT_INDEX, index);
+    let context = Context::new(&fs, &env)
+        .with_process(&process)
+        .with_http(&http)
+        .with_policy_flags(policy_flags(&["--fail-on-severity", "high"]));
+    let output = run_and_target(&context, &strings(&["18"])).unwrap().0;
+    assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
+    assert!(output.script.is_empty());
+    assert!(
+        output
+            .stderr
+            .contains("  - CVE-2024-27983 (high); the limit is high (from --fail-on-severity)"),
         "{}",
         output.stderr
     );
@@ -105,8 +130,10 @@ fn use_from_an_nvmrc_names_the_file_in_the_message() {
         env_on(BASE_PATH),
         npm_versions(),
     );
+    let http = FakeHttp::default().with_empty_advisories();
     let context = Context::new(&fs, &env)
         .with_process(&process)
+        .with_http(&http)
         .with_policy_flags(policy_flags(&["--min-node", "22"]));
     let output = run_and_target(&context, &[]).unwrap().0;
     assert_eq!(output.status, NvmExitCode::BelowVersionFloor);

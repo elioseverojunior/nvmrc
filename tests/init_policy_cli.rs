@@ -6,11 +6,22 @@ mod init_lab;
 
 use init_lab::{Lab, each_shell, in_dialect, with_function};
 
-const POLICY: &str = r#"{"schemaVersion":1,"tools":{"node":{"allow":">=20"}}}"#;
+const POLICY: &str =
+    r#"{"schemaVersion":1,"tools":{"node":{"allow":">=20"}},"cve":{"source":"vuln.json"}}"#;
+/// Names a local, empty vulnerability index, so the CVE check never reaches
+/// the network.
+const LOCAL_INDEX_POLICY: &str = r#"{"schemaVersion":1,"cve":{"source":"vuln.json"}}"#;
+
+/// A lab whose project has an empty vulnerability index next to `policy`.
+fn lab_with(policy_file: &str, policy: &str) -> Lab {
+    Lab::new()
+        .file(policy_file, policy)
+        .file("proj/vuln.json", "{}")
+}
 
 #[test]
 fn use_after_leading_policy_flags_switches_the_shell() {
-    let lab = Lab::new();
+    let lab = lab_with("proj/.nvmrc-policy.json", LOCAL_INDEX_POLICY);
     each_shell(|name, shell| {
         let run = lab.run(
             shell,
@@ -27,7 +38,7 @@ fn use_after_leading_policy_flags_switches_the_shell() {
 
 #[test]
 fn use_after_a_joined_policy_flag_switches_the_shell() {
-    let lab = Lab::new().file("proj/p.json", POLICY);
+    let lab = lab_with("proj/p.json", POLICY);
     each_shell(|name, shell| {
         let run = lab.run(
             shell,
@@ -44,7 +55,7 @@ fn use_after_a_joined_policy_flag_switches_the_shell() {
 
 #[test]
 fn a_disallowed_use_leaves_the_shell_alone() {
-    let lab = Lab::new();
+    let lab = lab_with("proj/.nvmrc-policy.json", LOCAL_INDEX_POLICY);
     each_shell(|name, shell| {
         let status = in_dialect(name, "echo $?", "echo $status");
         let commands = format!(

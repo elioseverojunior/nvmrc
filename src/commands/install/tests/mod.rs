@@ -40,7 +40,8 @@ impl World {
                 .with_body(NODE_INDEX, &node)
                 .with_body(IOJS_INDEX, &iojs)
                 .with_body(SUMS, &format!("{GOOD}  node-v20.10.0-linux-x64.tar.xz\n"))
-                .with_bytes(TARBALL_URL, b"tarball"),
+                .with_bytes(TARBALL_URL, b"tarball")
+                .with_empty_advisories(),
             digest: FakeDigest::default().with_digest(TARBALL, GOOD),
             sleeper: FakeSleeper::default(),
             env: FakeEnv::default().with_var("NVM_DIR", "/n"),

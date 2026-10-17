@@ -5,8 +5,10 @@ use super::*;
 
 fn exec_under(flags: &[&str], path: &str, process: &FakeProcess, args: &[&str]) -> Output {
     let (fs, env) = (lab(), env_on(path));
+    let http = FakeHttp::default().with_empty_advisories();
     let context = Context::new(&fs, &env)
         .with_process(process)
+        .with_http(&http)
         .with_policy_flags(policy_flags(flags));
     run(&context, &strings(args)).expect("nvm exec runs")
 }
@@ -57,8 +59,10 @@ fn exec_system_with_an_unreadable_version_says_so_and_fails_to_know() {
 
 fn exec_in_under(fs: &FakeFileSystem, path: &str, args: &[&str]) -> Output {
     let (env, process) = (env_on(path), npm_versions());
+    let http = FakeHttp::default().with_empty_advisories();
     let context = Context::new(fs, &env)
         .with_process(&process)
+        .with_http(&http)
         .with_policy_flags(policy_flags(&["--min-node", "22"]));
     run(&context, &strings(args)).expect("nvm exec runs")
 }

@@ -1,9 +1,10 @@
 //! The gate a node version passes before it is installed: the merged policy
 //! against the version, with the release index consulted only when a rule
-//! needs it.
+//! needs it, and the vulnerability index for every node version.
 
 use std::path::PathBuf;
 
+use super::advisories::cve_violation;
 use super::mode::{Mode, resolve_mode};
 use crate::commands::remote_index;
 use crate::commands::transcript::Transcript;
@@ -73,8 +74,17 @@ fn check(
     let Mode::Enforced(policy) = mode else {
         return Ok(Vec::new());
     };
-    let policy = policy.node;
-    let release = release_info(context, requested, &policy)?;
+    let mut violations = node_violations(context, requested, &policy.node)?;
+    violations.extend(cve_violation(context, requested, policy.cve, transcript)?);
+    Ok(violations)
+}
+
+fn node_violations(
+    context: &Context<'_>,
+    requested: &Requested,
+    policy: &NodePolicy,
+) -> Result<Vec<Violation>, PolicyError> {
+    let release = release_info(context, requested, policy)?;
     let today = context.clock().unix_seconds().div_euclid(SECONDS_PER_DAY);
     policy
         .violations(&requested.version, release.as_ref(), today)

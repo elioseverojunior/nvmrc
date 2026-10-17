@@ -1,11 +1,24 @@
 use super::*;
 
+fn installed() -> FakeFileSystem {
+    FakeFileSystem::default().with_executable("/n/versions/node/v20.1.0/bin/node", "")
+}
+
 /// Runs the CLI with v20.1.0 installed and runnable.
 fn run_installed(args: &[&str]) -> (u8, String, String) {
-    let fs = FakeFileSystem::default().with_executable("/n/versions/node/v20.1.0/bin/node", "");
-    let env = FakeEnv::default().with_var("NVM_DIR", "/n");
+    run_in(
+        &installed(),
+        &FakeEnv::default().with_var("NVM_DIR", "/n"),
+        args,
+    )
+}
+
+/// Runs the CLI in `fs` and `env`, with an empty vulnerability index served.
+fn run_in(fs: &FakeFileSystem, env: &FakeEnv, args: &[&str]) -> (u8, String, String) {
+    let http = FakeHttp::default().with_empty_advisories();
     let (mut out, mut err) = (Vec::new(), Vec::new());
-    let code = run(args, &Context::new(&fs, &env), &mut out, &mut err);
+    let context = Context::new(fs, env).with_http(&http);
+    let code = run(args, &context, &mut out, &mut err);
     (
         code,
         String::from_utf8(out).unwrap(),
@@ -46,7 +59,17 @@ fn a_floor_flag_after_save_is_enforced() {
 
 #[test]
 fn a_floor_flag_after_the_version_of_install_is_enforced() {
-    let (code, _, err) = run_installed(&["nvm", "install", "--offline", "20", "--min-node=22"]);
+    // Offline, the CVE check needs a local index: a repository policy names one.
+    let policy = r#"{ "schemaVersion": 1, "cve": { "source": "vuln.json" } }"#;
+    let fs = installed()
+        .with_file("/w/.nvmrc-policy.json", policy)
+        .with_file("/w/vuln.json", "{}");
+    let env = FakeEnv::default()
+        .with_var("NVM_DIR", "/n")
+        .with_var("PWD", "/w")
+        .with_current_dir("/w");
+    let args = ["nvm", "install", "--offline", "20", "--min-node=22"];
+    let (code, _, err) = run_in(&fs.with_dir("/w"), &env, &args);
     assert_eq!(code, 7, "{err}");
 }
 

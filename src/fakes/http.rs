@@ -41,6 +41,13 @@ impl FakeHttp {
         self
     }
 
+    /// Serves a vulnerability index with no advisories at the default
+    /// location, for policy tests whose subject is not the CVE check.
+    #[must_use]
+    pub fn with_empty_advisories(self) -> Self {
+        self.with_body(crate::domain::policy::DEFAULT_INDEX, "{}")
+    }
+
     /// The URLs requested so far, in order.
     #[must_use]
     pub fn requests(&self) -> Vec<String> {
