@@ -60,23 +60,54 @@ pub fn enforce_node(
             Ok(Gate::Pass)
         }
         Err(error) => Err(error.into()),
-        Ok(violations) => Ok(report(context, requested, &violations, transcript)),
+        Ok(checked) => {
+            let gate = report(context, requested, &checked.violations, transcript);
+            checked
+                .notes
+                .into_iter()
+                .for_each(|line| transcript.err(line));
+            Ok(gate)
+        }
     }
+}
+
+/// What the check found: the violations, and the warnings printed after the
+/// report so the output reads top-down.
+#[derive(Default)]
+struct Checked {
+    violations: Vec<Violation>,
+    notes: Vec<String>,
 }
 
 fn check(
     context: &Context<'_>,
     requested: &Requested,
     transcript: &mut Transcript,
-) -> Result<Vec<Violation>, PolicyError> {
+) -> Result<Checked, PolicyError> {
     let (mode, warnings) = resolve_mode(context)?;
     warnings.into_iter().for_each(|line| transcript.err(line));
     let Mode::Enforced(policy) = mode else {
-        return Ok(Vec::new());
+        return Ok(Checked::default());
     };
-    let mut violations = node_violations(context, requested, &policy.node)?;
-    violations.extend(cve_violation(context, requested, policy.cve, transcript)?);
-    Ok(violations)
+    let mut checked = Checked {
+        violations: node_violations(context, requested, &policy.node)?,
+        notes: Vec::new(),
+    };
+    match cve_violation(context, requested, policy.cve, &mut checked.notes) {
+        Ok(found) => checked.violations.extend(found),
+        // The node rules already decide the gate; the index is a warning.
+        Err(error) if !checked.violations.is_empty() => {
+            checked.notes.push(unknown_vulnerabilities(&error));
+        }
+        Err(error) => return Err(error),
+    }
+    Ok(checked)
+}
+
+fn unknown_vulnerabilities(error: &PolicyError) -> String {
+    let text = error.to_string();
+    let reason = text.trim_start_matches("nvm: cannot check the policy: ");
+    format!("nvm: warning: cannot check known vulnerabilities: {reason}")
 }
 
 fn node_violations(

@@ -2,6 +2,7 @@ mod advisories;
 mod enforce;
 mod load;
 mod mode;
+mod unknown_index;
 
 use crate::context::Context;
 use crate::fakes::{FakeEnv, FakeFileSystem};

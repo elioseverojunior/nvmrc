@@ -3,7 +3,6 @@
 
 use super::enforce::Requested;
 use super::load::read_location;
-use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::policy::{
     CvePolicy, Finding, Severity, Violation, finding_list, findings, parse_advisories,
@@ -21,7 +20,7 @@ pub struct Judgement {
 }
 
 /// The CVE check of the gate: the violation for findings at or above the
-/// limit, if any. Findings below it are a warning on `transcript`, whatever
+/// limit, if any. Findings below it are a warning added to `notes`, whatever
 /// the gate decides. io.js versions are not checked, and nothing is fetched.
 ///
 /// # Errors
@@ -30,14 +29,14 @@ pub(super) fn cve_violation(
     context: &Context<'_>,
     requested: &Requested,
     cve: CvePolicy,
-    transcript: &mut Transcript,
+    notes: &mut Vec<String>,
 ) -> Result<Option<Violation>, PolicyError> {
     if requested.version.flavor != Flavor::Node {
         return Ok(None);
     }
     let judgement = judge(context, requested, &cve)?;
     if !judgement.below.is_empty() {
-        transcript.err(format!(
+        notes.push(format!(
             "nvm: warning: node {} has known vulnerabilities below the limit {}: {}",
             requested.version,
             cve.limit.value,

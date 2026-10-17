@@ -105,13 +105,16 @@ fn findings_below_the_limit_are_also_named_when_the_gate_stops() {
     let context = Context::new(&fs, &env).with_http(&http);
     let (gate, stderr) = run(&context, &requested(AFFECTED, false));
     assert!(matches!(gate, Ok(Gate::Stop(_))));
-    assert!(
-        stderr.contains("  - CVE-A (high); the limit is medium"),
-        "{stderr}"
-    );
-    assert!(
-        stderr.contains("below the limit medium: CVE-B (low)"),
-        "{stderr}"
+    assert_eq!(
+        stderr,
+        [
+            "nvm: node v22.20.0 (from the command line) is not allowed by policy:",
+            "  - CVE-A (high); the limit is medium (from NVMRC_FAIL_ON_SEVERITY)",
+            "Use an allowed version.",
+            "nvm: warning: node v22.20.0 has known vulnerabilities below the limit medium: \
+             CVE-B (low)",
+        ]
+        .join("\n")
     );
 }
 
