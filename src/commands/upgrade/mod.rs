@@ -3,6 +3,11 @@
 //! [`request`]).
 
 mod request;
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the upgrade run calls it in the next task")
+)]
+mod target;
 
 use crate::commands::Output;
 use crate::context::Context;
