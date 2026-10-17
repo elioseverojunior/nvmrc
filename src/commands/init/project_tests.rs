@@ -1,4 +1,4 @@
-use super::super::test_support::{
+use crate::commands::project::test_support::{
     INDEX_URL, MIN_PNPM, PNPM_PACKUMENT, PNPM_URL, file, init, project, served,
 };
 use crate::domain::fixtures::{advisories_json, index_text_dated};

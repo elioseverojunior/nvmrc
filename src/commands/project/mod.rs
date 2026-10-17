@@ -3,6 +3,8 @@
 
 mod candidates;
 mod stop;
+#[cfg(test)]
+pub(crate) mod test_support;
 mod write;
 
 pub use candidates::{

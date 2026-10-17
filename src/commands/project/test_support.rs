@@ -1,4 +1,5 @@
-//! A project in `/p` and the registry it reads, for the project-mode tests.
+//! A project in `/p` and the registry it reads, for the tests of `nvm init`
+//! and `nvm upgrade`.
 
 use std::path::Path;
 

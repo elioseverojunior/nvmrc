@@ -1,5 +1,5 @@
 use super::*;
-use crate::commands::init::test_support::{file, init, project, served};
+use crate::commands::project::test_support::{file, init, project, served};
 use crate::commands::transcript::Transcript;
 use crate::error::NvmExitCode;
 

@@ -5,8 +5,6 @@
 
 mod project;
 mod request;
-#[cfg(test)]
-pub(crate) mod test_support;
 
 use crate::commands::Output;
 use crate::context::Context;
