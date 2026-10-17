@@ -1,6 +1,7 @@
 //! The security policy: what versions of node, npm, yarn and pnpm may be used.
 
 pub mod advisories;
+pub mod cve;
 pub mod document;
 pub mod flags;
 pub mod rules;
@@ -8,6 +9,7 @@ pub mod source;
 pub mod verdict;
 
 pub use advisories::{Advisory, Finding, IndexError, findings, parse_advisories};
+pub use cve::{CveLayer, CvePolicy, DEFAULT_INDEX, merge_cve};
 pub use document::{
     CveSettings, DocumentError, NodeRules, PackageRules, PolicyDocument, Severity, Tools,
     parse_document,
@@ -19,6 +21,8 @@ pub use verdict::{MissingReleaseInfo, ReleaseInfo, Violation};
 
 #[cfg(test)]
 mod advisories_tests;
+#[cfg(test)]
+mod cve_tests;
 #[cfg(test)]
 mod document_tests;
 #[cfg(test)]

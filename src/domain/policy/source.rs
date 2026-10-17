@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Source {
+    Default,
     Flag(&'static str),
     Variable(&'static str),
     CentralPolicy(String),
@@ -13,16 +14,18 @@ pub enum Source {
 }
 
 impl Source {
-    /// Everything but the central policy is an override of it.
+    /// Everything but the central policy and the built-in default is an
+    /// override of it.
     #[must_use]
     pub fn is_override(&self) -> bool {
-        !matches!(self, Self::CentralPolicy(_))
+        !matches!(self, Self::CentralPolicy(_) | Self::Default)
     }
 }
 
 impl fmt::Display for Source {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Default => formatter.write_str("the default"),
             Self::Flag(name) | Self::Variable(name) => formatter.write_str(name),
             Self::CentralPolicy(location) => write!(formatter, "policy {location}"),
             Self::RepositoryPolicy(path) => {

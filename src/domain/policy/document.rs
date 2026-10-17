@@ -1,6 +1,8 @@
 //! The policy file: its types, which are the schema's single source of truth,
 //! and the parsing that enforces what a schema cannot.
 
+use std::fmt;
+
 use nodejs_semver::Range;
 use serde::Deserialize;
 
@@ -105,6 +107,18 @@ impl Severity {
             Self::High => 3,
             Self::Critical => 4,
         }
+    }
+}
+
+impl fmt::Display for Severity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Critical => "critical",
+            Self::High => "high",
+            Self::Medium => "medium",
+            Self::Low => "low",
+            Self::None => "none",
+        })
     }
 }
 
