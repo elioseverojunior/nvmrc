@@ -64,15 +64,26 @@ pub fn resolve_mode(context: &Context<'_>) -> Result<(Mode, Vec<String>), Policy
     )?);
     layers.extend(file_layer(context)?);
     let (node, mut warnings) = merge(layers);
-    let mut cve_layers = Vec::new();
-    cve_layers.extend(central.cve);
-    cve_layers.extend(repository.cve);
-    cve_layers.extend(severity_layers(context)?);
-    let (cve, cve_warnings) = merge_cve(cve_layers);
+    let (cve, cve_warnings) = cve_policy(context, central.cve, repository.cve)?;
     warnings.extend(cve_warnings);
     Ok((Mode::Enforced(EnforcedPolicy { node, cve }), warnings))
 }
 
+/// Merges the CVE layers of both policies, the severity flag and the variable.
+fn cve_policy(
+    context: &Context<'_>,
+    central: Option<CveLayer>,
+    repository: Option<CveLayer>,
+) -> Result<(CvePolicy, Vec<String>), PolicyError> {
+    let mut layers = Vec::new();
+    layers.extend(central);
+    layers.extend(repository);
+    layers.extend(severity_layers(context)?);
+    Ok(merge_cve(layers))
+}
+
+/// A configured central policy always has a CVE layer, even an empty one, so
+/// the repository policy never chooses the index once a central policy exists.
 fn central_layer(context: &Context<'_>) -> Result<DocumentLayers, PolicyError> {
     let Some(location) = central_location(context) else {
         return Ok(DocumentLayers::default());
@@ -82,7 +93,13 @@ fn central_layer(context: &Context<'_>) -> Result<DocumentLayers, PolicyError> {
         .then(|| absolute(context, &location).parent().map(Path::to_path_buf))
         .flatten();
     let source = Source::CentralPolicy(location.clone());
-    document_layers(&text, &location, source, directory.as_deref())
+    let mut layers = document_layers(&text, &location, source.clone(), directory.as_deref())?;
+    layers.cve.get_or_insert(CveLayer {
+        source,
+        limit: None,
+        index: None,
+    });
+    Ok(layers)
 }
 
 fn repository_layer(context: &Context<'_>) -> Result<DocumentLayers, PolicyError> {

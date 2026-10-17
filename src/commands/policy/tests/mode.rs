@@ -2,7 +2,7 @@ use super::{context, policy_with_minimum};
 use crate::commands::policy::EnforcedPolicy;
 use crate::commands::policy::policy_mode_requested;
 use crate::commands::policy::{Mode, resolve_mode};
-use crate::domain::policy::{DEFAULT_INDEX, PolicyFlags, Severity, Source, extract};
+use crate::domain::policy::{DEFAULT_INDEX, PolicyFlags, Severity, Source, Sourced, extract};
 use crate::error::{CliError, PolicyError};
 use crate::fakes::{FakeEnv, FakeFileSystem};
 use std::ffi::OsString;
@@ -248,4 +248,23 @@ fn a_relative_index_in_a_remote_policy_is_invalid() {
         resolve_mode(&context).unwrap_err(),
         PolicyError::Invalid { location, .. } if location == "https://sec/p.json"
     ));
+}
+
+#[test]
+fn a_central_policy_without_cve_settings_still_decides_the_index() {
+    let fs = FakeFileSystem::default()
+        .with_file("/central.json", &policy_with_minimum("20"))
+        .with_file("/w/.nvmrc-policy.json", &cve_policy("high", Some("e.json")));
+    let env = FakeEnv::default()
+        .with_var("NVMRC_POLICY", "/central.json")
+        .with_var("PWD", "/w")
+        .with_current_dir("/w");
+    let policy = enforced(resolve_mode(&context(&fs, &env)).unwrap().0);
+    assert_eq!(
+        policy.cve.index,
+        Sourced {
+            value: DEFAULT_INDEX.to_owned(),
+            source: Source::Default
+        }
+    );
 }
