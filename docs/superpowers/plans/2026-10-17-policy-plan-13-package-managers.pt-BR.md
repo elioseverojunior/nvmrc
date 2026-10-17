@@ -61,6 +61,11 @@ topo (`package/`).
 - Registro: `NVMRC_NPM_REGISTRY`, padrão `https://registry.npmjs.org`, com uma
   `/` final removida; tudo que não for https é recusado, e toda requisição
   (manifesto, packument, tarball) passa por `get_secure_*`.
+- Credenciais: o `NVM_AUTH_HEADER` nunca chega ao registro npm, a um host de
+  tarball nem ao índice de vulnerabilidades embutido (continua indo para os
+  mirrors do Node, uma política central e um `cve.source` configurado). O
+  `NVMRC_NPM_AUTH_HEADER` (sanitizado como o `NVM_AUTH_HEADER`) vai só para o
+  host do registro.
 - Pacotes: npm → `npm`; pnpm → `pnpm`; yarn abaixo de 2.0.0 → `yarn`; yarn
   2.0.0 e posteriores → `@yarnpkg/cli-dist`.
 - Integridade: o tarball deve casar com uma entrada `sha512-` de
@@ -527,7 +532,61 @@ topo (`package/`).
 - [ ] **Passo 5: Commit** — `feat(use): put the pinned npm, yarn and pnpm on
   PATH`.
 
-### Tarefa 9: Documentação
+### Tarefa 9: Credenciais ficam com os hosts a que pertencem
+
+Acrescentada em 2026-10-17, depois que a revisão da Tarefa 4 mostrou que o
+cliente HTTP único manda o `NVM_AUTH_HEADER` para todo host; a pessoa escolheu
+este desenho.
+
+**Arquivos:**
+
+- Modificar: `src/adapters/ureq_http/mod.rs` (+ testes), `src/cli/mod.rs`
+  (`with_real_context`), `src/context/mod.rs`, `src/context/policy.rs`,
+  `src/domain/http_header.rs`, `src/commands/package_managers/registry.rs`,
+  `src/commands/package_managers/store.rs`, `src/commands/policy/tools.rs` (o
+  cliente da data de publicação), `src/commands/policy/advisories.rs`,
+  `src/commands/policy/load.rs`, seus testes
+
+**Interfaces:**
+
+- Consome: o cliente do registro da Tarefa 4, o armazém da Tarefa 5, as
+  checagens de ferramentas da Tarefa 7.
+- Produz:
+  - `UreqHttp` recebe um `Option<AuthHeader>` onde `struct AuthHeader { pub
+    value: String, pub host: Option<String> }`: com `host`, o header só é
+    enviado quando o host da URL da requisição é igual a ele (ASCII sem
+    diferenciar maiúsculas); sem, em toda requisição (o comportamento atual do
+    `NVM_AUTH_HEADER`)
+  - `fn auth_header_from(env: &dyn Env, name: &str) -> Option<String>`: o valor
+    não vazio e sanitizado (um só lugar para as duas variáveis)
+  - `Context::with_third_party_http(regular: &dyn Http, quick: &dyn Http)` e
+    `fn third_party_http(&self) -> &dyn Http` (o rápido quando consultivo, como
+    `policy_http`); `Context::new` começa com `NoHttp` para os dois
+  - `with_real_context` monta esse par a partir de um `UreqHttp` (com retry no
+    regular) cuja autenticação é o `NVMRC_NPM_AUTH_HEADER` restrito ao host de
+    `registry_base`, e nunca o `NVM_AUTH_HEADER`
+  - Toda requisição ao registro (manifesto, packument, tarball) usa
+    `third_party_http()`; o índice de vulnerabilidades o usa quando o local é
+    `DEFAULT_INDEX` (fonte `Source::Default`), e o cliente existente nos demais
+    casos; `read_location` ganha uma irmã que recebe o cliente
+- [ ] **Passo 1: Escrever os testes que falham** — adaptador ureq (servidor
+  local, como os testes existentes dele): `a_scoped_header_is_sent_only_to_its_host`,
+  `an_unscoped_header_is_sent_everywhere`. Registro e armazém (`FakeHttp`
+  separados para o cliente regular e o de terceiros):
+  `registry_requests_use_the_third_party_client`,
+  `the_tarball_is_downloaded_with_the_third_party_client`. Política:
+  `the_default_index_is_read_with_the_third_party_client`,
+  `a_configured_index_is_read_with_the_regular_client`,
+  `an_age_rule_reads_the_registry_with_the_third_party_client`.
+  `http_header.rs`: `auth_header_from_ignores_a_blank_value`.
+- [ ] **Passo 2: Rodar** `cargo test ureq registry store policy http_header` —
+  esperado: FALHA.
+- [ ] **Passo 3: Implementar**.
+- [ ] **Passo 4: Rodar** `cargo test` — esperado: PASSA.
+- [ ] **Passo 5: Commit** — `fix(http): send credentials only to the hosts
+  they were given for`.
+
+### Tarefa 10: Documentação
 
 **Arquivos:**
 
@@ -535,6 +594,8 @@ topo (`package/`).
 - [ ] **Passo 1: README** — uma seção "npm, yarn and pnpm": as linhas de
   fixação, a regra da versão exata, yarn ou pnpm mas não os dois, a checagem
   de `packageManager`, o caminho do armazém, `NVMRC_NPM_REGISTRY` (só https),
+  `NVMRC_NPM_AUTH_HEADER` (enviado só ao host do registro; o `NVM_AUTH_HEADER`
+  nunca vai ao registro nem ao índice de vulnerabilidades embutido),
   integridade, ordem do `PATH`, `system` sem fixações, comportamento offline;
   acrescentar `--min-npm`, `--min-yarn`, `--min-pnpm` e suas variáveis à seção
   de política; código de saída 3 para erros de fixação e de `packageManager`.

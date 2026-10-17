@@ -228,7 +228,9 @@ a violation names the source of the rule that was broken.
 A value starting with `http://` is rejected; `https://` is fetched through the
 existing `Http` port (with `NVM_AUTH_HEADER` handling as today); anything else
 is a local path. A policy that cannot be fetched, read, parsed or validated is
-an error, never "no policy".
+an error, never "no policy". `NVM_AUTH_HEADER` goes only to the hosts a person
+configured (the Node mirrors, a central policy, a configured `cve.source`):
+the built-in vulnerability index and the npm registry never receive it.
 
 ### 6.4 Flag placement and the shell function
 
@@ -319,7 +321,10 @@ pnpm=9.12.0
   `https://registry.npmjs.org`), verifies the registry's integrity hash, and
   installs it under `$NVM_DIR/package-managers/<name>/<version>/`, shared by
   all Node versions. Packages: `npm` for npm, `pnpm` for pnpm, `yarn` for yarn
-  1.x, and `@yarnpkg/cli-dist` for yarn 2 and later.
+  1.x, and `@yarnpkg/cli-dist` for yarn 2 and later. A registry that needs
+  credentials gets them from `NVMRC_NPM_AUTH_HEADER` (sanitized like
+  `NVM_AUTH_HEADER`), sent only to the registry's own host, so a tarball on
+  another host never receives it.
 - `use` puts the pinned versions' `bin` directories on `PATH` ahead of Node's,
   so a pinned npm shadows the one bundled with Node. Two projects on the same
   Node can pin different versions without colliding.

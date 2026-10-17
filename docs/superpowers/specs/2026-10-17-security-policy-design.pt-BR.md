@@ -236,7 +236,10 @@ violação cita a fonte da regra violada.
 Um valor que começa com `http://` é rejeitado; `https://` é baixado pelo port
 `Http` existente (com o tratamento de `NVM_AUTH_HEADER` de hoje); qualquer outra
 coisa é um caminho local. Uma política que não pode ser baixada, lida,
-interpretada ou validada é um erro, nunca "sem política".
+interpretada ou validada é um erro, nunca "sem política". O `NVM_AUTH_HEADER`
+vai só para os hosts que alguém configurou (os mirrors do Node, uma política
+central, um `cve.source` configurado): o índice de vulnerabilidades embutido e
+o registro npm nunca o recebem.
 
 ### 6.4 Posição das flags e a função de shell
 
@@ -329,7 +332,10 @@ pnpm=9.12.0
   `https://registry.npmjs.org`), verifica o hash de integridade do registro e
   instala em `$NVM_DIR/package-managers/<nome>/<versão>/`, compartilhado por
   todas as versões do Node. Pacotes: `npm` para o npm, `pnpm` para o pnpm,
-  `yarn` para o yarn 1.x e `@yarnpkg/cli-dist` para o yarn 2 em diante.
+  `yarn` para o yarn 1.x e `@yarnpkg/cli-dist` para o yarn 2 em diante. Um
+  registro que exige credenciais as recebe de `NVMRC_NPM_AUTH_HEADER`
+  (sanitizado como o `NVM_AUTH_HEADER`), enviado só ao host do próprio
+  registro, então um tarball em outro host nunca o recebe.
 - O `use` coloca os diretórios `bin` das versões fixadas no `PATH` antes do
   Node, de modo que um npm fixado tem precedência sobre o que vem com o Node.
   Dois projetos no mesmo Node podem fixar versões diferentes sem colidir.

@@ -58,6 +58,10 @@ ISO timestamp (`2024-03-09T21:35:40.868Z`); it is large (npm 26 MB, over the
 - Registry: `NVMRC_NPM_REGISTRY`, default `https://registry.npmjs.org`, a
   trailing `/` trimmed; anything that is not https is refused, and every
   request (manifest, packument, tarball) goes through `get_secure_*`.
+- Credentials: `NVM_AUTH_HEADER` never reaches the npm registry, a tarball
+  host or the built-in vulnerability index (it still goes to the Node mirrors,
+  a central policy and a configured `cve.source`). `NVMRC_NPM_AUTH_HEADER`
+  (sanitized like `NVM_AUTH_HEADER`) goes only to the registry's host.
 - Packages: npm → `npm`; pnpm → `pnpm`; yarn below 2.0.0 → `yarn`; yarn
   2.0.0 and later → `@yarnpkg/cli-dist`.
 - Integrity: the tarball must match a `sha512-` entry of `dist.integrity`;
@@ -512,14 +516,67 @@ ISO timestamp (`2024-03-09T21:35:40.868Z`); it is large (npm 26 MB, over the
 - [ ] **Step 5: Commit** — `feat(use): put the pinned npm, yarn and pnpm on
   PATH`.
 
-### Task 9: Documentation
+### Task 9: Credentials stay with the hosts they belong to
+
+Added on 2026-10-17 after the Task 4 review found that the single HTTP client
+sends `NVM_AUTH_HEADER` to every host; the person chose this design.
+
+**Files:**
+
+- Modify: `src/adapters/ureq_http/mod.rs` (+ tests), `src/cli/mod.rs`
+  (`with_real_context`), `src/context/mod.rs`, `src/context/policy.rs`,
+  `src/domain/http_header.rs`, `src/commands/package_managers/registry.rs`,
+  `src/commands/package_managers/store.rs`, `src/commands/policy/tools.rs`
+  (the release-day client), `src/commands/policy/advisories.rs`,
+  `src/commands/policy/load.rs`, their tests
+
+**Interfaces:**
+
+- Consumes: Task 4's registry client, Task 5's store, Task 7's tool checks.
+- Produces:
+  - `UreqHttp` takes an `Option<AuthHeader>` where `struct AuthHeader { pub
+    value: String, pub host: Option<String> }`: with a `host`, the header is
+    sent only when the request URL's host equals it (ASCII case-insensitive);
+    without one, on every request (today's `NVM_AUTH_HEADER` behaviour)
+  - `fn auth_header_from(env: &dyn Env, name: &str) -> Option<String>`: the
+    non-empty, sanitized value (one place for both variables)
+  - `Context::with_third_party_http(regular: &dyn Http, quick: &dyn Http)` and
+    `fn third_party_http(&self) -> &dyn Http` (the quick one when advisory,
+    like `policy_http`); `Context::new` starts with `NoHttp` for both
+  - `with_real_context` builds that pair from a `UreqHttp` (retrying for the
+    regular one) whose auth is `NVMRC_NPM_AUTH_HEADER` scoped to the host of
+    `registry_base`, and never `NVM_AUTH_HEADER`
+  - Every registry request (manifest, packument, tarball) uses
+    `third_party_http()`; the vulnerability index uses it when its location
+    is `DEFAULT_INDEX` (source `Source::Default`), and the existing client
+    otherwise; `read_location` gains a sibling that takes the client
+- [ ] **Step 1: Write the failing tests** — ureq adapter (local server, as
+  its existing tests do): `a_scoped_header_is_sent_only_to_its_host`,
+  `an_unscoped_header_is_sent_everywhere`. Registry and store (separate
+  `FakeHttp` for the regular and third-party clients):
+  `registry_requests_use_the_third_party_client`,
+  `the_tarball_is_downloaded_with_the_third_party_client`. Policy:
+  `the_default_index_is_read_with_the_third_party_client`,
+  `a_configured_index_is_read_with_the_regular_client`,
+  `an_age_rule_reads_the_registry_with_the_third_party_client`.
+  `http_header.rs`: `auth_header_from_ignores_a_blank_value`.
+- [ ] **Step 2: Run** `cargo test ureq registry store policy http_header` —
+  expected: FAIL.
+- [ ] **Step 3: Implement**.
+- [ ] **Step 4: Run** `cargo test` — expected: PASS.
+- [ ] **Step 5: Commit** — `fix(http): send credentials only to the hosts
+  they were given for`.
+
+### Task 10: Documentation
 
 **Files:**
 
 - Modify: `README.md`, `docs/deviations.md`
 - [ ] **Step 1: README** — a "npm, yarn and pnpm" section: the pin lines, the
   exact-version rule, yarn or pnpm but not both, the `packageManager` check,
-  the store path, `NVMRC_NPM_REGISTRY` (https only), integrity, `PATH`
+  the store path, `NVMRC_NPM_REGISTRY` (https only), `NVMRC_NPM_AUTH_HEADER`
+  (sent only to the registry host; `NVM_AUTH_HEADER` never goes to the
+  registry or the built-in vulnerability index), integrity, `PATH`
   order, `system` without pins, offline behaviour; add `--min-npm`,
   `--min-yarn`, `--min-pnpm` and their variables to the policy section; exit
   code 3 for pin and `packageManager` errors.
