@@ -112,6 +112,10 @@ fn choose(
     for tool in ORDER {
         if let Some(wanted) = request.get(tool) {
             let version = resolve(context, &mut judge, tool, wanted, transcript)?;
+            if tool == Tool::Node {
+                let warning = judge.below_limit_warning(context, &version)?;
+                warning.into_iter().for_each(|line| transcript.err(line));
+            }
             chosen.push((tool, version));
         }
     }

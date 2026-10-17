@@ -1,12 +1,12 @@
 //! "Is this version allowed?" for callers that choose versions (`nvm init`):
 //! the mode resolved once, the vulnerability index read at most once.
 
-use super::advisories::{load_advisories, vulnerable};
+use super::advisories::{below_limit_warning, load_advisories, vulnerable};
 use super::enforce::{index_location, today};
 use super::mode::{EnforcedPolicy, Mode, resolve_mode};
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
-use crate::domain::policy::{Advisory, MissingReleaseInfo, ReleaseInfo, Violation};
+use crate::domain::policy::{Advisory, Finding, MissingReleaseInfo, ReleaseInfo, Violation};
 use crate::domain::tool::Tool;
 use crate::domain::version::{Flavor, Version};
 use crate::error::PolicyError;
@@ -60,13 +60,43 @@ impl Judge {
         Ok(found)
     }
 
+    /// The warning for the vulnerabilities of node `version` below the CVE
+    /// limit, if it has any; the index is read as by [`Self::violations`].
+    ///
+    /// # Errors
+    /// [`PolicyError`] when the index cannot be read or understood.
+    pub fn below_limit_warning(
+        &mut self,
+        context: &Context<'_>,
+        version: &Version,
+    ) -> Result<Option<String>, PolicyError> {
+        if version.flavor != Flavor::Node {
+            return Ok(None);
+        }
+        let (_, below) = self.node_findings(context, version)?;
+        Ok(self
+            .policy
+            .as_ref()
+            .and_then(|policy| below_limit_warning(version, &policy.cve.limit.value, &below)))
+    }
+
     fn node_vulnerability(
         &mut self,
         context: &Context<'_>,
         version: &Version,
     ) -> Result<Option<Violation>, PolicyError> {
+        Ok(self.node_findings(context, version)?.0)
+    }
+
+    /// What the index says of node `version`, split by the limit (see
+    /// [`vulnerable`]); nothing without a policy.
+    fn node_findings(
+        &mut self,
+        context: &Context<'_>,
+        version: &Version,
+    ) -> Result<(Option<Violation>, Vec<Finding>), PolicyError> {
         let Some(policy) = &self.policy else {
-            return Ok(None);
+            return Ok((None, Vec::new()));
         };
         let advisories = match &self.advisories {
             Some(loaded) => loaded,
@@ -74,7 +104,7 @@ impl Judge {
                 .advisories
                 .insert(load_advisories(context, &policy.cve)?),
         };
-        Ok(vulnerable(context, advisories, version, &policy.cve.limit).0)
+        Ok(vulnerable(context, advisories, version, &policy.cve.limit))
     }
 }
 

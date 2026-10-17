@@ -33,15 +33,28 @@ pub(super) fn cve_violation(
     }
     let advisories = load_advisories(context, &cve)?;
     let (violation, below) = vulnerable(context, &advisories, &requested.version, &cve.limit);
-    if !below.is_empty() {
-        notes.push(format!(
-            "nvm: warning: node {} has known vulnerabilities below the limit {}: {}",
-            requested.version,
-            cve.limit.value,
-            finding_list(&below)
-        ));
-    }
+    notes.extend(below_limit_warning(
+        &requested.version,
+        &cve.limit.value,
+        &below,
+    ));
     Ok(violation)
+}
+
+/// The warning for the findings of node `version` below the `limit`; none
+/// when there are none.
+#[must_use]
+pub(super) fn below_limit_warning(
+    version: &Version,
+    limit: &Severity,
+    below: &[Finding],
+) -> Option<String> {
+    (!below.is_empty()).then(|| {
+        format!(
+            "nvm: warning: node {version} has known vulnerabilities below the limit {limit}: {}",
+            finding_list(below)
+        )
+    })
 }
 
 /// What `advisories` say about `version`, split by the limit: the violation

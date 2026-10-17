@@ -1,6 +1,8 @@
 use super::super::test_support::{
     INDEX_URL, MIN_PNPM, PNPM_PACKUMENT, PNPM_URL, file, init, project, served,
 };
+use crate::domain::fixtures::{advisories_json, index_text_dated};
+use crate::domain::policy::DEFAULT_INDEX;
 use crate::fakes::FakeHttp;
 
 #[test]
@@ -173,4 +175,22 @@ fn a_failure_to_know_writes_nothing() {
     );
     assert_eq!(file(&fs, "/p/.nvmrc"), None);
     assert_eq!(file(&fs, "/p/package.json").as_deref(), Some("{}"));
+}
+
+#[test]
+fn findings_below_the_limit_warn_for_the_chosen_node() {
+    let (fs, env) = project(&[], r#"{ "schemaVersion": 1 }"#);
+    let env = env.with_var("NVMRC_FAIL_ON_SEVERITY", "critical");
+    let index = index_text_dated(&[("v22.20.0", "2025-09-24", "Jod")]);
+    let http = FakeHttp::default()
+        .with_body(INDEX_URL, &index)
+        .with_body(DEFAULT_INDEX, advisories_json());
+    let warning = "nvm: warning: node v22.20.0 has known vulnerabilities below the limit \
+                   critical: CVE-2026-58043 (high)";
+    for args in [["--node"], ["--node=22.20.0"]] {
+        let output = init(&fs, &env, &http, &args);
+        assert_eq!(output.status.code(), 0, "{}", output.stderr);
+        assert_eq!(output.stderr, warning);
+        assert_eq!(output.stdout, "Wrote /p/.nvmrc: node v22.20.0");
+    }
 }
