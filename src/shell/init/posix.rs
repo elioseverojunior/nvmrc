@@ -5,8 +5,12 @@
 //! its status in `$1` (positional parameters are local to a function in
 //! every POSIX shell) so it can unset its temporaries, and a failure inside
 //! `$(...)` does not end a `set -e` shell before the code is applied.
+//!
+//! The command is the first argument that is not a policy flag (nor the
+//! value after a separate one), so `nvm --min-node 18 use 20` is routed as
+//! `use`; every argument still reaches the binary, which strips the flags.
 
-use super::{InitOptions, Shell, with_exports};
+use super::{InitOptions, Shell, policy_flag_patterns, with_exports};
 
 const PREAMBLE: &str = r#"export NVMRC_SHELL=1
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
@@ -14,9 +18,28 @@ unalias nvm 2>/dev/null || true
 "#;
 
 const BODY: &str = r#"
-  case "${1-}" in
-    use | deactivate | install | i | set-colors | __auto) ;;
+  __nvmrc_command=
+  __nvmrc_skip=0
+  for __nvmrc_arg in "$@"; do
+    if [ "$__nvmrc_skip" = 1 ]; then
+      __nvmrc_skip=0
+      continue
+    fi
+    case "$__nvmrc_arg" in
+      @JOINED_FLAGS@) ;;
+      @SEPARATE_FLAGS@) __nvmrc_skip=1 ;;
+      *)
+        __nvmrc_command=$__nvmrc_arg
+        break
+        ;;
+    esac
+  done
+  case "$__nvmrc_command" in
+    use | deactivate | install | i | set-colors | __auto)
+      unset __nvmrc_command __nvmrc_skip __nvmrc_arg
+      ;;
     *)
+      unset __nvmrc_command __nvmrc_skip __nvmrc_arg
       (
         @EXPORTS@
         command \nvm "$@"
@@ -60,9 +83,13 @@ pub(super) fn code(shell: Shell, options: &InitOptions) -> String {
         .auto_arguments()
         .map(|arguments| format!("\\nvm {arguments}\n"))
         .unwrap_or_default();
+    let (separate, joined) = policy_flag_patterns();
+    let body = BODY
+        .replace("@SEPARATE_FLAGS@", &separate)
+        .replace("@JOINED_FLAGS@", &joined);
     format!(
         "{PREAMBLE}{}{}{auto}",
         function_header(shell),
-        with_exports(BODY, export_when_set)
+        with_exports(&body, export_when_set)
     )
 }

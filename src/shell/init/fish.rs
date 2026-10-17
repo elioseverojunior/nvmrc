@@ -15,7 +15,7 @@
 //! local to the function: nothing needs unsetting. `command nvm` skips the
 //! function (and any alias, which fish defines as a function).
 
-use super::{InitOptions, with_exports};
+use super::{InitOptions, policy_flag_names, with_exports};
 
 const PREAMBLE: &str = r#"set -gx NVMRC_SHELL 1
 test -n "$NVM_DIR"; or set -g NVM_DIR $HOME/.nvm
@@ -23,7 +23,19 @@ set -gx NVM_DIR $NVM_DIR
 "#;
 
 const FUNCTION: &str = r#"function nvm --description 'Node Version Manager (nvmrc)'
-    if not contains -- "$argv[1]" use deactivate install i set-colors __auto
+    set -l nvmrc_command
+    set -l nvmrc_skip 0
+    for nvmrc_arg in $argv
+        if test $nvmrc_skip = 1
+            set nvmrc_skip 0
+        else if contains -- "$nvmrc_arg" @SEPARATE_FLAGS@
+            set nvmrc_skip 1
+        else if not string match -qr -- '^(@JOINED_FLAGS@)=' "$nvmrc_arg"
+            set nvmrc_command $nvmrc_arg
+            break
+        end
+    end
+    if not contains -- "$nvmrc_command" use deactivate install i set-colors __auto
         begin
             @EXPORTS@
             command nvm $argv
@@ -52,8 +64,12 @@ pub(super) fn code(options: &InitOptions) -> String {
         .auto_arguments()
         .map(|arguments| format!("nvm {arguments}\n"))
         .unwrap_or_default();
+    let names = policy_flag_names();
+    let function = FUNCTION
+        .replace("@SEPARATE_FLAGS@", &names.join(" "))
+        .replace("@JOINED_FLAGS@", &names.join("|"));
     format!(
         "{PREAMBLE}{}{auto}",
-        with_exports(FUNCTION, export_when_set)
+        with_exports(&function, export_when_set)
     )
 }

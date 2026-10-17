@@ -169,7 +169,7 @@ fn the_fish_function_captures_descriptor_3_and_names_its_dialect() {
     assert!(text.contains("\nfunction nvm "), "{text}");
     assert!(
         text.contains(
-            "if not contains -- \"$argv[1]\" use deactivate install i set-colors __auto\n"
+            "if not contains -- \"$nvmrc_command\" use deactivate install i set-colors __auto\n"
         ),
         "{text}"
     );
@@ -204,4 +204,28 @@ fn fish_passes_the_variables_to_the_binary_only_when_set() {
         assert!(!text.contains(&format!("{passed}=")), "{passed}: {text}");
     }
     assert!(!text.contains("@EXPORTS@"), "{text}");
+}
+
+#[test]
+fn the_policy_flag_patterns_come_from_the_flag_table() {
+    assert_eq!(
+        policy_flag_patterns(),
+        (
+            "--policy | --min-node".to_owned(),
+            "--policy=* | --min-node=*".to_owned()
+        )
+    );
+}
+
+#[test]
+fn every_function_routes_on_the_first_argument_that_is_not_a_policy_flag() {
+    for (name, shell) in ALL {
+        let text = snippet(shell, &InitOptions::default());
+        assert!(
+            !text.contains("_FLAGS@"),
+            "{name}: an unreplaced placeholder"
+        );
+        assert!(text.contains("--min-node"), "{name}");
+        assert!(!text.contains("\"${1-}\""), "{name}");
+    }
 }

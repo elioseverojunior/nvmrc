@@ -29,6 +29,7 @@ mod posix;
 
 use std::str::FromStr;
 
+use crate::domain::policy::flags::POLICY_FLAGS;
 use crate::error::CliError;
 use conflict_check::conflict_check;
 
@@ -137,6 +138,21 @@ const PASSED: [&str; 7] = [
     "NVM_SYMLINK_CURRENT",
     "PREFIX",
 ];
+
+/// The names of the policy flags, which the function skips when it looks
+/// for the command.
+fn policy_flag_names() -> Vec<&'static str> {
+    POLICY_FLAGS.iter().map(|flag| flag.name).collect()
+}
+
+/// The `case` patterns of the POSIX function: the flags that take a separate
+/// value (`--policy | --min-node`) and the joined forms (`--policy=* |
+/// --min-node=*`).
+fn policy_flag_patterns() -> (String, String) {
+    let names = policy_flag_names();
+    let joined: Vec<String> = names.iter().map(|name| format!("{name}=*")).collect();
+    (names.join(" | "), joined.join(" | "))
+}
 
 /// `template` with each `@EXPORTS@` line replaced by `export(name)` for
 /// every [`PASSED`] variable, at the same indentation.
