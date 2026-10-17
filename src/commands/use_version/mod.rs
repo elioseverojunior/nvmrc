@@ -14,6 +14,7 @@ pub use target::{Halt, SystemFlavor, SystemNode, Target};
 use crate::commands::Output;
 use crate::commands::policy::enforce::Gate;
 use crate::commands::policy::gate::{gate_installed, gate_system, origin_of};
+use crate::commands::policy::load::policy_mode_requested;
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::error::CliError;
@@ -55,10 +56,21 @@ pub fn run_and_target(
 ) -> Result<(Output, Option<Target>), CliError> {
     let options = options::parse(args)?;
     let mut transcript = Transcript::default();
-    match target::resolve(context, &options, &mut transcript) {
-        Ok(target) => {
+    // Under a policy the `.nvmrc` waits for the gate; without one nvm.sh's
+    // order (save, then check) stays.
+    let deferred = policy_mode_requested(context);
+    let resolved = if deferred {
+        target::resolve_deferring_save(context, &options, &mut transcript)
+    } else {
+        target::resolve(context, &options, &mut transcript).map(|target| (target, None))
+    };
+    match resolved {
+        Ok((target, pending)) => {
             if let Some(output) = refused(context, &target, &mut transcript) {
                 return Ok((output, None));
+            }
+            if let Some(text) = pending {
+                target::write_pending(context, &text, options.silent, &mut transcript);
             }
             let output = apply::apply(context, &options, &target, transcript)?;
             Ok((output, Some(target)))

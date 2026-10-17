@@ -106,23 +106,56 @@ pub fn resolve(
     options: &Options,
     transcript: &mut Transcript,
 ) -> Result<Target, Halt> {
-    match settle(context, options, transcript) {
-        Ok(target) => Ok(target),
-        Err(Stop::Halt(halt)) => Err(halt),
-        Err(Stop::Error(error)) => Err(Halt::report(&error, transcript)),
-    }
+    settle(context, options, false, transcript).map(|(target, _)| target)
+}
+
+/// [`resolve`] with `--save` deferred: the `.nvmrc` is not written, and the
+/// text to write once the policy allows the target is returned instead
+/// (`None` without `--save`). The caller writes it with [`write_pending`].
+///
+/// # Errors
+/// As [`resolve`].
+pub fn resolve_deferring_save(
+    context: &Context<'_>,
+    options: &Options,
+    transcript: &mut Transcript,
+) -> Result<(Target, Option<String>), Halt> {
+    settle(context, options, true, transcript)
+}
+
+/// Writes the `.nvmrc` text that [`resolve_deferring_save`] held back.
+pub fn write_pending(context: &Context<'_>, text: &str, silent: bool, transcript: &mut Transcript) {
+    // nvm.sh ignores the status: a failed write never stops `use`.
+    let _status = nvmrc_file::write(context, text, silent, transcript);
 }
 
 fn settle(
     context: &Context<'_>,
     options: &Options,
+    defer_save: bool,
     transcript: &mut Transcript,
-) -> Result<Target, Stop> {
+) -> Result<(Target, Option<String>), Halt> {
+    settle_or_stop(context, options, defer_save, transcript).map_err(|stop| match stop {
+        Stop::Halt(halt) => halt,
+        Stop::Error(error) => Halt::report(&error, transcript),
+    })
+}
+
+fn settle_or_stop(
+    context: &Context<'_>,
+    options: &Options,
+    defer_save: bool,
+    transcript: &mut Transcript,
+) -> Result<(Target, Option<String>), Stop> {
     let request = request(context, options, transcript)?;
-    if options.save {
+    let mut pending = None;
+    if options.save && defer_save {
+        pending = Some(request.resolution.text());
+    } else if options.save {
         save(context, &request.resolution, options.silent, transcript)?;
     }
-    decide(context, request, options.silent, transcript)
+    let target = decide(context, request, options.silent, transcript)?;
+    Ok((target, pending))
 }
 
 fn request(

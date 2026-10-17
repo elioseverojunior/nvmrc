@@ -12,6 +12,7 @@ use crate::context::Context;
 use crate::domain::policy::DEFAULT_INDEX;
 use crate::error::NvmExitCode;
 use crate::fakes::{FakeHttp, FakeProcess};
+use crate::ports::FileSystem;
 
 fn switch(args: &[&str]) -> (Output, Option<Target>) {
     let (fs, env, process) = (lab(), env_on(BASE_PATH), npm_versions());
@@ -160,4 +161,53 @@ fn an_unresolvable_nvm_dir_is_a_warning_on_an_automatic_path() {
     assert!(matches!(automatic, Ok(Gate::Pass)), "{automatic:?}");
     let stderr = transcript.finish(NvmExitCode::Success).stderr;
     assert!(stderr.starts_with("nvm: warning:"), "{stderr}");
+}
+
+fn save_under(flags: &[&str], args: &[&str]) -> (Output, Option<String>) {
+    let (fs, env, process) = (lab(), env_on(BASE_PATH), npm_versions());
+    let fs = fs.with_file("/w/.nvmrc", "v22.11.0\n");
+    let env = env.with_var("PWD", "/w");
+    let http = FakeHttp::default().with_empty_advisories();
+    let context = Context::new(&fs, &env)
+        .with_process(&process)
+        .with_http(&http)
+        .with_policy_flags(policy_flags(flags));
+    let output = run_and_target(&context, &strings(args)).unwrap().0;
+    (output, fs.read_to_string(Path::new("/w/.nvmrc")).ok())
+}
+
+#[test]
+fn a_refused_use_save_leaves_nvmrc_untouched() {
+    let (output, saved) = save_under(&["--min-node", "22"], &["--save", "20"]);
+    assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
+    assert_eq!(saved.as_deref(), Some("v22.11.0\n"));
+    assert!(
+        !output.stdout.contains("Wrote version"),
+        "{}",
+        output.stdout
+    );
+}
+
+#[test]
+fn an_allowed_use_save_still_writes_nvmrc() {
+    let (output, saved) = save_under(&["--min-node", "18"], &["--save", "20"]);
+    assert_eq!(output.status, NvmExitCode::Success);
+    assert_eq!(saved.as_deref(), Some("v20.11.1\n"));
+    assert!(
+        output
+            .stdout
+            .contains("Wrote version number (v20.11.1) to .nvmrc")
+    );
+}
+
+#[test]
+fn legacy_use_save_keeps_its_order() {
+    let (output, saved) = save_under(&[], &["--save", "20"]);
+    assert_eq!(output.status, NvmExitCode::Success);
+    assert_eq!(saved.as_deref(), Some("v20.11.1\n"));
+    assert!(
+        output
+            .stdout
+            .starts_with("Wrote version number (v20.11.1) to .nvmrc")
+    );
 }
