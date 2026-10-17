@@ -98,7 +98,7 @@ fn no_allowed_release_in_the_major_names_the_newest_and_the_lowest_major() {
         { "deny": ["20.18.0", "20.11.1", "23.0.0"] } } }"#;
     let found = node(policy, "20.11.1", Major::Same);
     let Target::NoneInMajor {
-        major,
+        major: Some(major),
         newest: Some((newest, violations)),
         lowest,
     } = found
@@ -116,7 +116,7 @@ fn no_major_with_an_allowed_release_has_no_lowest() {
     assert!(matches!(
         found,
         Target::NoneInMajor {
-            major: 9,
+            major: Some(9),
             lowest: None,
             ..
         }
@@ -144,4 +144,30 @@ fn yarn_one_stays_on_yarn_and_major_moves_to_cli_dist() {
 fn node_without_lts_only_may_pick_a_non_lts_release() {
     let found = node("", "20.11.1", Major::Any);
     assert_eq!(found, Target::Move(version("23.0.0")));
+}
+
+#[test]
+fn a_denied_yarn_one_still_finds_cli_dist_for_the_lowest_major() {
+    let policy =
+        r#"{ "schemaVersion": 1, "tools": { "yarn": { "deny": ["1.22.21", "1.22.22"] } } }"#;
+    let http = FakeHttp::default()
+        .with_body(YARN_URL, r#"{"versions": {"1.22.21": {}, "1.22.22": {}}}"#)
+        .with_body(CLI_DIST_URL, r#"{"versions": {"4.5.0": {}}}"#)
+        .with_empty_advisories();
+    let found = pick(&http, policy, Tool::Yarn, "1.22.21", Major::Same).unwrap();
+    assert!(matches!(
+        found,
+        Target::NoneInMajor {
+            major: Some(1),
+            lowest: Some(4),
+            ..
+        }
+    ));
+}
+
+#[test]
+fn major_any_with_nothing_allowed_names_no_major() {
+    let policy = r#"{ "schemaVersion": 1, "tools": { "pnpm": { "minimum": "10.0.0" } } }"#;
+    let found = pick(&served(), policy, Tool::Pnpm, "9.1.0", Major::Any).unwrap();
+    assert!(matches!(found, Target::NoneInMajor { major: None, .. }));
 }

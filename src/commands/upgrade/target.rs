@@ -8,7 +8,7 @@ use crate::commands::upgrade::request::Major;
 use crate::context::Context;
 use crate::domain::policy::Violation;
 use crate::domain::tool::Tool;
-use crate::domain::version::Version;
+use crate::domain::version::{Flavor, Version};
 use crate::error::{CliError, PolicyError};
 
 /// What an upgrade does with one tool.
@@ -19,7 +19,8 @@ pub enum Target {
     Move(Version),
     /// No release of the major is allowed.
     NoneInMajor {
-        major: u64,
+        /// The major searched; `None` when every major was.
+        major: Option<u64>,
         /// The newest release of the major and why the policy refuses it.
         newest: Option<(Version, Vec<Violation>)>,
         /// The lowest major with an allowed release.
@@ -54,9 +55,10 @@ pub fn target(
         });
     }
     let newest = newest_violations(context, judge, tool, &pool)?;
-    let lowest = lowest_allowed_major(context, judge, tool, &all)?;
+    let scanned = lowest_scan(context, tool, all)?;
+    let lowest = lowest_allowed_major(context, judge, tool, &scanned)?;
     Ok(Target::NoneInMajor {
-        major: wanted.unwrap_or(current.major),
+        major: wanted,
         newest,
         lowest,
     })
@@ -92,6 +94,26 @@ fn candidates(
         },
     };
     Ok(tool_candidates(context, tool, &package_of)?)
+}
+
+/// The candidates to scan for the lowest allowed major: yarn 1 releases come
+/// from the `yarn` package, so the later majors are added from `cli-dist`.
+fn lowest_scan(
+    context: &Context<'_>,
+    tool: Tool,
+    mut found: Vec<Candidate>,
+) -> Result<Vec<Candidate>, PolicyError> {
+    let from_yarn_package = found.iter().all(|candidate| candidate.version.major < 2);
+    if tool == Tool::Yarn && from_yarn_package {
+        let cli_dist = Version {
+            major: 2,
+            minor: 0,
+            patch: 0,
+            flavor: Flavor::Node,
+        };
+        found.extend(tool_candidates(context, tool, &cli_dist)?);
+    }
+    Ok(found)
 }
 
 /// The newest candidate of `pool` and the rules it breaks.
