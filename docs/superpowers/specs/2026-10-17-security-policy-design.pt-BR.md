@@ -292,16 +292,19 @@ O formato do `cve.source` é o índice do core do Node Security WG
 (faixas semver no estilo npm), `patched`, `severity` e, quando presente,
 `affectedEnvironments`. Um mirror precisa servir esse formato.
 
-O nvmrc encontra as entradas cuja faixa `vulnerable` contém a versão do Node e
-cujo `affectedEnvironments`, quando presente, inclui a plataforma atual. Ele
-compara a severidade de cada entrada com o limiar:
+O nvmrc encontra as entradas cuja faixa `vulnerable` contém a versão do Node,
+cuja faixa `patched` não a contém, e cujo `affectedEnvironments`, quando
+presente, inclui a plataforma atual (`vulnerable` cita linhas inteiras, como
+`22.x`; `patched` cita as releases corrigidas, como `^22.23.2`). Ele compara a
+severidade de cada entrada com o limiar:
 
 - No limiar ou acima: a versão não é permitida (saída 7 em comandos
   explícitos).
 - Abaixo do limiar: a versão é permitida, com um aviso listando os CVEs.
-- Uma entrada sem severidade conta como `high`.
-- Uma severidade fora dos cinco níveis, uma faixa que não pode ser
-  interpretada, ou uma fonte inacessível ou ilegível é uma falha em saber.
+- Uma entrada sem severidade, ou com o `unknown` do próprio índice, conta como
+  `high`.
+- Qualquer outro valor de severidade, uma faixa que não pode ser interpretada,
+  ou uma fonte inacessível ou ilegível é uma falha em saber.
 
 ### 6.7 npm, yarn e pnpm no `.nvmrc`
 
@@ -456,9 +459,9 @@ Cada etapa pode ser lançada sozinha:
   política.
 - URLs `http://` de política e de CVE são rejeitadas.
 - O formato do índice do Security WG é o contrato para mirrors do `cve.source`;
-  CVEs específicos de uma plataforma só contam nela; uma entrada de CVE sem
-  severidade conta como `high`; uma severidade desconhecida é uma falha em
-  saber.
+  CVEs específicos de uma plataforma só contam nela; uma versão em `patched`
+  não é afetada; uma entrada de CVE sem severidade ou com `unknown` conta como
+  `high`; qualquer outro valor de severidade é uma falha em saber.
 - A checagem de CVE cobre só o Node.
 - Código de saída 9 para falha em saber.
 - npm, yarn e pnpm ficam num store compartilhado, não dentro de cada versão do

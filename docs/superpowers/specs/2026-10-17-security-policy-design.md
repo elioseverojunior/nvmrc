@@ -283,16 +283,19 @@ The format of `cve.source` is the Node Security WG core index
 (npm-style semver ranges), `patched`, `severity` and, when present,
 `affectedEnvironments`. A mirror must serve this format.
 
-nvmrc finds entries whose `vulnerable` range contains the Node version and
-whose `affectedEnvironments`, when present, include the current platform. It
-compares each entry's severity with the limit:
+nvmrc finds entries whose `vulnerable` range contains the Node version, whose
+`patched` range does not, and whose `affectedEnvironments`, when present,
+include the current platform (`vulnerable` names whole release lines such as
+`22.x`; `patched` names the fixed releases such as `^22.23.2`). It compares
+each entry's severity with the limit:
 
 - At or above the limit: the version is not allowed (exit 7 in explicit
   commands).
 - Below the limit: the version is allowed, with a warning listing them.
-- An entry with no severity counts as `high`.
-- A severity outside the five levels, an unparseable range, or an unreachable
-  or unparseable source is a failure to know.
+- An entry with no severity, or with the index's own `unknown`, counts as
+  `high`.
+- Any other severity value, an unparseable range, or an unreachable or
+  unparseable source is a failure to know.
 
 ### 6.7 npm, yarn and pnpm in `.nvmrc`
 
@@ -439,8 +442,9 @@ Each step is releasable on its own:
   no CVE check); any new flag or variable switches to policy mode.
 - `http://` policy and CVE URLs are rejected.
 - The Security WG index format is the contract for `cve.source` mirrors;
-  platform-specific CVEs only count on their platform; a CVE entry without
-  severity counts as `high`; an unknown severity is a failure to know.
+  platform-specific CVEs only count on their platform; a version in
+  `patched` is not affected; a CVE entry without severity or with `unknown`
+  counts as `high`; any other severity value is a failure to know.
 - CVE checks cover Node only.
 - Exit code 9 for a failure to know.
 - npm, yarn and pnpm live in a shared store, not inside each Node version, and
