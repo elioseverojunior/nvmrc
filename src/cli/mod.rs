@@ -169,13 +169,15 @@ fn with_real_context<R>(body: impl FnOnce(&Context<'_>) -> R) -> R {
         .var("NVM_AUTH_HEADER")
         .filter(|value| !value.is_empty())
         .map(|value| sanitize_auth_header(&value));
-    let network = UreqHttp::new(auth_header);
+    let network = UreqHttp::new(auth_header.clone());
     let http = RetryingHttp::new(&network, &StdSleeper);
+    let quick_http = UreqHttp::quick(auth_header);
     let musl = StdFileSystem.is_file(Path::new("/etc/alpine-release"));
     let platform = Platform::from_host(std::env::consts::OS, std::env::consts::ARCH, musl);
     let context = Context::new(&StdFileSystem, &StdEnv)
         .with_process(&process)
         .with_http(&http)
+        .with_quick_http(&quick_http)
         .with_digest(&Sha256Digest)
         .with_archive(&TarArchive)
         .with_sleeper(&StdSleeper)

@@ -59,3 +59,47 @@ fn an_empty_policy_variable_is_unset() {
     let env = FakeEnv::default().with_var("NVMRC_POLICY", "/p.json");
     assert!(policy_mode_requested(&context(&fs, &env)));
 }
+
+#[test]
+fn an_advisory_policy_fetch_goes_through_the_quick_client_once() {
+    let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
+    let (regular, quick) = (FakeHttp::default(), FakeHttp::default());
+    let advisory = context(&fs, &env)
+        .with_http(&regular)
+        .with_quick_http(&quick)
+        .advisory();
+    assert!(matches!(
+        read_location(&advisory, "https://sec/p.json"),
+        Err(PolicyError::Unreadable { .. })
+    ));
+    assert_eq!(quick.requests(), ["https://sec/p.json"]);
+    assert!(regular.requests().is_empty());
+}
+
+#[test]
+fn an_explicit_policy_fetch_keeps_the_regular_client() {
+    let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
+    let regular = FakeHttp::default().with_body("https://sec/p.json", POLICY);
+    let quick = FakeHttp::default();
+    let explicit = context(&fs, &env)
+        .with_http(&regular)
+        .with_quick_http(&quick);
+    assert_eq!(
+        read_location(&explicit, "https://sec/p.json").unwrap(),
+        POLICY
+    );
+    assert!(quick.requests().is_empty());
+}
+
+#[test]
+fn a_policy_fetch_refuses_a_redirect_away_from_https() {
+    let (fs, env) = (FakeFileSystem::default(), FakeEnv::default());
+    let http = FakeHttp::default()
+        .with_redirect("https://sec/p.json", "http://sec/p.json")
+        .with_body("http://sec/p.json", POLICY);
+    let with_http = context(&fs, &env).with_http(&http);
+    assert!(matches!(
+        read_location(&with_http, "https://sec/p.json"),
+        Err(PolicyError::Unreadable { .. })
+    ));
+}

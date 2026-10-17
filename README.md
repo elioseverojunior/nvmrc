@@ -236,8 +236,9 @@ sections are accepted but not enforced.
 These sources take part, in this order:
 
 - `NVMRC_POLICY` or `--policy <path|https-url>`: the central policy. A path
-  is read from the working directory; `https://` is fetched; `http://` is
-  rejected. An empty `NVMRC_POLICY` is treated as unset.
+  is read from the working directory; `https://` is fetched, and a redirect
+  away from https is refused; `http://` is rejected. An empty
+  `NVMRC_POLICY` is treated as unset.
 - `.nvmrc-policy.json`, found from the working directory upward like
   `.nvmrc`: the repository policy.
 - `--min-node <version>`: a minimum of its own.
@@ -266,7 +267,9 @@ Two modes:
   included). `NVM_MIN_VERSION` and `$NVM_DIR/min-version` then count as
   layers too, and can be the source a violation names. The rules
   are enforced in `install`, `use` (`use system` included), `exec` and
-  `run`. The shell startup (`__auto`) only warns and goes on.
+  `run`. The shell startup (`__auto`) only warns and goes on; its policy
+  and index fetches get one try of at most 5 seconds, so a silent network
+  never holds the shell.
 
 A violation stops with status 7:
 

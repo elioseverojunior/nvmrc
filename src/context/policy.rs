@@ -1,7 +1,30 @@
-//! The policy settings a command carries: the flags and the advisory mode.
+//! The policy settings a command carries: the flags, the advisory mode and
+//! the client the policy fetches with.
 
 use super::Context;
 use crate::domain::policy::PolicyFlags;
+use crate::ports::Http;
+
+impl<'a> Context<'a> {
+    /// The client of the automatic paths: one attempt, a short timeout, so a
+    /// slow or silent network never holds the shell. A context starts out
+    /// without one, and then fetches with [`Self::http`] on every path.
+    #[must_use]
+    pub fn with_quick_http(mut self, http: &'a dyn Http) -> Self {
+        self.quick_http = Some(http);
+        self
+    }
+
+    /// The client of a policy fetch: the quick one when advising, the regular
+    /// (retrying) one when enforcing.
+    #[must_use]
+    pub fn policy_http(&self) -> &'a dyn Http {
+        match self.quick_http {
+            Some(quick) if self.advisory => quick,
+            _ => self.http,
+        }
+    }
+}
 
 impl Context<'_> {
     /// The policy flags of the command line, already stripped from it; a

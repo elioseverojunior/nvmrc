@@ -164,3 +164,19 @@ fn an_advisory_failure_to_know_warns_and_passes() {
     assert!(stderr.starts_with("nvm: warning: cannot check the policy:"));
     assert!(!stderr.contains("nvm: warning: nvm:"));
 }
+
+#[test]
+fn an_advisory_index_fetch_goes_through_the_quick_client() {
+    let (env, fs) = lts_world();
+    let regular = FakeHttp::default();
+    let quick = FakeHttp::default().with_body(INDEX_URL, &index());
+    let context = Context::new(&fs, &env)
+        .with_http(&regular)
+        .with_quick_http(&quick)
+        .advisory();
+    let (gate, stderr) = run(&context, &argument("v23.1.0"));
+    assert!(matches!(gate, Ok(Gate::Pass)));
+    assert!(stderr.contains("not an LTS release"), "{stderr}");
+    assert_eq!(quick.requests(), [INDEX_URL]);
+    assert!(regular.requests().is_empty());
+}

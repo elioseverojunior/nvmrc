@@ -27,4 +27,12 @@ pub trait Http {
     /// Fails on a non-success status, on a network error, or when the body is
     /// not text.
     fn get_text(&self, url: &str) -> Result<String, HttpError>;
+
+    /// Like [`Self::get_text`], but `url` and every redirect it leads to must
+    /// be https: a policy fetched over a channel that can be altered is not a
+    /// policy.
+    ///
+    /// # Errors
+    /// As [`Self::get_text`], and when a URL on the way is not https.
+    fn get_secure_text(&self, url: &str) -> Result<String, HttpError>;
 }

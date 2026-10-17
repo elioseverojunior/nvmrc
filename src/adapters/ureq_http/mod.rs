@@ -23,6 +23,12 @@ const TIMEOUTS: Timeouts = Timeouts {
     text_call: Duration::from_secs(30),
     until_response: Duration::from_secs(30),
 };
+/// The bounds of a fetch on an automatic path (the shell startup), which must
+/// never hold the shell for long: it warns and goes on instead.
+const QUICK_TIMEOUTS: Timeouts = Timeouts {
+    text_call: Duration::from_secs(5),
+    until_response: Duration::from_secs(5),
+};
 const MAX_BODY_BYTES: u64 = 16 * 1024 * 1024;
 /// An archive is far bigger than an index, but never this big.
 const MAX_DOWNLOAD_BYTES: u64 = 1024 * 1024 * 1024;
@@ -39,6 +45,13 @@ impl UreqHttp {
     #[must_use]
     pub fn new(auth_header: Option<String>) -> Self {
         Self::from_builder(ureq::Agent::config_builder(), TIMEOUTS, auth_header)
+    }
+
+    /// Like [`Self::new`], but bounded at a few seconds; meant to be used
+    /// without retries, on the automatic paths.
+    #[must_use]
+    pub fn quick(auth_header: Option<String>) -> Self {
+        Self::from_builder(ureq::Agent::config_builder(), QUICK_TIMEOUTS, auth_header)
     }
 
     /// Like [`Self::new`], but ignoring `HTTP_PROXY` and friends, so a test
@@ -106,26 +119,27 @@ fn read_failure(url: &str, error: ureq::Error) -> HttpError {
 }
 
 impl UreqHttp {
-    /// Sends the request and reads the body with `read`, capped at `limit`
-    /// bytes and, when `whole_call` is given, at that much time in all.
+    /// Sends the request and reads the body with `read`, held to `limits`.
     fn fetch<T>(
         &self,
         url: &str,
-        limit: u64,
-        whole_call: Option<Duration>,
+        limits: Limits,
         read: impl FnOnce(ureq::BodyWithConfig<'_>) -> Result<T, ureq::Error>,
     ) -> Result<T, HttpError> {
+        // ureq follows a redirect from https to http unless `https_only` is
+        // set, which it checks again on every hop.
         let mut request = self
             .agent
             .get(url)
             .config()
-            .timeout_global(whole_call)
+            .timeout_global(limits.whole_call)
+            .https_only(limits.https_only)
             .build();
         if let Some(value) = &self.auth_header {
             request = request.header("Authorization", value);
         }
         match request.call() {
-            Ok(mut response) => read(response.body_mut().with_config().limit(limit))
+            Ok(mut response) => read(response.body_mut().with_config().limit(limits.bytes))
                 .map_err(|error| read_failure(url, error)),
             Err(ureq::Error::StatusCode(code)) => Err(HttpError::Status {
                 url: url.to_owned(),
@@ -136,15 +150,40 @@ impl UreqHttp {
     }
 }
 
+/// What one fetch is held to: a body size, a time for the whole call, and
+/// whether every URL on the way must be https.
+struct Limits {
+    bytes: u64,
+    whole_call: Option<Duration>,
+    https_only: bool,
+}
+
+impl UreqHttp {
+    fn text_limits(&self, https_only: bool) -> Limits {
+        Limits {
+            bytes: MAX_BODY_BYTES,
+            whole_call: Some(self.text_call),
+            https_only,
+        }
+    }
+}
+
 impl Http for UreqHttp {
     fn get_text(&self, url: &str) -> Result<String, HttpError> {
-        self.fetch(url, MAX_BODY_BYTES, Some(self.text_call), |body| {
-            body.read_to_string()
-        })
+        self.fetch(url, self.text_limits(false), |body| body.read_to_string())
+    }
+
+    fn get_secure_text(&self, url: &str) -> Result<String, HttpError> {
+        self.fetch(url, self.text_limits(true), |body| body.read_to_string())
     }
 
     fn get_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
-        self.fetch(url, MAX_DOWNLOAD_BYTES, None, |body| body.read_to_vec())
+        let limits = Limits {
+            bytes: MAX_DOWNLOAD_BYTES,
+            whole_call: None,
+            https_only: false,
+        };
+        self.fetch(url, limits, |body| body.read_to_vec())
     }
 }
 

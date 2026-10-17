@@ -93,7 +93,8 @@ fn release_info(
         return Err(PolicyError::ReleaseInfoUnavailable("offline".to_owned()));
     }
     let unavailable = || PolicyError::ReleaseInfoUnavailable(index_location(context));
-    let fetched = remote_index::fetch(context, Flavor::Node).map_err(|_| unavailable())?;
+    let fetching = context.clone().with_http(context.policy_http());
+    let fetched = remote_index::fetch(&fetching, Flavor::Node).map_err(|_| unavailable())?;
     fetched
         .releases
         .unwrap_or_default()

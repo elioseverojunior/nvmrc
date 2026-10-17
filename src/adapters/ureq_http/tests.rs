@@ -188,3 +188,21 @@ fn a_text_call_that_takes_too_long_is_a_transport_error() {
     let error = http.get_text(&format!("{base}/index.tab")).unwrap_err();
     assert!(matches!(error, HttpError::Transport { .. }), "{error:?}");
 }
+
+#[test]
+fn a_secure_fetch_never_contacts_a_url_that_is_not_https() {
+    // ureq checks `https_only` before every hop, a redirect included, so a
+    // downgrade from https to http is refused the same way.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let url = format!("http://{}/p.json", listener.local_addr().unwrap());
+    let error = UreqHttp::unproxied(None).get_secure_text(&url).unwrap_err();
+    assert!(error.to_string().contains("https only"), "{error}");
+    assert!(listener.accept().is_err(), "the server was contacted");
+}
+
+#[test]
+fn the_quick_client_bounds_a_text_call_at_five_seconds() {
+    assert_eq!(UreqHttp::quick(None).text_call, Duration::from_secs(5));
+    assert_eq!(UreqHttp::new(None).text_call, Duration::from_secs(30));
+}

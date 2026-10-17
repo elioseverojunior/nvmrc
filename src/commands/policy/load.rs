@@ -20,9 +20,10 @@ const CENTRAL_VARIABLE: &str = "NVMRC_POLICY";
 /// [`PolicyError::Unreadable`] when the text cannot be fetched or read.
 pub fn read_location(context: &Context<'_>, location: &str) -> Result<String, PolicyError> {
     if location.starts_with("https://") {
+        // Never follows a redirect away from https.
         return context
-            .http()
-            .get_text(location)
+            .policy_http()
+            .get_secure_text(location)
             .map_err(|error| unreadable(location, error));
     }
     if location.contains("://") {

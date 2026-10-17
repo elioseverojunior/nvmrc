@@ -147,7 +147,14 @@ or `NVMRC_POLICY`, nothing changes (pinned by
   `a_min_version_file_that_cannot_be_read_is_an_error`)
 - `use system` is checked only in policy mode.
   (`use_system_without_a_policy_never_asks_the_system_node`)
-- `http://` policy locations are rejected. (`an_http_location_is_rejected`)
+- `http://` policy locations are rejected, and so is a redirect from an
+  `https://` location to http. (`an_http_location_is_rejected`,
+  `a_policy_fetch_refuses_a_redirect_away_from_https`,
+  `a_secure_fetch_never_contacts_a_url_that_is_not_https`)
+- On the automatic paths the policy and the index are fetched once, with a
+  5-second bound, instead of three tries of up to 30 seconds.
+  (`an_advisory_policy_fetch_goes_through_the_quick_client_once`,
+  `an_advisory_index_fetch_goes_through_the_quick_client`)
 - The shell function skips leading policy flags to find the subcommand.
   (`every_function_routes_on_the_first_argument_that_is_not_a_policy_flag`,
   `use_after_leading_policy_flags_switches_the_shell` in

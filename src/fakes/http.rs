@@ -3,11 +3,12 @@ use std::collections::BTreeMap;
 
 use crate::ports::{Http, HttpError};
 
-/// Pages by URL: each answers with a fixed body, status or transport error, and
-/// every request is recorded.
+/// Pages by URL: each answers with a fixed body, status or transport error, or
+/// redirects to another URL, and every request is recorded.
 #[derive(Default)]
 pub struct FakeHttp {
     responses: BTreeMap<String, Result<Vec<u8>, HttpError>>,
+    redirects: BTreeMap<String, String>,
     requests: RefCell<Vec<String>>,
 }
 
@@ -33,6 +34,13 @@ impl FakeHttp {
         self
     }
 
+    /// `from` answers with a redirect to `to`.
+    #[must_use]
+    pub fn with_redirect(mut self, from: &str, to: &str) -> Self {
+        self.redirects.insert(from.to_owned(), to.to_owned());
+        self
+    }
+
     /// The URLs requested so far, in order.
     #[must_use]
     pub fn requests(&self) -> Vec<String> {
@@ -49,8 +57,27 @@ impl Http for FakeHttp {
         })
     }
 
+    fn get_secure_text(&self, url: &str) -> Result<String, HttpError> {
+        if !url.starts_with("https://") {
+            return Err(HttpError::Transport {
+                url: url.to_owned(),
+                message: "not an https URL".to_owned(),
+            });
+        }
+        match self.redirects.get(url) {
+            Some(next) => {
+                self.requests.borrow_mut().push(url.to_owned());
+                self.get_secure_text(next)
+            }
+            None => self.get_text(url),
+        }
+    }
+
     fn get_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
         self.requests.borrow_mut().push(url.to_owned());
+        if let Some(next) = self.redirects.get(url) {
+            return self.get_bytes(next);
+        }
         self.responses.get(url).cloned().unwrap_or_else(|| {
             Err(HttpError::Transport {
                 url: url.to_owned(),

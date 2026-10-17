@@ -63,6 +63,10 @@ impl Http for RetryingHttp<'_> {
         self.retrying(|| self.inner.get_text(url))
     }
 
+    fn get_secure_text(&self, url: &str) -> Result<String, HttpError> {
+        self.retrying(|| self.inner.get_secure_text(url))
+    }
+
     fn get_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
         self.retrying(|| self.inner.get_bytes(url))
     }
@@ -93,6 +97,10 @@ mod tests {
                     message: "script exhausted".to_owned(),
                 })
             })
+        }
+
+        fn get_secure_text(&self, url: &str) -> Result<String, HttpError> {
+            self.get_text(url)
         }
 
         fn get_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
