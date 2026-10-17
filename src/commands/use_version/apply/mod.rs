@@ -13,12 +13,15 @@ use std::path::Path;
 use crate::commands::Output;
 use crate::commands::deactivate::deactivate;
 use crate::commands::npm::Npm;
+use crate::commands::package_managers::path::pinned_path;
+use crate::commands::project_pins::ProjectPins;
 use crate::commands::transcript::Transcript;
 use crate::commands::use_version::prefix::{self, Refusal};
 use crate::commands::use_version::{Options, SystemFlavor, SystemNode, Target};
 use crate::context::Context;
 use crate::domain::path_edit::{change_path, manpath_with_trailing_colon, strip_path};
 use crate::domain::path_search::find_in_path;
+use crate::domain::tool_path::strip_tool_bins;
 use crate::domain::version::{Flavor, Version};
 use crate::error::{CliError, NvmExitCode};
 use crate::shell::Script;
@@ -29,6 +32,7 @@ pub(super) fn apply(
     context: &Context<'_>,
     options: &Options,
     target: &Target,
+    pins: &ProjectPins,
     transcript: Transcript,
 ) -> Result<Output, CliError> {
     match target {
@@ -40,7 +44,8 @@ pub(super) fn apply(
             ..
         } => {
             let command = prefix::command(version, provided.is_some(), options.silent);
-            installed(context, options, (version, directory, &command), transcript)
+            let chosen = (version, directory.as_path(), command.as_str());
+            installed(context, options, chosen, pins, transcript)
         }
     }
 }
@@ -51,11 +56,12 @@ fn installed(
     context: &Context<'_>,
     options: &Options,
     (version, directory, command): (&Version, &Path, &str),
+    pins: &ProjectPins,
     mut transcript: Transcript,
 ) -> Result<Output, CliError> {
     let nvm_dir = context.nvm_dir()?;
     let switch = Switch::new(&nvm_dir, directory);
-    let path = switch.path(context)?;
+    let path = pinned_path(context, &switch.path(context)?, pins, &mut transcript)?;
     let script = switch.script(context, &path)?;
     link_current(context, &nvm_dir, directory, &mut transcript);
     let message = (!options.silent).then(|| now_using(version, &npm_suffix(context, &path)));
@@ -195,6 +201,7 @@ fn system(
     if !options.silent {
         let nvm_dir = text(&context.nvm_dir()?);
         let path = strip_path(&context.text_var("PATH")?, "/bin", &nvm_dir);
+        let path = strip_tool_bins(&path, &nvm_dir);
         transcript.out(system_now_using(context, node, &path));
     }
     Ok(transcript.finish_with(NvmExitCode::Success, script))

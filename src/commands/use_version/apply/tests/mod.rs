@@ -3,6 +3,7 @@
 //! digest with an `npm` next to each `node` but v22.3.0's.
 
 mod environment;
+mod pins;
 mod prefix;
 mod system;
 
@@ -48,6 +49,13 @@ pub(super) fn lab() -> FakeFileSystem {
             fs.with_file(&format!("/n/alias/{name}"), &format!("{target}\n"))
         })
         .with_dir("/proj")
+}
+
+/// `fs` with `tool` at `version` installed in the store under `/n`.
+pub(super) fn with_tool(fs: FakeFileSystem, tool: &str, version: &str) -> FakeFileSystem {
+    let directory = format!("/n/package-managers/{tool}/{version}");
+    fs.with_file(&format!("{directory}/package/package.json"), "{}")
+        .with_executable(&format!("{directory}/bin/{tool}"), "#!/bin/sh")
 }
 
 pub(super) fn npm_versions() -> FakeProcess {

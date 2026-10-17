@@ -30,6 +30,9 @@ pub enum PinsError {
         version: String,
         expected: String,
     },
+    /// `tool` is the tool and its version as users write them (`pnpm 9.12.0`).
+    #[error("nvm: {tool} (from {nvmrc}) is not installed. Run `nvm install`.")]
+    NotInstalled { tool: String, nvmrc: String },
     #[error("nvm: {package_json} cannot be read as JSON: {reason}")]
     UnreadablePackageJson {
         package_json: String,

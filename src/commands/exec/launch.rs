@@ -6,9 +6,10 @@ use super::options::Options;
 use super::select::Selection;
 use crate::commands::Output;
 use crate::commands::install::place::version_path;
+use crate::commands::package_managers::path::pinned_path;
 use crate::commands::policy::enforce::Gate;
 use crate::commands::policy::gate::{gate_installed, gate_system};
-use crate::commands::project_pins::read_for;
+use crate::commands::project_pins::{ProjectPins, read_for};
 use crate::commands::transcript::Transcript;
 use crate::commands::use_version::apply::{Switch, link_current, npm_suffix};
 use crate::commands::use_version::prefix::{self, Check};
@@ -27,12 +28,16 @@ pub(super) fn launch(
         return Ok(transcript.finish(NvmExitCode::Failure));
     }
     let resolution = nvm_version(context, &selection.version)?;
-    if let Gate::Stop(status) = gate(context, &resolution, &selection, &mut transcript)? {
+    let pins = match resolution {
+        Resolution::Version(_) | Resolution::System => read_for(context, &mut transcript)?,
+        _ => ProjectPins::default(),
+    };
+    if let Gate::Stop(status) = gate(context, &resolution, &selection, &pins, &mut transcript)? {
         return Ok(transcript.finish(status));
     }
     match resolution {
         Resolution::Version(version) => {
-            installed(context, options, &selection, &version, transcript)
+            installed(context, options, (&selection, &version, &pins), transcript)
         }
         Resolution::System => system(context, options, selection, transcript),
         Resolution::Loop | Resolution::NotAvailable | Resolution::Inactive => {
@@ -47,21 +52,15 @@ fn gate(
     context: &Context<'_>,
     resolution: &Resolution,
     selection: &Selection,
+    pins: &ProjectPins,
     transcript: &mut Transcript,
 ) -> Result<Gate, CliError> {
-    if !matches!(resolution, Resolution::Version(_) | Resolution::System) {
-        return Ok(Gate::Pass);
-    }
-    let pins = read_for(context, transcript)?;
     match resolution {
-        Resolution::Version(version) => gate_installed(
-            context,
-            version,
-            selection.origin.clone(),
-            &pins,
-            transcript,
-        ),
-        _ => gate_system(context, &pins, transcript),
+        Resolution::Version(version) => {
+            gate_installed(context, version, selection.origin.clone(), pins, transcript)
+        }
+        Resolution::System => gate_system(context, pins, transcript),
+        _ => Ok(Gate::Pass),
     }
 }
 
@@ -71,14 +70,13 @@ fn gate(
 fn installed(
     context: &Context<'_>,
     options: &Options,
-    selection: &Selection,
-    version: &Version,
+    (selection, version, pins): (&Selection, &Version, &ProjectPins),
     mut transcript: Transcript,
 ) -> Result<Output, CliError> {
     let nvm_dir = context.nvm_dir()?;
     let directory = version_path(context, version)?;
     let switch = Switch::new(&nvm_dir, &directory);
-    let path = switch.path(context)?;
+    let path = pinned_path(context, &switch.path(context)?, pins, &mut transcript)?;
     let prefixes = Prefixes {
         context,
         version,

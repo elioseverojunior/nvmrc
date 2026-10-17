@@ -29,6 +29,7 @@ pub mod remote_format;
 pub mod source_build;
 pub mod timestamp;
 pub mod tool;
+pub mod tool_path;
 pub mod valid_version;
 pub mod version;
 pub mod version_prefix;

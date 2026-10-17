@@ -15,7 +15,7 @@ use crate::commands::Output;
 use crate::commands::policy::enforce::Gate;
 use crate::commands::policy::gate::{gate_installed, gate_system, origin_of};
 use crate::commands::policy::load::policy_mode_requested;
-use crate::commands::project_pins::read_for;
+use crate::commands::project_pins::{ProjectPins, read_for};
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::error::CliError;
@@ -67,39 +67,48 @@ pub fn run_and_target(
     };
     match resolved {
         Ok((target, pending)) => {
-            if let Some(output) = refused(context, &target, &mut transcript) {
-                return Ok((output, None));
-            }
+            let pins = match refused(context, &target, &mut transcript) {
+                Ok(pins) => pins,
+                Err(output) => return Ok((*output, None)),
+            };
             if let Some(text) = pending {
                 target::write_pending(context, &text, options.silent, &mut transcript);
             }
-            let output = apply::apply(context, &options, &target, transcript)?;
+            let output = apply::apply(context, &options, &target, &pins, transcript)?;
             Ok((output, Some(target)))
         }
         Err(halt) => Ok((transcript.finish(halt.status), None)),
     }
 }
 
-/// The output of a `use` that invalid pins or the policy stop (or that the
-/// policy cannot verify), `None` when the target may be switched to.
-fn refused(context: &Context<'_>, target: &Target, transcript: &mut Transcript) -> Option<Output> {
-    let gate = read_for(context, transcript).and_then(|pins| match target {
-        Target::Installed {
-            version,
-            from_nvmrc,
-            ..
-        } => {
-            let origin = origin_of(context, *from_nvmrc);
-            gate_installed(context, version, origin, &pins, transcript)
-        }
-        Target::System(_) => gate_system(context, &pins, transcript),
+/// The pins of the project when the target may be switched to, otherwise the
+/// output of a `use` that invalid pins or the policy stop (or that the
+/// policy cannot verify).
+fn refused(
+    context: &Context<'_>,
+    target: &Target,
+    transcript: &mut Transcript,
+) -> Result<ProjectPins, Box<Output>> {
+    let gate = read_for(context, transcript).and_then(|pins| {
+        let gate = match target {
+            Target::Installed {
+                version,
+                from_nvmrc,
+                ..
+            } => {
+                let origin = origin_of(context, *from_nvmrc);
+                gate_installed(context, version, origin, &pins, transcript)
+            }
+            Target::System(_) => gate_system(context, &pins, transcript),
+        };
+        gate.map(|gate| (gate, pins))
     });
     match gate {
-        Ok(Gate::Pass) => None,
-        Ok(Gate::Stop(status)) => Some(std::mem::take(transcript).finish(status)),
+        Ok((Gate::Pass, pins)) => Ok(pins),
+        Ok((Gate::Stop(status), _)) => Err(Box::new(std::mem::take(transcript).finish(status))),
         Err(error) => {
             let status = Halt::report(&error, transcript).status;
-            Some(std::mem::take(transcript).finish(status))
+            Err(Box::new(std::mem::take(transcript).finish(status)))
         }
     }
 }

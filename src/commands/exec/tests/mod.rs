@@ -4,6 +4,7 @@
 
 mod environment;
 mod parsing;
+mod pins;
 mod policy;
 mod rows;
 
@@ -66,6 +67,13 @@ pub(crate) fn lab() -> FakeFileSystem {
         })
         .with_executable("/n/versions/io.js/v3.3.1/bin/iojs", "#!/bin/sh")
         .with_dir("/proj")
+}
+
+/// `fs` with `tool` at `version` installed in the store under `/n`.
+pub(crate) fn with_tool(fs: FakeFileSystem, tool: &str, version: &str) -> FakeFileSystem {
+    let directory = format!("/n/package-managers/{tool}/{version}");
+    fs.with_file(&format!("{directory}/package/package.json"), "{}")
+        .with_executable(&format!("{directory}/bin/{tool}"), "#!/bin/sh")
 }
 
 pub(crate) fn npm_versions() -> FakeProcess {

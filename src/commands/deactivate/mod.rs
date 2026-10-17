@@ -8,6 +8,7 @@ use crate::commands::Output;
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::path_edit::strip_path;
+use crate::domain::tool_path::strip_tool_bins;
 use crate::error::{CliError, NvmExitCode};
 use crate::shell::Script;
 
@@ -141,12 +142,16 @@ impl Stripper<'_, '_> {
     }
 
     fn path(&self, transcript: &mut Transcript) -> Option<Change> {
-        let Some(new) = self.strip("PATH", "/bin") else {
+        let old = self.value("PATH");
+        let stripped = strip_path(&old, "/bin", &self.nvm_dir);
+        if stripped == old {
             self.not_found("/bin", "PATH", transcript);
-            return None;
-        };
-        self.removed("/bin", "PATH", transcript);
-        Some(Change {
+        } else {
+            self.removed("/bin", "PATH", transcript);
+        }
+        // The tool directories go whether or not an nvm entry was there.
+        let new = strip_tool_bins(&stripped, &self.nvm_dir);
+        (new != old).then_some(Change {
             name: "PATH",
             value: Some(new),
         })

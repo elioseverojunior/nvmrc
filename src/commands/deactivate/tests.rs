@@ -183,3 +183,17 @@ fn the_changes_name_each_new_value_and_each_variable_to_unset() {
     ];
     assert_eq!(found, expected);
 }
+
+#[test]
+fn deactivate_drops_tool_bins() {
+    let tools = "/n/package-managers/pnpm/9.12.0/bin";
+    let path = format!("{tools}:{N18}/bin:/usr/bin");
+    let output = deactivate_with(&[("PATH", &path)], &[]);
+    assert_eq!(output.stdout, "/n/*/bin removed from ${PATH}");
+    assert_eq!(output.stderr, "");
+    let expected = format!("export PATH='/usr/bin'\n{HASH}{UNSET_BINS}");
+    assert_eq!(output.script.render(), expected);
+    let only_tools = deactivate_with(&[("PATH", &format!("{tools}:/usr/bin"))], &[]);
+    assert_eq!(only_tools.stderr, "Could not find /n/*/bin in ${PATH}");
+    assert_eq!(only_tools.script.render(), expected);
+}
