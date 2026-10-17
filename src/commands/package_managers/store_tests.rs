@@ -155,3 +155,79 @@ fn the_registry_variable_is_used() {
     install_tool(&context, Tool::Pnpm, &version("v9.12.0")).unwrap();
     assert_eq!(http.requests()[0], "https://mirror.test/npm/pnpm/9.12.0");
 }
+
+/// An archive whose `bin/pnpm.cjs` is a link to a file outside the package,
+/// as `tar` would unpack it.
+struct LinkingArchive<'a> {
+    fs: &'a FakeFileSystem,
+    inner: FakeArchive<'a>,
+}
+
+impl crate::ports::Archive for LinkingArchive<'_> {
+    fn extract(&self, archive: &Path, destination: &Path) -> std::io::Result<()> {
+        self.inner.extract(archive, destination)?;
+        let link = destination.join("package/bin/pnpm.cjs");
+        self.fs.symlink(Path::new("/outside/secret"), &link)
+    }
+}
+
+#[test]
+fn a_command_linked_outside_the_package_refuses_the_install() {
+    let fs = FakeFileSystem::default().with_file("/outside/secret", "x");
+    let env = FakeEnv::default().with_var("NVM_DIR", "/nvm");
+    let inner = FakeArchive::new(&fs).with_archive(
+        &format!("{PNPM_DIR}.partial/download.tgz"),
+        &[
+            ("package/package.json", "{}", false),
+            ("package/bin/pnpx.cjs", "pnpx", false),
+        ],
+    );
+    let archive = LinkingArchive { fs: &fs, inner };
+    let http = pnpm_http();
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_archive(&archive);
+    let error = install_tool(&context, Tool::Pnpm, &version("v9.12.0")).unwrap_err();
+    assert!(error.contains("outside"), "{error}");
+    assert!(
+        !fs.file_info(Path::new("/outside/secret"))
+            .unwrap()
+            .executable
+    );
+    assert!(fs.file_info(Path::new(PNPM_DIR)).is_err());
+    assert!(partial_is_gone(&fs));
+}
+
+#[test]
+fn a_package_without_the_tools_own_command_is_refused() {
+    let fs = FakeFileSystem::default().with_file(&format!("{PNPM_DIR}/stale"), "old");
+    let env = FakeEnv::default().with_var("NVM_DIR", "/nvm");
+    let body = manifest("https://t.test/pnpm.tgz", r#"{"pnpx": "bin/pnpx.cjs"}"#);
+    let http = FakeHttp::default()
+        .with_body("https://registry.npmjs.org/pnpm/9.12.0", &body)
+        .with_bytes("https://t.test/pnpm.tgz", TARBALL_BYTES);
+    let archive = pnpm_archive(&fs);
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_archive(&archive);
+    let error = install_tool(&context, Tool::Pnpm, &version("v9.12.0")).unwrap_err();
+    assert!(error.contains("pnpm"), "{error}");
+    assert!(fs.is_file(&Path::new(PNPM_DIR).join("stale")));
+}
+
+#[test]
+fn stale_work_areas_are_cleared_and_the_old_copy_does_not_linger() {
+    let fs = FakeFileSystem::default()
+        .with_file(&format!("{PNPM_DIR}.partial/junk"), "x")
+        .with_file(&format!("{PNPM_DIR}.old/junk"), "x")
+        .with_file(&format!("{PNPM_DIR}/stale"), "old");
+    let env = FakeEnv::default().with_var("NVM_DIR", "/nvm");
+    let (http, archive) = (pnpm_http(), pnpm_archive(&fs));
+    let context = Context::new(&fs, &env)
+        .with_http(&http)
+        .with_archive(&archive);
+    install_tool(&context, Tool::Pnpm, &version("v9.12.0")).unwrap();
+    assert!(fs.read_dir(Path::new(&format!("{PNPM_DIR}.old"))).is_err());
+    assert!(partial_is_gone(&fs));
+    assert!(!fs.is_file(&Path::new(PNPM_DIR).join("stale")));
+}
