@@ -469,6 +469,91 @@ that is not exact or not published, a pin conflict, or a malformed pin or
 project flag); 7 when the version is not allowed or no release is allowed;
 9 when the index, the registry or the policy cannot be read.
 
+## Upgrading a project
+
+`nvm upgrade` moves the tools pinned in the nearest `.nvmrc` (searched
+upward, as `use` does) to newer allowed releases, and rewrites that file and
+the `package.json` beside it:
+
+```sh
+nvm upgrade
+nvm upgrade --pnpm
+nvm upgrade --node --major
+nvm upgrade --pnpm --major=10
+```
+
+With no tool flag every tool the file pins is selected: node when it has a
+bare version line, and npm, yarn and pnpm when they have a `<tool>=` line.
+`--node`, `--npm`, `--yarn` and `--pnpm` select only those; a flag for a tool
+the file does not pin is refused (exit 6), and so is a repeated flag.
+
+By default each tool moves to the newest allowed release in the major it
+already uses, and never crosses a major on its own. `--major` allows the
+newest allowed release in any major. `--major=<N>` picks the newest allowed
+release in major `N`; it needs exactly one selected tool, which also means
+one tool pinned when no tool flag is given (otherwise exit 6). For node, any
+allowed release can be chosen, a non-LTS one included, unless the policy sets
+`ltsOnly`. npm, yarn and pnpm use stable `major.minor.patch` releases only;
+yarn reads the `yarn` package for major 1 and `@yarnpkg/cli-dist` for major 2
+and later (`--major` searches `@yarnpkg/cli-dist`). The policy flags
+(`--policy`, `--min-*`) apply as in `install`. A current version the policy
+does not allow moves to the target even when the target is lower.
+
+A node line that is a partial version (`20`, `v20.11`) uses that major and is
+replaced by the exact target. A node line that is not a version (`lts/*`,
+`node`, an `iojs-` version) is refused when node is selected, exit 3:
+
+```text
+nvm upgrade: /p/.nvmrc names node as "lts/*", not a version; use nvm init --node to pin one.
+```
+
+With `--pnpm` (or another tool flag without `--node`) the alias line is left
+alone and the other tool is upgraded. Without a `.nvmrc`, `nvm upgrade` says
+`nvm upgrade: no .nvmrc found; run nvm init first.` (exit 3).
+
+When a selected tool has no allowed release in its major, nothing is written
+and the command exits 7. For each such tool it prints
+`nvm upgrade: no allowed pnpm release in major 9.`, the policy block of the
+newest release in that major with the rules it breaks and where they come
+from, and a hint:
+
+```text
+The lowest major with an allowed release is 10. Run `nvm upgrade --pnpm --major=10`, or `nvm upgrade --pnpm --major` for the newest.
+```
+
+or `No major has an allowed pnpm release.` With `--major` the first line is
+`nvm upgrade: no allowed pnpm release.`. For yarn 1 the lowest major also
+considers `@yarnpkg/cli-dist`, so the hint can point at `--major=4`.
+
+The files are written first, then the changes are printed, in node, npm,
+yarn, pnpm order; a tool already on its target is reported as up to date:
+
+```text
+node v20.11.1 -> v20.18.0
+pnpm 9.12.0 is up to date
+```
+
+If nothing changed, the exit is 0 and nothing is written or installed. On a
+write failure only the error appears. The write follows `nvm init`: both
+texts are computed first, `package.json` is written first, and gets its
+original text back when the `.nvmrc` write fails.
+
+After writing, `install` runs as `nvm install` with no argument would: it
+reads the rewritten `.nvmrc` and installs node and the pins. If that fails,
+by its status or by an error such as a policy that cannot be checked, the
+change lines and the error are printed, followed by:
+
+```text
+nvm upgrade: /p/.nvmrc is updated, but the install failed; run nvm install to finish.
+```
+
+and the command exits with the install's status or the error's code.
+
+Exit codes: 1 for a file that cannot be read or written; 3 for no `.nvmrc`,
+a node alias line, or an invalid pin line; 6 for a usage error; 7 when no
+allowed release exists in the major; 9 when the index, the registry or the
+policy cannot be read; the install's status when the install fails.
+
 ## Commands
 
 As nvm.sh: `version`, `current`, `ls`/`list`, `ls-remote`/`list-remote`,
@@ -477,7 +562,7 @@ As nvm.sh: `version`, `current`, `ls`/`list`, `ls-remote`/`list-remote`,
 `version-remote`, `which`, `alias`, `unalias`, `use`, `deactivate`,
 `set-colors`, `exec`, `run`.
 
-New: `init`, `doctor`, `migrate`.
+New: `init`, `upgrade`, `doctor`, `migrate`.
 
 Not available: `unload`, `debug`, nvm.sh's `--help` text and `--version`
 number, `self-install`/`self-update` (v2), legacy platforms (v2),

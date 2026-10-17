@@ -272,6 +272,23 @@ nvm.sh has no project mode for `init`; this is an nvmrc addition.
   refusal. A file that cannot be read or written exits 1; when the `.nvmrc`
   write fails after `package.json`'s, `package.json` is restored.
 
+### Upgrading a project
+
+nvm.sh has no `upgrade` for a project; this is an nvmrc addition. (`nvm
+upgrade` is not nvm.sh's `nvm install-latest-npm`, which upgrades the npm of
+the node in use.)
+
+- `nvm upgrade` moves the tools pinned in the nearest `.nvmrc` to the newest
+  allowed release in their current major (`--major`: any major;
+  `--major=<N>`: major N, for exactly one tool), rewrites `.nvmrc` and
+  `packageManager`, then runs `install` with no argument.
+- A node alias line is refused (exit 3) only when node is selected.
+- Exit 6 for a usage error, 3 for no `.nvmrc`, an alias line or an invalid
+  pin, 7 when no allowed release exists in the major (nothing is written),
+  9 when the answer cannot be known. When the install fails after the write,
+  its status or the error's code is kept and a line says to run
+  `nvm install`.
+
 ### Colors
 
 - An invalid `NVM_COLORS` letter warns once; an unknown `TERM` is silent.
