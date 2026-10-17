@@ -1,0 +1,210 @@
+{
+  "$id": "https://raw.githubusercontent.com/elioseverojunior/nvmrc/main/schemas/nvmrc-policy.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PolicyDocument",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "description": "Lets editors validate the file; ignored.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "cve": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CveSettings"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "format": "uint32",
+      "maximum": 1,
+      "minimum": 1
+    },
+    "tools": {
+      "$ref": "#/$defs/Tools"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion"
+  ],
+  "$defs": {
+    "CveSettings": {
+      "type": "object",
+      "properties": {
+        "failOnSeverity": {
+          "description": "The lowest severity that fails the check; `none` only reports.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Severity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "description": "A URL or local path of the vulnerability index.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "NodeRules": {
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "An npm-style semver range.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deny": {
+          "description": "Exact versions that are never allowed.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string",
+            "pattern": "^v?\\d+\\.\\d+\\.\\d+$"
+          }
+        },
+        "ltsOnly": {
+          "description": "Allow only releases that have an LTS name in the index.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "minimum": {
+          "description": "The lowest allowed version; a partial version means its lowest release.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^v?\\d+(\\.\\d+){0,2}$"
+        },
+        "minimumReleaseAgeDays": {
+          "description": "Days a release must have been published before it is allowed.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "PackageRules": {
+      "description": "The rules of npm, yarn and pnpm: those of node, without `ltsOnly`.",
+      "type": "object",
+      "properties": {
+        "allow": {
+          "description": "An npm-style semver range.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deny": {
+          "description": "Exact versions that are never allowed.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string",
+            "pattern": "^v?\\d+\\.\\d+\\.\\d+$"
+          }
+        },
+        "minimum": {
+          "description": "The lowest allowed version; a partial version means its lowest release.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^v?\\d+(\\.\\d+){0,2}$"
+        },
+        "minimumReleaseAgeDays": {
+          "description": "Days a release must have been published before it is allowed.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "Severity": {
+      "type": "string",
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "none"
+      ]
+    },
+    "Tools": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodeRules"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "npm": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PackageRules"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pnpm": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PackageRules"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "yarn": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PackageRules"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
