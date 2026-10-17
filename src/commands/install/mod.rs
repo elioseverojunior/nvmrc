@@ -14,7 +14,7 @@ mod npm_steps;
 mod nvmrc_version;
 mod offline;
 pub mod options;
-mod pinned;
+pub mod pinned;
 pub mod place;
 mod resolve;
 mod source;

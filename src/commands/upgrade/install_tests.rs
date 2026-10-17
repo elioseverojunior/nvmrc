@@ -84,6 +84,20 @@ fn an_upgrade_installs_the_new_versions() {
 }
 
 #[test]
+fn an_nvmrc_without_a_node_line_installs_only_the_pins() {
+    let files = [("/p/.nvmrc", "pnpm=9.1.0\n"), ("/p/package.json", PNPM_9)];
+    let (fs, env) = project(&files, "");
+    let output = upgrade(&fs, &env, &mirror(false));
+    assert_eq!(output.status, NvmExitCode::Success, "{}", output.stderr);
+    assert_eq!(
+        output.stdout,
+        "pnpm 9.1.0 -> 9.12.0\nInstalling pnpm 9.12.0..."
+    );
+    assert!(fs.is_file(Path::new(PNPM_BIN)));
+    assert!(!fs.is_file(Path::new(NODE_BIN)));
+}
+
+#[test]
 fn a_failed_install_keeps_the_files_and_says_so() {
     let files = [("/p/.nvmrc", PINNED), ("/p/package.json", PNPM_9)];
     let (fs, env) = project(&files, "");

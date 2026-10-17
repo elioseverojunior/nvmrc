@@ -32,6 +32,24 @@ pub(super) fn install_pinned(
     Ok(())
 }
 
+/// Installs `pins` alone, as [`install_pinned`] does once a node is in
+/// place, for a `.nvmrc` without a node line; its status.
+#[must_use]
+pub fn install_pins(
+    context: &Context<'_>,
+    pins: &Pins,
+    transcript: &mut Transcript,
+) -> NvmExitCode {
+    match install_pinned(context, pins, false, transcript) {
+        Ok(()) => NvmExitCode::Success,
+        Err(Halt::Exit(status)) => status,
+        Err(Halt::Error(error)) => {
+            transcript.err(error.to_string());
+            error.exit_code()
+        }
+    }
+}
+
 /// One tool; the error is the line to print.
 fn install_one(
     context: &Context<'_>,
