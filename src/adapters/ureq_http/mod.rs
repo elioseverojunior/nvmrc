@@ -158,6 +158,15 @@ struct Limits {
     https_only: bool,
 }
 
+/// An archive: big, and with no time limit on its body.
+fn download_limits(https_only: bool) -> Limits {
+    Limits {
+        bytes: MAX_DOWNLOAD_BYTES,
+        whole_call: None,
+        https_only,
+    }
+}
+
 impl UreqHttp {
     fn text_limits(&self, https_only: bool) -> Limits {
         Limits {
@@ -178,12 +187,11 @@ impl Http for UreqHttp {
     }
 
     fn get_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
-        let limits = Limits {
-            bytes: MAX_DOWNLOAD_BYTES,
-            whole_call: None,
-            https_only: false,
-        };
-        self.fetch(url, limits, |body| body.read_to_vec())
+        self.fetch(url, download_limits(false), |body| body.read_to_vec())
+    }
+
+    fn get_secure_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
+        self.fetch(url, download_limits(true), |body| body.read_to_vec())
     }
 }
 

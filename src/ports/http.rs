@@ -35,4 +35,11 @@ pub trait Http {
     /// # Errors
     /// As [`Self::get_text`], and when a URL on the way is not https.
     fn get_secure_text(&self, url: &str) -> Result<String, HttpError>;
+
+    /// Like [`Self::get_bytes`], but `url` and every redirect it leads to must
+    /// be https: a package that could be swapped on the way is not a package.
+    ///
+    /// # Errors
+    /// As [`Self::get_bytes`], and when a URL on the way is not https.
+    fn get_secure_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError>;
 }

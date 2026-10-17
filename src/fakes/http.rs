@@ -65,6 +65,14 @@ impl Http for FakeHttp {
     }
 
     fn get_secure_text(&self, url: &str) -> Result<String, HttpError> {
+        let bytes = self.get_secure_bytes(url)?;
+        String::from_utf8(bytes).map_err(|error| HttpError::Body {
+            url: url.to_owned(),
+            message: error.to_string(),
+        })
+    }
+
+    fn get_secure_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
         // The scheme is case-insensitive, as the http crate parses it.
         let scheme = url.get(.."https://".len());
         if !scheme.is_some_and(|scheme| scheme.eq_ignore_ascii_case("https://")) {
@@ -76,9 +84,9 @@ impl Http for FakeHttp {
         match self.redirects.get(url) {
             Some(next) => {
                 self.requests.borrow_mut().push(url.to_owned());
-                self.get_secure_text(next)
+                self.get_secure_bytes(next)
             }
-            None => self.get_text(url),
+            None => self.get_bytes(url),
         }
     }
 
@@ -119,5 +127,16 @@ mod tests {
         let unknown = http.get_text("http://m/other").unwrap_err();
         assert_eq!(unknown.to_string(), "http://m/other: connection refused");
         assert_eq!(http.requests().len(), 3);
+    }
+
+    #[test]
+    fn fake_secure_bytes_refuse_http_and_a_redirect_to_it() {
+        let http = FakeHttp::default()
+            .with_bytes("HTTPS://m/a.tgz", &[1, 2])
+            .with_bytes("http://m/b.tgz", &[3])
+            .with_redirect("https://m/c.tgz", "http://m/b.tgz");
+        assert_eq!(http.get_secure_bytes("HTTPS://m/a.tgz").unwrap(), [1, 2]);
+        assert!(http.get_secure_bytes("http://m/b.tgz").is_err());
+        assert!(http.get_secure_bytes("https://m/c.tgz").is_err());
     }
 }

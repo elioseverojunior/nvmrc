@@ -70,6 +70,10 @@ impl Http for RetryingHttp<'_> {
     fn get_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
         self.retrying(|| self.inner.get_bytes(url))
     }
+
+    fn get_secure_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
+        self.retrying(|| self.inner.get_secure_bytes(url))
+    }
 }
 
 #[cfg(test)]
@@ -106,6 +110,10 @@ mod tests {
         fn get_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
             self.get_text(url).map(String::into_bytes)
         }
+
+        fn get_secure_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
+            self.get_bytes(url)
+        }
     }
 
     fn status(code: u16) -> Result<String, HttpError> {
@@ -129,6 +137,15 @@ mod tests {
         let body = RetryingHttp::new(&inner, &sleeper).get_bytes("u");
         assert_eq!(body.unwrap(), b"tar");
         assert_eq!(sleeper.slept(), [Duration::from_millis(250)]);
+    }
+
+    #[test]
+    fn secure_bytes_are_retried_like_bytes() {
+        let inner = Scripted::new(vec![status(503), Ok("tar".to_owned())]);
+        let sleeper = FakeSleeper::default();
+        let body = RetryingHttp::new(&inner, &sleeper).get_secure_bytes("u");
+        assert_eq!(body.unwrap(), b"tar");
+        assert_eq!(sleeper.slept().len(), 1);
     }
 
     #[test]

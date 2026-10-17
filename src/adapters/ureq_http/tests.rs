@@ -202,6 +202,18 @@ fn a_secure_fetch_never_contacts_a_url_that_is_not_https() {
 }
 
 #[test]
+fn a_secure_download_never_contacts_a_url_that_is_not_https() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let url = format!("http://{}/p.tgz", listener.local_addr().unwrap());
+    let error = UreqHttp::unproxied(None)
+        .get_secure_bytes(&url)
+        .unwrap_err();
+    assert!(error.to_string().contains("https only"), "{error}");
+    assert!(listener.accept().is_err(), "the server was contacted");
+}
+
+#[test]
 fn the_quick_client_bounds_a_text_call_at_five_seconds() {
     assert_eq!(UreqHttp::quick(None).text_call, Duration::from_secs(5));
     assert_eq!(UreqHttp::new(None).text_call, Duration::from_secs(30));

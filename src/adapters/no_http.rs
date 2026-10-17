@@ -19,6 +19,10 @@ impl Http for NoHttp {
         Err(unavailable(url))
     }
 
+    fn get_secure_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
+        Err(unavailable(url))
+    }
+
     fn get_bytes(&self, url: &str) -> Result<Vec<u8>, HttpError> {
         Err(unavailable(url))
     }
