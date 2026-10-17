@@ -19,10 +19,16 @@ pub struct FakeFileSystem {
 
 impl FakeFileSystem {
     #[must_use]
-    pub fn with_file(mut self, path: &str, contents: &str) -> Self {
+    pub fn with_file(self, path: &str, contents: &str) -> Self {
+        self.with_bytes(path, contents.as_bytes())
+    }
+
+    /// A file of raw bytes: one that is not UTF-8 cannot be read as text.
+    #[must_use]
+    pub fn with_bytes(mut self, path: &str, contents: &[u8]) -> Self {
         self.files
             .get_mut()
-            .insert(PathBuf::from(path), contents.as_bytes().to_vec());
+            .insert(PathBuf::from(path), contents.to_vec());
         self
     }
 

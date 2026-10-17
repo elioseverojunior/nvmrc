@@ -177,6 +177,31 @@ fn a_root_nvmrc_that_is_a_directory_counts_for_the_retry() {
 }
 
 #[test]
+fn saving_replaces_only_the_bare_line() {
+    let contents = "# project\n20 # lts\nnpm=10.9.0\nlts=iron\n\npnpm=9.12.0\n";
+    assert_eq!(
+        with_version(contents, "v22.11.0"),
+        "# project\nv22.11.0\nnpm=10.9.0\nlts=iron\n\npnpm=9.12.0\n"
+    );
+}
+
+#[test]
+fn saving_a_lone_version_writes_just_the_version() {
+    for contents in ["", "20", "20\n", "\n20\n\n", "  20  \r\n"] {
+        assert_eq!(
+            with_version(contents, "v22.11.0"),
+            "v22.11.0\n",
+            "{contents:?}"
+        );
+    }
+}
+
+#[test]
+fn saving_without_a_bare_line_puts_the_version_first() {
+    assert_eq!(with_version("npm=10.9.0", "system"), "system\nnpm=10.9.0\n");
+}
+
+#[test]
 fn starting_at_the_root_checks_the_root_file() {
     let fs = FakeFileSystem::default().with_file("/.nvmrc", "18");
     assert_eq!(

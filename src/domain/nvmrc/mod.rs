@@ -98,12 +98,53 @@ fn pick_bare_line(lines: &[String]) -> Option<String> {
     bare.cloned()
 }
 
+/// What `--save` writes over `contents`: its bare version line replaced by
+/// `version`, every other line (pins, other keys, comments) kept in place.
+/// Without a bare line the version goes first. With no other line the result
+/// is exactly `<version>\n`, as nvm.sh writes it.
+#[must_use]
+pub fn with_version(contents: &str, version: &str) -> String {
+    let mut lines: Vec<&str> = contents
+        .strip_suffix('\n')
+        .unwrap_or(contents)
+        .split('\n')
+        .collect();
+    let bare = lines.iter().position(|line| is_bare(content_of(line)));
+    match bare {
+        Some(index) => lines[index] = version,
+        None => lines.insert(0, version),
+    }
+    let index = bare.unwrap_or(0);
+    let alone = (lines.iter().enumerate())
+        .all(|(other, line)| other == index || trim_space(line).is_empty());
+    if alone {
+        return format!("{version}\n");
+    }
+    let mut text = lines.join("\n");
+    text.push('\n');
+    text
+}
+
+/// Whether a content line is the bare version-ish: no `=`, or one first.
+fn is_bare(content: &str) -> bool {
+    !content.is_empty()
+        && content
+            .split_once('=')
+            .is_none_or(|(key, _)| key.is_empty())
+}
+
+/// A line as the `.nvmrc` rules see it: `#` comment removed, surrounding
+/// `[[:space:]]` trimmed.
+fn content_of(line: &str) -> &str {
+    trim_space(line.split('#').next().unwrap_or(""))
+}
+
 /// The lines `.nvmrc` rules look at: `#` comments removed, surrounding
 /// `[[:space:]]` trimmed, empty lines dropped.
 fn content_lines(contents: &str) -> impl Iterator<Item = &str> {
     contents
         .split('\n')
-        .map(|line| trim_space(line.split('#').next().unwrap_or("")))
+        .map(content_of)
         .filter(|line| !line.is_empty())
 }
 
