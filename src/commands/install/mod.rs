@@ -55,11 +55,11 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
 
 fn install(context: &Context<'_>, given: &Options, transcript: &mut Transcript) -> Step<()> {
     let make_jobs = requested_jobs(given, transcript);
-    let pins = read_for(context, transcript)?.pins;
+    let project = read_for(context, transcript)?;
     let options = &with_nvmrc_version(context, no_source_fallback(context, given)?, transcript)?;
     announce(options, transcript);
     let version = resolve(context, options, transcript)?;
-    check_version(context, given, options, &version, transcript)?;
+    check_version(context, given, options, &version, &project, transcript)?;
     let path = place::version_path(context, &version)?;
     let source = reinstall_source(context, options, &version, transcript)?;
     let target = Target {
@@ -69,9 +69,9 @@ fn install(context: &Context<'_>, given: &Options, transcript: &mut Transcript) 
         make_jobs,
     };
     if place::is_valid_install(context, &target.path) {
-        already_installed(context, options, &target, &pins, transcript)
+        already_installed(context, options, &target, &project.pins, transcript)
     } else {
-        fresh_install(context, options, &target, &pins, transcript)
+        fresh_install(context, options, &target, &project.pins, transcript)
     }
 }
 

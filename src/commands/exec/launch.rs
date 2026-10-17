@@ -8,6 +8,7 @@ use crate::commands::Output;
 use crate::commands::install::place::version_path;
 use crate::commands::policy::enforce::Gate;
 use crate::commands::policy::gate::{gate_installed, gate_system};
+use crate::commands::project_pins::read_for;
 use crate::commands::transcript::Transcript;
 use crate::commands::use_version::apply::{Switch, link_current, npm_suffix};
 use crate::commands::use_version::prefix::{self, Check};
@@ -25,24 +26,42 @@ pub(super) fn launch(
     if !ensure_installed(context, &selection.provided, false, &mut transcript)? {
         return Ok(transcript.finish(NvmExitCode::Failure));
     }
-    match nvm_version(context, &selection.version)? {
+    let resolution = nvm_version(context, &selection.version)?;
+    if let Gate::Stop(status) = gate(context, &resolution, &selection, &mut transcript)? {
+        return Ok(transcript.finish(status));
+    }
+    match resolution {
         Resolution::Version(version) => {
-            let gate =
-                gate_installed(context, &version, selection.origin.clone(), &mut transcript)?;
-            if let Gate::Stop(status) = gate {
-                return Ok(transcript.finish(status));
-            }
             installed(context, options, &selection, &version, transcript)
         }
-        Resolution::System => {
-            if let Gate::Stop(status) = gate_system(context, &mut transcript)? {
-                return Ok(transcript.finish(status));
-            }
-            system(context, options, selection, transcript)
-        }
+        Resolution::System => system(context, options, selection, transcript),
         Resolution::Loop | Resolution::NotAvailable | Resolution::Inactive => {
             Ok(transcript.finish(NvmExitCode::Failure))
         }
+    }
+}
+
+/// The policy gate of the version or the system node `resolution` names,
+/// with the pins of the project; nothing to check otherwise.
+fn gate(
+    context: &Context<'_>,
+    resolution: &Resolution,
+    selection: &Selection,
+    transcript: &mut Transcript,
+) -> Result<Gate, CliError> {
+    if !matches!(resolution, Resolution::Version(_) | Resolution::System) {
+        return Ok(Gate::Pass);
+    }
+    let pins = read_for(context, transcript)?;
+    match resolution {
+        Resolution::Version(version) => gate_installed(
+            context,
+            version,
+            selection.origin.clone(),
+            &pins,
+            transcript,
+        ),
+        _ => gate_system(context, &pins, transcript),
     }
 }
 

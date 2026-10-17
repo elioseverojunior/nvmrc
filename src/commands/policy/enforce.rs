@@ -1,14 +1,19 @@
 //! The gate a node version passes before it is installed: the merged policy
 //! against the version, with the release index consulted only when a rule
-//! needs it, and the vulnerability index for every node version.
+//! needs it, the vulnerability index for every node version, and the rules
+//! of npm, yarn and pnpm for each of them in effect.
 
 use std::path::PathBuf;
 
 use super::advisories::cve_violation;
 use super::mode::{Mode, resolve_mode};
+use super::report::{Checked, report};
+use super::tools::tool_checks;
+use crate::commands::project_pins::ProjectPins;
 use crate::commands::remote_index;
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
+use crate::domain::index::Release;
 use crate::domain::mirror;
 use crate::domain::policy::{ReleaseInfo, ToolPolicy, Violation};
 use crate::domain::version::{Flavor, Version};
@@ -26,12 +31,14 @@ pub enum Origin {
     System,
 }
 
-/// The version to check, where it came from and whether the network is off.
+/// The version to check, where it came from, whether the network is off,
+/// and the pins of the project.
 #[derive(Debug, Clone)]
 pub struct Requested {
     pub version: Version,
     pub origin: Origin,
     pub offline: bool,
+    pub pins: ProjectPins,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,7 +68,7 @@ pub fn enforce_node(
         }
         Err(error) => Err(error.into()),
         Ok(checked) => {
-            let gate = report(context, requested, &checked.violations, transcript);
+            let gate = report(context, requested, &checked, transcript);
             checked
                 .notes
                 .into_iter()
@@ -71,13 +78,8 @@ pub fn enforce_node(
     }
 }
 
-/// What the check found: the violations, and the warnings printed after the
-/// report so the output reads top-down.
-#[derive(Default)]
-struct Checked {
-    violations: Vec<Violation>,
-    notes: Vec<String>,
-}
+/// What could not be known, named as in `cannot check <what>`.
+type Unknown = (&'static str, PolicyError);
 
 fn check(
     context: &Context<'_>,
@@ -90,24 +92,48 @@ fn check(
         return Ok(Checked::default());
     };
     let mut checked = Checked {
-        violations: node_violations(context, requested, &policy.node)?,
-        notes: Vec::new(),
+        node: node_violations(context, requested, &policy.node)?,
+        ..Checked::default()
     };
-    match cve_violation(context, requested, policy.cve, &mut checked.notes) {
-        Ok(found) => checked.violations.extend(found),
-        // The node rules already decide the gate; the index is a warning.
-        Err(error) if !checked.violations.is_empty() => {
-            checked.notes.push(unknown_vulnerabilities(&error));
-        }
-        Err(error) => return Err(error),
+    let mut unknown: Vec<Unknown> = Vec::new();
+    match cve_violation(context, requested, policy.cve.clone(), &mut checked.notes) {
+        Ok(found) => checked.node.extend(found),
+        Err(error) => unknown.push(("known vulnerabilities", error)),
     }
+    for outcome in tool_checks(context, requested, &policy) {
+        match outcome {
+            Ok(found) => checked.tools.extend(found),
+            Err((tool, error)) => unknown.push((tool.name(), error)),
+        }
+    }
+    settle(checked, unknown)
+}
+
+/// What could not be known fails the check when nothing else does; when a
+/// violation already decides the gate, it is a warning.
+fn settle(mut checked: Checked, unknown: Vec<Unknown>) -> Result<Checked, PolicyError> {
+    if checked.is_clean() {
+        return match unknown.into_iter().next() {
+            Some((_, error)) => Err(error),
+            None => Ok(checked),
+        };
+    }
+    let notes = unknown
+        .iter()
+        .map(|(what, error)| unknown_note(what, error));
+    checked.notes.extend(notes);
     Ok(checked)
 }
 
-fn unknown_vulnerabilities(error: &PolicyError) -> String {
+fn unknown_note(what: &str, error: &PolicyError) -> String {
     let text = error.to_string();
     let reason = text.trim_start_matches("nvm: cannot check the policy: ");
-    format!("nvm: warning: cannot check known vulnerabilities: {reason}")
+    format!("nvm: warning: cannot check {what}: {reason}")
+}
+
+/// Days since 1970-01-01, by the clock of `context`.
+pub(super) fn today(context: &Context<'_>) -> i64 {
+    context.clock().unix_seconds().div_euclid(SECONDS_PER_DAY)
 }
 
 fn node_violations(
@@ -116,9 +142,8 @@ fn node_violations(
     policy: &ToolPolicy,
 ) -> Result<Vec<Violation>, PolicyError> {
     let release = release_info(context, requested, policy)?;
-    let today = context.clock().unix_seconds().div_euclid(SECONDS_PER_DAY);
     policy
-        .violations(&requested.version, release.as_ref(), today)
+        .violations(&requested.version, release.as_ref(), today(context))
         .map_err(|_| PolicyError::ReleaseInfoUnavailable(index_location(context)))
 }
 
@@ -131,6 +156,23 @@ fn release_info(
     if !policy.needs_release_info() || requested.version.flavor != Flavor::Node {
         return Ok(None);
     }
+    let release = indexed_release(context, requested)?;
+    Ok(Some(ReleaseInfo {
+        lts: release.lts,
+        published_day: release.published_day,
+    }))
+}
+
+/// The entry of the requested version in the release index, read with the
+/// policy client.
+///
+/// # Errors
+/// [`PolicyError::ReleaseInfoUnavailable`] offline, when the index cannot be
+/// read or when it does not list the version.
+pub(super) fn indexed_release(
+    context: &Context<'_>,
+    requested: &Requested,
+) -> Result<Release, PolicyError> {
     if requested.offline {
         return Err(PolicyError::ReleaseInfoUnavailable("offline".to_owned()));
     }
@@ -142,63 +184,12 @@ fn release_info(
         .unwrap_or_default()
         .into_iter()
         .find(|release| release.version == requested.version)
-        .map(|release| ReleaseInfo {
-            lts: release.lts,
-            published_day: release.published_day,
-        })
-        .map(Some)
         .ok_or_else(unavailable)
 }
 
-fn index_location(context: &Context<'_>) -> String {
+pub(super) fn index_location(context: &Context<'_>) -> String {
     mirror::from_env(context.env, Flavor::Node).map_or_else(
         |_| "the release index".to_owned(),
         |mirror| mirror.index_url(),
     )
-}
-
-fn report(
-    context: &Context<'_>,
-    requested: &Requested,
-    violations: &[Violation],
-    transcript: &mut Transcript,
-) -> Gate {
-    if violations.is_empty() {
-        return Gate::Pass;
-    }
-    let prefix = if context.is_advisory() {
-        "nvm: warning: node"
-    } else {
-        "nvm: node"
-    };
-    transcript.err(format!(
-        "{prefix} {} {} is not allowed by policy:",
-        requested.version,
-        origin_text(&requested.origin)
-    ));
-    for violation in violations {
-        transcript.err(format!("  - {violation}"));
-    }
-    transcript.err(fix_text(&requested.origin));
-    if context.is_advisory() {
-        Gate::Pass
-    } else {
-        Gate::Stop(NvmExitCode::BelowVersionFloor)
-    }
-}
-
-fn origin_text(origin: &Origin) -> String {
-    match origin {
-        Origin::Nvmrc(path) => format!("(from {})", path.display()),
-        Origin::Argument => "(from the command line)".to_owned(),
-        Origin::Active => "(the active version)".to_owned(),
-        Origin::System => "(system)".to_owned(),
-    }
-}
-
-fn fix_text(origin: &Origin) -> String {
-    match origin {
-        Origin::Nvmrc(path) => format!("Raise {} to an allowed version.", path.display()),
-        _ => "Use an allowed version.".to_owned(),
-    }
 }

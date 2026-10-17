@@ -1,6 +1,7 @@
 //! The release index of a mirror, `<mirror>/index.tab`: a tab-separated table
 //! with a header line, newest release first. Column 1 is the version, column
-//! 2 the release date, column 10 the LTS codename (`-` when there is none).
+//! 2 the release date, column 4 the bundled npm, column 10 the LTS codename
+//! (`-` when there is none).
 
 use std::collections::HashSet;
 
@@ -14,6 +15,8 @@ pub struct Release {
     pub lts: Option<String>,
     /// Days since 1970-01-01 of the release date (column 2), when it is one.
     pub published_day: Option<i64>,
+    /// The npm bundled with the release (column 4), when it is a version.
+    pub npm: Option<Version>,
 }
 
 /// The releases of `index_tab`, in file order. The header, blank lines and
@@ -42,6 +45,7 @@ fn parse_row(line: &str, flavor: Flavor) -> Option<Release> {
         version: text.parse().ok()?,
         lts,
         published_day: columns.get(1).and_then(|date| days_from_iso_date(date)),
+        npm: columns.get(3).and_then(|npm| npm.parse().ok()),
     })
 }
 
@@ -89,6 +93,18 @@ mod tests {
             parse_index(&text, Flavor::Node)[0].published_day,
             days_from_iso_date("2024-10-29")
         );
+    }
+
+    #[test]
+    fn reads_the_npm_column() {
+        let text = index_text_dated(&[("v22.11.0", "2024-10-29", "Jod")]);
+        let npm = parse_index(&text, Flavor::Node)[0].npm;
+        assert_eq!(
+            npm.map(|version| version.to_string()).as_deref(),
+            Some("v10.0.0")
+        );
+        let dashed = "header\nv0.1.0\t2011-01-01\tsrc\t-\n";
+        assert_eq!(parse_index(dashed, Flavor::Node)[0].npm, None);
     }
 
     fn row(version: &str, lts: &str) -> String {

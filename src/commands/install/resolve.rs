@@ -6,6 +6,7 @@ use crate::commands::install::offline::cached_version;
 use crate::commands::install::options::Options;
 use crate::commands::policy::enforce::{Gate, Origin, Requested, enforce_node};
 use crate::commands::policy::policy_mode_requested;
+use crate::commands::project_pins::ProjectPins;
 use crate::commands::resolve::{Resolved, resolve_installed};
 use crate::commands::transcript::Transcript;
 use crate::commands::version_remote::lookup;
@@ -121,6 +122,7 @@ pub(super) fn check_version(
     given: &Options,
     options: &Options,
     version: &Version,
+    pins: &ProjectPins,
     transcript: &mut Transcript,
 ) -> Step<()> {
     if !policy_mode_requested(context) {
@@ -130,6 +132,7 @@ pub(super) fn check_version(
         version: *version,
         origin: origin_of(context, given),
         offline: options.offline,
+        pins: pins.clone(),
     };
     match enforce_node(context, &requested, transcript)? {
         Gate::Pass => Ok(()),

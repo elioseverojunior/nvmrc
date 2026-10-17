@@ -15,6 +15,7 @@ fn requested(version: &str, offline: bool) -> Requested {
         version: version.parse().unwrap(),
         origin: Origin::Argument,
         offline,
+        pins: crate::commands::project_pins::ProjectPins::default(),
     }
 }
 

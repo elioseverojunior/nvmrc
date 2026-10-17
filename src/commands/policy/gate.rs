@@ -4,6 +4,7 @@
 
 use super::enforce::{Gate, Origin, Requested, enforce_node};
 use super::load::policy_mode_requested;
+use crate::commands::project_pins::ProjectPins;
 use crate::commands::resolve::system_version;
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
@@ -24,8 +25,8 @@ pub fn origin_of(context: &Context<'_>, from_nvmrc: bool) -> Origin {
         .map_or(Origin::Argument, Origin::Nvmrc)
 }
 
-/// Checks an installed `version`; the release index is fetched only when a
-/// rule needs it.
+/// Checks an installed `version` and the package managers in effect with
+/// it; the release index is fetched only when a rule needs it.
 ///
 /// # Errors
 /// As [`enforce_node`].
@@ -33,12 +34,14 @@ pub fn gate_installed(
     context: &Context<'_>,
     version: &Version,
     origin: Origin,
+    pins: &ProjectPins,
     transcript: &mut Transcript,
 ) -> Result<Gate, CliError> {
     let requested = Requested {
         version: *version,
         origin,
         offline: false,
+        pins: pins.clone(),
     };
     enforce_node(context, &requested, transcript)
 }
@@ -48,7 +51,11 @@ pub fn gate_installed(
 /// # Errors
 /// [`CliError::Policy`] when a policy applies and the version cannot be
 /// read, unless the context is advisory (then a warning and a pass).
-pub fn gate_system(context: &Context<'_>, transcript: &mut Transcript) -> Result<Gate, CliError> {
+pub fn gate_system(
+    context: &Context<'_>,
+    pins: &ProjectPins,
+    transcript: &mut Transcript,
+) -> Result<Gate, CliError> {
     if !policy_mode_requested(context) {
         return Ok(Gate::Pass);
     }
@@ -57,7 +64,7 @@ pub fn gate_system(context: &Context<'_>, transcript: &mut Transcript) -> Result
         Err(error) => return unknown_system(context, error, transcript),
     };
     match version {
-        Some(version) => gate_installed(context, &version, Origin::System, transcript),
+        Some(version) => gate_installed(context, &version, Origin::System, pins, transcript),
         None => unknown_system(context, unreadable(), transcript),
     }
 }

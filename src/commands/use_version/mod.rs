@@ -15,6 +15,7 @@ use crate::commands::Output;
 use crate::commands::policy::enforce::Gate;
 use crate::commands::policy::gate::{gate_installed, gate_system, origin_of};
 use crate::commands::policy::load::policy_mode_requested;
+use crate::commands::project_pins::read_for;
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::error::CliError;
@@ -79,22 +80,20 @@ pub fn run_and_target(
     }
 }
 
-/// The output of a `use` that the policy stops (or cannot verify), `None`
-/// when the target may be switched to.
+/// The output of a `use` that invalid pins or the policy stop (or that the
+/// policy cannot verify), `None` when the target may be switched to.
 fn refused(context: &Context<'_>, target: &Target, transcript: &mut Transcript) -> Option<Output> {
-    let gate = match target {
+    let gate = read_for(context, transcript).and_then(|pins| match target {
         Target::Installed {
             version,
             from_nvmrc,
             ..
-        } => gate_installed(
-            context,
-            version,
-            origin_of(context, *from_nvmrc),
-            transcript,
-        ),
-        Target::System(_) => gate_system(context, transcript),
-    };
+        } => {
+            let origin = origin_of(context, *from_nvmrc);
+            gate_installed(context, version, origin, &pins, transcript)
+        }
+        Target::System(_) => gate_system(context, &pins, transcript),
+    });
     match gate {
         Ok(Gate::Pass) => None,
         Ok(Gate::Stop(status)) => Some(std::mem::take(transcript).finish(status)),

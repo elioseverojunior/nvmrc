@@ -146,18 +146,23 @@ fn use_from_an_nvmrc_names_the_file_in_the_message() {
 fn an_unresolvable_nvm_dir_is_a_warning_on_an_automatic_path() {
     use crate::commands::policy::enforce::Gate;
     use crate::commands::policy::gate::gate_system;
+    use crate::commands::project_pins::ProjectPins;
     use crate::commands::transcript::Transcript;
     use crate::error::CliError;
     let (fs, env) = (lab(), crate::fakes::FakeEnv::default());
     let flags = policy_flags(&["--min-node", "20"]);
     let base = Context::new(&fs, &env).with_policy_flags(flags);
-    let explicit = gate_system(&base, &mut Transcript::default());
+    let explicit = gate_system(&base, &ProjectPins::default(), &mut Transcript::default());
     assert!(
         matches!(explicit, Err(CliError::NvmDirUnresolved)),
         "{explicit:?}"
     );
     let mut transcript = Transcript::default();
-    let automatic = gate_system(&base.clone().advisory(), &mut transcript);
+    let automatic = gate_system(
+        &base.clone().advisory(),
+        &ProjectPins::default(),
+        &mut transcript,
+    );
     assert!(matches!(automatic, Ok(Gate::Pass)), "{automatic:?}");
     let stderr = transcript.finish(NvmExitCode::Success).stderr;
     assert!(stderr.starts_with("nvm: warning:"), "{stderr}");
@@ -210,4 +215,34 @@ fn legacy_use_save_keeps_its_order() {
             .stdout
             .starts_with("Wrote version number (v20.11.1) to .nvmrc")
     );
+}
+
+#[test]
+fn use_checks_the_tools_pinned_in_the_nvmrc() {
+    let (fs, env, process) = (
+        lab().with_file("/proj/.nvmrc", "20\npnpm=9.1.0\n"),
+        env_on(BASE_PATH),
+        npm_versions(),
+    );
+    let http = FakeHttp::default().with_empty_advisories();
+    let context = Context::new(&fs, &env)
+        .with_process(&process)
+        .with_http(&http)
+        .with_policy_flags(policy_flags(&["--min-pnpm", "9.12.0"]));
+    let output = run_and_target(&context, &[]).unwrap().0;
+    assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
+    let header = "nvm: pnpm 9.1.0 (from /proj/.nvmrc) is not allowed by policy:";
+    assert!(output.stderr.contains(header), "{}", output.stderr);
+}
+
+#[test]
+fn use_system_checks_the_npm_beside_the_system_node() {
+    let process = npm_versions()
+        .with_run("/sys/bin/node", "--version", true, "v22.0.0\n")
+        .with_run("/sys/bin/npm", "--version", true, "10.1.0\n");
+    let path = "/sys/bin:/usr/bin:/bin";
+    let output = switch_under(&["--min-npm", "10.5.0"], path, &process, &["system"]);
+    assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
+    let header = "nvm: npm 10.1.0 (bundled with node v22.0.0) is not allowed by policy:";
+    assert!(output.stderr.contains(header), "{}", output.stderr);
 }
