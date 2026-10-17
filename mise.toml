@@ -7,6 +7,11 @@ legacy_version_file = false
 lockfile = true
 not_found_auto_install = true
 quiet = true
+# `mise run` installs every enabled-but-missing tool BEFORE a task's script
+# starts. For `setup` that happens while mise.local.toml is still stale, so
+# mise installs tools the script then hands to Homebrew. setup ends with its own
+# `mise install`; run it first on a fresh machine.
+task.run_auto_install = false
 
 [tools]
 actionlint = { version = "latest" }
@@ -27,7 +32,7 @@ yq = { version = "latest" }
 "cargo:cargo-audit" = { version = "0.22" }
 "cargo:yamllint-rs" = "latest"
 
-# aqua ships hk for darwin/arm64 but not darwin/amd64, so macOS is narrowed to
+# hk's releases ship darwin/arm64 but not darwin/amd64, so macOS is narrowed to
 # arm64 with the compound "<os>/<arch>" form — mise parses both halves, and this
 # is the whole platform gate. The separate `arch` key does NOT filter (verified:
 # arch = ["ppc64"] still resolves on an x64 host); it documents intent only.
@@ -78,9 +83,9 @@ set -eo pipefail
 # exists to guarantee. On any mismatch the pin wins and mise installs the tool.
 #
 # The candidates are every tool [tools] pins, taken from `mise ls --current
-# --json` and keyed by its short name (`aqua:hk` -> hk, `github:owner/repo` ->
-# repo); there is no hand-kept list. Versions are read back from [tools] so
-# mise.toml stays the single source of truth.
+# --json` and keyed by its short name (`cargo:cargo-audit` -> cargo-audit,
+# `github:owner/repo` -> repo); there is no hand-kept list. Versions are read
+# back from [tools] so mise.toml stays the single source of truth.
 
 root="$(git rev-parse --show-toplevel)"
 local_cfg="$root/mise.local.toml"
