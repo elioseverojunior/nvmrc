@@ -216,3 +216,41 @@ fn major_n_with_one_pinned_tool_and_no_flag_moves_it() {
     assert_eq!(output.status.code(), 0, "{}", output.stderr);
     assert_eq!(output.stdout, "node v20.11.1 -> v22.11.0");
 }
+
+#[test]
+fn a_failed_write_prints_no_change_line() {
+    let files = [("/p/.nvmrc", PINNED), ("/p/package.json", PNPM_9)];
+    let (fs, env) = project(&files, "");
+    let fs = fs.with_write_failure("/p/.nvmrc", 0);
+    let (output, upgraded) = upgrade_in(&fs, &env, &served(), &[]);
+    assert_ne!(output.status.code(), 0);
+    assert_eq!(output.stdout, "");
+    assert_eq!(upgraded, None);
+    assert_eq!(file(&fs, "/p/.nvmrc").as_deref(), Some(PINNED));
+    assert_eq!(file(&fs, "/p/package.json").as_deref(), Some(PNPM_9));
+}
+
+#[test]
+fn an_alias_node_line_is_left_alone_when_node_is_not_selected() {
+    let nvmrc = "lts/*\npnpm=9.1.0\n";
+    let (fs, env) = project(&[("/p/.nvmrc", nvmrc), ("/p/package.json", PNPM_9)], "");
+    let (output, _) = upgrade_in(&fs, &env, &served(), &["--pnpm"]);
+    assert_eq!(output.status.code(), 0, "{}", output.stderr);
+    assert_eq!(output.stdout, "pnpm 9.1.0 -> 9.12.0");
+    assert_eq!(
+        file(&fs, "/p/.nvmrc").as_deref(),
+        Some("lts/*\npnpm=9.12.0\n")
+    );
+}
+
+#[test]
+fn an_alias_node_line_is_refused_when_node_is_selected() {
+    let nvmrc = "lts/*\npnpm=9.1.0\n";
+    for args in [&[][..], &["--node"][..]] {
+        let (fs, env) = project(&[("/p/.nvmrc", nvmrc)], "");
+        let (output, _) = upgrade_in(&fs, &env, &served(), args);
+        assert_eq!(output.status.code(), 3, "{args:?}");
+        assert!(output.stderr.contains("names node as \"lts/*\""));
+        assert_eq!(file(&fs, "/p/.nvmrc").as_deref(), Some(nvmrc));
+    }
+}

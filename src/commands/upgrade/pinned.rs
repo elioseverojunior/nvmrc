@@ -47,13 +47,15 @@ pub struct Project {
     pub nvmrc: PathBuf,
     pub text: String,
     pub pinned: Vec<Pinned>,
+    /// The node line when it is not a version (`lts/*`); it cannot be
+    /// upgraded, so selecting node is refused.
+    pub alias: Option<String>,
 }
 
 /// Reads the nearest `.nvmrc` from the working directory.
 ///
 /// # Errors
-/// [`Stop`] when there is none, it cannot be read, a pin line is invalid or
-/// its node line is not a version.
+/// [`Stop`] when there is none, it cannot be read or a pin line is invalid.
 pub fn read_project(context: &Context<'_>, transcript: &mut Transcript) -> Result<Project, Stop> {
     let found = context
         .working_directory()
@@ -64,7 +66,7 @@ pub fn read_project(context: &Context<'_>, transcript: &mut Transcript) -> Resul
     };
     let text = current_nvmrc(context, &nvmrc)?;
     let pins = parse_pins(&text).map_err(|error| CliError::from(pin_error(error, &nvmrc)))?;
-    let node = node_pin(&nvmrc, &text, transcript)?;
+    let (node, alias) = node_pin(&text);
     let others = pins
         .iter()
         .map(|(tool, version)| Pinned::exact(tool, version));
@@ -73,45 +75,45 @@ pub fn read_project(context: &Context<'_>, transcript: &mut Transcript) -> Resul
         nvmrc,
         text,
         pinned,
+        alias,
     })
 }
 
-/// The bare node line; `None` when there is none. A partial version stands
-/// for the lowest release it covers.
-fn node_pin(nvmrc: &Path, text: &str, transcript: &mut Transcript) -> Result<Option<Pinned>, Stop> {
+/// The bare node line as a pin, or as an alias when it is not a version;
+/// neither when there is none. A partial version stands for the lowest
+/// release it covers.
+fn node_pin(text: &str) -> (Option<Pinned>, Option<String>) {
     let NvmrcContent::Version(line) = process_content(text) else {
-        return Ok(None);
+        return (None, None);
     };
     let pattern = line.parse::<VersionPattern>().ok();
     let Some(pattern) = pattern.filter(|pattern| pattern.flavor.is_none()) else {
-        let message = format!(
-            "nvm upgrade: {} names node as \"{line}\", not a version; \
-             use nvm init --node to pin one.",
-            nvmrc.display()
-        );
-        return Err(Stop::refuse(transcript, message, FILE_PROBLEM));
+        return (None, Some(line));
     };
     let pinned = Pinned::exact(Tool::Node, pattern.lowest());
     if pattern.minor.is_some() && pattern.patch.is_some() {
-        return Ok(Some(pinned));
+        return (Some(pinned), None);
     }
-    Ok(Some(Pinned {
+    let partial = Pinned {
         shown: line,
         exact: false,
         ..pinned
-    }))
+    };
+    (Some(partial), None)
 }
 
 /// The pinned tools `request` names, or all of them.
 ///
 /// # Errors
-/// [`Stop`] with exit 6 for a tool the `.nvmrc` does not pin, or for
+/// [`Stop`] with exit 3 for an alias node line when node is selected, exit
+/// 6 for a tool the `.nvmrc` does not pin, or for
 /// `--major=<N>` with a selection that is not exactly one tool.
 pub fn select(
     project: &Project,
     request: &UpgradeRequest,
     transcript: &mut Transcript,
 ) -> Result<Vec<Pinned>, Stop> {
+    refuse_alias(project, request, transcript)?;
     let selected: Vec<Pinned> = (project.pinned.iter())
         .filter(|pinned| request.tools.is_empty() || request.tools.contains(&pinned.tool))
         .cloned()
@@ -132,6 +134,24 @@ pub fn select(
         message,
         NvmExitCode::InvalidOptions,
     ))
+}
+
+/// Refuses a node line that is not a version when the request selects node.
+fn refuse_alias(
+    project: &Project,
+    request: &UpgradeRequest,
+    transcript: &mut Transcript,
+) -> Result<(), Stop> {
+    let selects_node = request.tools.is_empty() || request.tools.contains(&Tool::Node);
+    let Some(line) = project.alias.as_ref().filter(|_| selects_node) else {
+        return Ok(());
+    };
+    let message = format!(
+        "nvm upgrade: {} names node as \"{line}\", not a version; \
+         use nvm init --node to pin one.",
+        project.nvmrc.display()
+    );
+    Err(Stop::refuse(transcript, message, FILE_PROBLEM))
 }
 
 fn not_pinned(nvmrc: &Path, tool: Tool) -> String {

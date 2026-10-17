@@ -26,7 +26,8 @@ pub enum Upgraded {
 }
 
 /// Moves the tools `request` selects to their targets, printing each change
-/// and each tool up to date in node, npm, yarn, pnpm order.
+/// and each tool up to date in node, npm, yarn, pnpm order once the files
+/// are written.
 ///
 /// # Errors
 /// [`Stop`] for a missing or invalid `.nvmrc` (exit 3), a selection that
@@ -52,11 +53,15 @@ pub fn upgrade(
         planned.push((pinned, found));
     }
     refuse_missing(&project.nvmrc, &planned, transcript)?;
-    let moves = changes(&planned, transcript);
-    if moves.is_empty() {
-        return Ok(Upgraded::Nothing);
-    }
-    write(context, project, &moves, transcript)
+    let (lines, moves) = changes(&planned);
+    let upgraded = if moves.is_empty() {
+        Upgraded::Nothing
+    } else {
+        write(context, project, &moves, transcript)?
+    };
+    // Reported only once the files are as the lines say.
+    lines.into_iter().for_each(|line| transcript.out(line));
+    Ok(upgraded)
 }
 
 /// Prints the block of every tool without a target and stops with exit 7
@@ -113,23 +118,23 @@ fn hint(name: &str, lowest: Option<u64>) -> String {
     }
 }
 
-/// Prints each change and each tool up to date; the changes.
-fn changes(planned: &[(Pinned, Target)], transcript: &mut Transcript) -> Vec<(Tool, Version)> {
-    let mut moves = Vec::new();
+/// The line for each change and each tool up to date; the changes.
+fn changes(planned: &[(Pinned, Target)]) -> (Vec<String>, Vec<(Tool, Version)>) {
+    let (mut lines, mut moves) = (Vec::new(), Vec::new());
     for (pinned, found) in planned {
         let (tool, shown) = (pinned.tool, &pinned.shown);
         let Some(version) = moved_to(pinned, found) else {
-            transcript.out(format!("{} {shown} is up to date", tool.name()));
+            lines.push(format!("{} {shown} is up to date", tool.name()));
             continue;
         };
-        transcript.out(format!(
+        lines.push(format!(
             "{} {shown} -> {}",
             tool.name(),
             tool.show(&version)
         ));
         moves.push((tool, version));
     }
-    moves
+    (lines, moves)
 }
 
 /// Where `pinned` moves; a partial node line on its target still becomes
