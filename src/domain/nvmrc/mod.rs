@@ -72,12 +72,7 @@ fn file_in(directory: &str, file_name: &str) -> PathBuf {
 /// pair, ignored unless its key is `node` or repeated (both invalid).
 #[must_use]
 pub fn process_content(contents: &str) -> NvmrcContent {
-    let parsed: Vec<String> = contents
-        .split('\n')
-        .map(|line| trim_space(line.split('#').next().unwrap_or("")))
-        .filter(|line| !line.is_empty())
-        .map(str::to_owned)
-        .collect();
+    let parsed: Vec<String> = content_lines(contents).map(str::to_owned).collect();
     match pick_bare_line(&parsed) {
         Some(version) => NvmrcContent::Version(version),
         None => NvmrcContent::Invalid { parsed },
@@ -101,6 +96,15 @@ fn pick_bare_line(lines: &[String]) -> Option<String> {
         }
     }
     bare.cloned()
+}
+
+/// The lines `.nvmrc` rules look at: `#` comments removed, surrounding
+/// `[[:space:]]` trimmed, empty lines dropped.
+fn content_lines(contents: &str) -> impl Iterator<Item = &str> {
+    contents
+        .split('\n')
+        .map(|line| trim_space(line.split('#').next().unwrap_or("")))
+        .filter(|line| !line.is_empty())
 }
 
 fn trim_space(text: &str) -> &str {
@@ -134,5 +138,8 @@ pub fn colored_invalid_message(parsed: &[String]) -> String {
     )
 }
 
+pub mod pins;
+#[cfg(test)]
+mod pins_tests;
 #[cfg(test)]
 mod tests;

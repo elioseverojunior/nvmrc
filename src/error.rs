@@ -117,6 +117,39 @@ pub enum PolicyError {
     SystemVersionUnreadable,
 }
 
+/// A pin in `.nvmrc`, or the `package.json` beside it, that cannot be used.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum PinsError {
+    #[error("nvm: {nvmrc}: '{line}' is not an exact version (major.minor.patch).")]
+    NotExact { nvmrc: String, line: String },
+    #[error("nvm: {nvmrc} pins both yarn and pnpm; pin at most one.")]
+    YarnAndPnpm { nvmrc: String },
+    #[error(
+        "nvm: {package_json} has no packageManager; set it to \"{expected}\" to match {nvmrc}."
+    )]
+    MissingPackageManager {
+        package_json: String,
+        nvmrc: String,
+        expected: String,
+    },
+    #[error(
+        "nvm: {package_json} has packageManager \"{found}\", but {nvmrc} pins {tool} {version}; set it to \"{expected}\"."
+    )]
+    DifferentPackageManager {
+        package_json: String,
+        nvmrc: String,
+        found: String,
+        tool: String,
+        version: String,
+        expected: String,
+    },
+    #[error("nvm: {package_json} cannot be read as JSON: {reason}")]
+    UnreadablePackageJson {
+        package_json: String,
+        reason: String,
+    },
+}
+
 #[derive(Debug, Error)]
 pub enum CliError {
     #[error(transparent)]
@@ -127,6 +160,9 @@ pub enum CliError {
     Alias(#[from] AliasError),
     #[error(transparent)]
     Policy(#[from] PolicyError),
+    /// Boxed: the variants of [`PinsError`] are large.
+    #[error(transparent)]
+    Pins(Box<PinsError>),
     #[error(transparent)]
     Shell(#[from] ShellError),
     #[error("N/A")]
@@ -161,6 +197,12 @@ pub enum CliError {
     },
 }
 
+impl From<PinsError> for CliError {
+    fn from(error: PinsError) -> Self {
+        Self::Pins(Box::new(error))
+    }
+}
+
 impl CliError {
     /// A [`CliError::Io`] for a failed operation on `path`, keeping the
     /// underlying error as its source.
@@ -175,7 +217,7 @@ impl CliError {
     #[must_use]
     pub fn exit_code(&self) -> NvmExitCode {
         match self {
-            Self::Version(_) | Self::NotInstalled => NvmExitCode::InvalidVersion,
+            Self::Version(_) | Self::Pins(_) | Self::NotInstalled => NvmExitCode::InvalidVersion,
             Self::NvmDirUnresolved
             | Self::NotText(_)
             | Self::VersionNotInstalled(_)
@@ -240,6 +282,13 @@ mod tests {
             (AliasError::Loop("a".into()).into(), NvmExitCode::AliasLoop),
             (
                 VersionError::Invalid("x".into()).into(),
+                NvmExitCode::InvalidVersion,
+            ),
+            (
+                PinsError::YarnAndPnpm {
+                    nvmrc: "/p/.nvmrc".into(),
+                }
+                .into(),
                 NvmExitCode::InvalidVersion,
             ),
             (

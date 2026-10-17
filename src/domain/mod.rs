@@ -16,6 +16,7 @@ pub mod migration;
 pub mod mirror;
 pub mod npm;
 pub mod nvmrc;
+pub mod package_json;
 pub mod path_edit;
 pub mod path_search;
 pub mod platform;
