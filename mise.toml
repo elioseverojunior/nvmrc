@@ -359,7 +359,7 @@ set -Eeuo pipefail
 
 [ "${usage_verbose:-false}" = "true" ] && set -x
 
-hadolint Dockerfile Dockerfile.release
+hadolint Dockerfile Dockerfile.tests
 '''
 shell = "bash -c"
 usage = '''
@@ -507,7 +507,7 @@ set -Eeuo pipefail
 
 [ "${usage_verbose:-false}" = "true" ] && set -x
 
-docker buildx build -f Dockerfile -t nvmrc:trixie .
+docker buildx build -f Dockerfile.tests -t nvmrc:trixie .
 
 '''
 shell = "bash -c"
@@ -930,7 +930,7 @@ set -Eeuo pipefail
 
 arch="${usage_arch:?}"
 docker buildx build --quiet --platform "linux/$arch" --load \
-  -t "nvmrc:smoke-$arch" -f Dockerfile.release target/image >/dev/null
+  -t "nvmrc:smoke-$arch" -f Dockerfile target/image >/dev/null
 mise run release:image:run --image "nvmrc:smoke-$arch" --arch "$arch"
 '''
 shell = "bash -c"

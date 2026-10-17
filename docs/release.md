@@ -109,7 +109,7 @@ Nothing a previous run left can reach a signed archive. Checkouts set
 `persist-credentials: false`, except the tap checkout, which pushes.
 
 The image's CA certificates come from `alpine:3.24.2`, pinned by version
-tag in `Dockerfile.release`: a newer Alpine is a reviewed bump, not a
+tag in `Dockerfile`: a newer Alpine is a reviewed bump, not a
 silent change. The digest is not pinned, so a rebuilt tag is taken as is;
 instead the release job runs the image it pushed, by digest, before it
 signs and attests that digest (in a public repository). Builds are not
