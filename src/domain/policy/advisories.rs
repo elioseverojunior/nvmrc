@@ -84,6 +84,7 @@ fn parse_range(text: &str) -> Result<Range, String> {
 }
 
 /// A severity the index does not give is read as high, never as harmless.
+/// `none` is a limit, not an index level, so it cannot be understood here.
 fn parse_severity(text: Option<&str>) -> Result<Severity, String> {
     match text {
         None | Some("unknown") => Ok(Severity::High),
@@ -91,7 +92,6 @@ fn parse_severity(text: Option<&str>) -> Result<Severity, String> {
         Some("high") => Ok(Severity::High),
         Some("medium") => Ok(Severity::Medium),
         Some("low") => Ok(Severity::Low),
-        Some("none") => Ok(Severity::None),
         Some(other) => Err(format!("severity {other:?}")),
     }
 }

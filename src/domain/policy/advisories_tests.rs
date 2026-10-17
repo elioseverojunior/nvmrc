@@ -116,6 +116,14 @@ fn anything_else_is_a_failure_to_know() {
 }
 
 #[test]
+fn a_none_severity_in_the_index_is_a_failure_to_know() {
+    assert!(matches!(
+        parse_advisories(&entry_with(r#""severity": "none""#)),
+        Err(IndexError::BadEntry { .. })
+    ));
+}
+
+#[test]
 fn an_empty_patched_range_means_no_fix() {
     let text = entry_with(r#""patched": """#);
     assert!(parse_advisories(&text).unwrap()[0].patched.is_none());
