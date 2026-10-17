@@ -83,18 +83,21 @@ pub fn new_package_json(
         Err(_) => None,
     };
     let field = package_manager_field(*tool, version);
-    let text = set_package_manager(&original, &field).map_err(|error| {
-        CliError::from(PinsError::UnreadablePackageJson {
-            package_json: path.display().to_string(),
-            reason: error.to_string(),
-        })
-    })?;
+    let text = set_package_manager(&original, &field).map_err(|error| unreadable(path, &error))?;
     Ok(Some(PackageEdit {
         original,
         text,
         field,
         previous,
     }))
+}
+
+/// The `package.json` at `path` cannot be read as a JSON object.
+fn unreadable(path: &Path, error: &PackageManagerError) -> CliError {
+    CliError::from(PinsError::UnreadablePackageJson {
+        package_json: path.display().to_string(),
+        reason: error.to_string(),
+    })
 }
 
 impl PackageEdit {
