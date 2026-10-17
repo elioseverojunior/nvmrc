@@ -33,28 +33,36 @@ pub enum NvmrcContent {
     Invalid { parsed: Vec<String> },
 }
 
-/// `nvm_find_nvmrc`: the nearest `.nvmrc` regular file, looking in `start`
-/// (the logical `PWD` string, never canonicalised) and then each parent.
+/// `nvm_find_nvmrc`: the nearest `.nvmrc` regular file; see [`find_up`].
+#[must_use]
+pub fn find_nvmrc(fs: &dyn FileSystem, start: &Path) -> Option<PathBuf> {
+    find_up(fs, start, NVMRC_FILE_NAME)
+}
+
+/// `nvm_find_up`: the nearest regular file called `file_name`, looking in
+/// `start` (the logical `PWD` string, never canonicalised) and then each
+/// parent.
 ///
 /// Like `nvm_find_up`, the walk stops when the path becomes empty, so the
 /// filesystem root is not part of it. Nothing found leaves the directory
-/// empty, and nvm.sh then retries `/.nvmrc` with `[ -e ]`; here that is
-/// `file_info(..).is_ok()`, so a directory named `/.nvmrc` also counts.
+/// empty, and nvm.sh then retries `/<file_name>` with `[ -e ]`; here that is
+/// `file_info(..).is_ok()`, so a directory of that name at the root also
+/// counts.
 #[must_use]
-pub fn find_nvmrc(fs: &dyn FileSystem, start: &Path) -> Option<PathBuf> {
+pub fn find_up(fs: &dyn FileSystem, start: &Path, file_name: &str) -> Option<PathBuf> {
     let mut directory = start.to_string_lossy().into_owned();
     while !directory.is_empty() && directory != "." {
-        if fs.is_file(&nvmrc_in(&directory)) {
+        if fs.is_file(&file_in(&directory, file_name)) {
             break;
         }
         directory.truncate(directory.rfind('/').unwrap_or(0));
     }
-    let candidate = nvmrc_in(&directory);
+    let candidate = file_in(&directory, file_name);
     fs.file_info(&candidate).is_ok().then_some(candidate)
 }
 
-fn nvmrc_in(directory: &str) -> PathBuf {
-    PathBuf::from(format!("{directory}/{NVMRC_FILE_NAME}"))
+fn file_in(directory: &str, file_name: &str) -> PathBuf {
+    PathBuf::from(format!("{directory}/{file_name}"))
 }
 
 /// `nvm_process_nvmrc_content`: strips `#` comments, trims `[[:space:]]`

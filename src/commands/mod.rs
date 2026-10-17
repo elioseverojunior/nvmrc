@@ -17,6 +17,7 @@ pub mod migrate;
 pub mod npm;
 pub mod nvm_exec;
 pub mod nvmrc_file;
+pub mod policy;
 pub mod rc_version;
 pub mod reinstall_packages;
 pub mod remote_index;

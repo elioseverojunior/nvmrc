@@ -38,6 +38,8 @@ pub enum NvmExitCode {
     /// The status of a program that `nvm` ran and passes on, such as the
     /// third-party install hook.
     Passed(u8),
+    /// The policy could not be read, or is not valid: nothing can be checked.
+    PolicyUnverifiable,
 }
 
 impl NvmExitCode {
@@ -53,6 +55,7 @@ impl NvmExitCode {
             Self::InvalidOptions => 6,
             Self::BelowVersionFloor => 7,
             Self::AliasLoop => 8,
+            Self::PolicyUnverifiable => 9,
             Self::IncompatiblePrefix => 11,
             Self::HookClaimedSuccess => 33,
             Self::UnsupportedOption => 55,
@@ -94,6 +97,20 @@ pub enum AliasError {
     Loop(String),
 }
 
+/// Why the policy cannot be checked; a policy that cannot be known is never
+/// taken as permissive.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum PolicyError {
+    #[error("nvm: cannot check the policy: {0} is not an https location.")]
+    InsecureUrl(String),
+    #[error("nvm: cannot check the policy: {location} cannot be read: {reason}")]
+    Unreadable { location: String, reason: String },
+    #[error("nvm: cannot check the policy: {location} is not valid: {reason}")]
+    Invalid { location: String, reason: String },
+    #[error("nvm: cannot check the policy: the release information is unavailable: {0}")]
+    ReleaseInfoUnavailable(String),
+}
+
 #[derive(Debug, Error)]
 pub enum CliError {
     #[error(transparent)]
@@ -102,6 +119,8 @@ pub enum CliError {
     Floor(#[from] FloorError),
     #[error(transparent)]
     Alias(#[from] AliasError),
+    #[error(transparent)]
+    Policy(#[from] PolicyError),
     #[error(transparent)]
     Shell(#[from] ShellError),
     #[error("N/A")]
@@ -162,6 +181,7 @@ impl CliError {
             Self::InvalidOptions(_) => NvmExitCode::InvalidOptions,
             Self::Floor(_) => NvmExitCode::BelowVersionFloor,
             Self::Alias(_) => NvmExitCode::AliasLoop,
+            Self::Policy(_) => NvmExitCode::PolicyUnverifiable,
         }
     }
 }
@@ -176,6 +196,7 @@ mod tests {
         assert_eq!(NvmExitCode::InvalidVersion.code(), 3);
         assert_eq!(NvmExitCode::BelowVersionFloor.code(), 7);
         assert_eq!(NvmExitCode::AliasLoop.code(), 8);
+        assert_eq!(NvmExitCode::PolicyUnverifiable.code(), 9);
         assert_eq!(NvmExitCode::IncompatiblePrefix.code(), 11);
         assert_eq!(NvmExitCode::MissingTarget.code(), 2);
         assert_eq!(NvmExitCode::SameVersion.code(), 4);
