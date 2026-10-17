@@ -161,5 +161,6 @@ fn an_advisory_failure_to_know_warns_and_passes() {
     let context = Context::new(&fs, &env).with_http(&http).advisory();
     let (gate, stderr) = run(&context, &argument("v20.15.1"));
     assert!(matches!(gate, Ok(Gate::Pass)));
-    assert!(stderr.starts_with("nvm: warning: nvm: cannot check the policy:"));
+    assert!(stderr.starts_with("nvm: warning: cannot check the policy:"));
+    assert!(!stderr.contains("nvm: warning: nvm:"));
 }

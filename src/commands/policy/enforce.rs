@@ -51,7 +51,9 @@ pub fn enforce_node(
 ) -> Result<Gate, CliError> {
     match check(context, requested, transcript) {
         Err(error) if context.is_advisory() => {
-            transcript.err(format!("nvm: warning: {error}"));
+            let text = error.to_string();
+            let text = text.trim_start_matches("nvm: ");
+            transcript.err(format!("nvm: warning: {text}"));
             Ok(Gate::Pass)
         }
         Err(error) => Err(error.into()),
