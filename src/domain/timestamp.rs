@@ -19,13 +19,20 @@ pub fn compact_utc(unix_seconds: i64) -> String {
 /// a real calendar date.
 #[must_use]
 pub fn days_from_iso_date(text: &str) -> Option<i64> {
-    let mut parts = text.split('-');
-    let year: i64 = parts.next()?.parse().ok()?;
-    let month: i64 = parts.next()?.parse().ok()?;
-    let day: i64 = parts.next()?.parse().ok()?;
-    if parts.next().is_some() {
+    let bytes = text.as_bytes();
+    let shaped = bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit());
+    if !shaped {
         return None;
     }
+    let year: i64 = text[..4].parse().ok()?;
+    let month: i64 = text[5..7].parse().ok()?;
+    let day: i64 = text[8..].parse().ok()?;
     let days = days_from_civil(year, month, day);
     (civil_from_days(days) == (year, month, day)).then_some(days)
 }
@@ -71,6 +78,21 @@ mod tests {
         assert_eq!(days_from_iso_date("2024-02-29"), Some(19_782));
         assert_eq!(days_from_iso_date("2024-02-30"), None);
         assert_eq!(days_from_iso_date("-"), None);
+    }
+
+    #[test]
+    fn only_the_exact_iso_shape_is_a_date() {
+        for text in [
+            "9223372036854775807-01-01",
+            "2024-2-3",
+            "+2024-01-01",
+            "2024-13-01",
+            "2024-00-10",
+            "2024-01-01x",
+            "２０２４-01-01",
+        ] {
+            assert_eq!(days_from_iso_date(text), None, "{text}");
+        }
     }
 
     #[test]
