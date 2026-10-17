@@ -22,18 +22,19 @@ pub struct ProjectPins {
 
 /// The pins of the nearest `.nvmrc` from the working directory (none: no
 /// pins), with the `package.json` beside it checked when yarn or pnpm is
-/// pinned.
-pub fn read(context: &Context<'_>) -> Result<ProjectPins, CliError> {
+/// pinned. An `.nvmrc` that cannot be read is a warning and no pins: the
+/// tools in effect fall back to the bundled npm, which the policy still
+/// checks.
+pub fn read(context: &Context<'_>, transcript: &mut Transcript) -> Result<ProjectPins, CliError> {
     let nvmrc = context
         .working_directory()
         .and_then(|directory| find_nvmrc(context.fs, &directory));
     let Some(nvmrc) = nvmrc else {
         return Ok(ProjectPins::default());
     };
-    let contents = context
-        .fs
-        .read_to_string(&nvmrc)
-        .map_err(|source| CliError::io(&nvmrc, source))?;
+    let Some(contents) = contents_of(context, &nvmrc, transcript) else {
+        return Ok(ProjectPins::default());
+    };
     let pins = parse_pins(&contents).map_err(|error| pin_error(error, &nvmrc))?;
     if let Some((tool, version)) = pins.package_manager() {
         check_beside(context, &nvmrc, tool, &version)?;
@@ -44,13 +45,25 @@ pub fn read(context: &Context<'_>) -> Result<ProjectPins, CliError> {
     })
 }
 
+/// The text of `nvmrc`; `None`, after a warning, when it cannot be read.
+fn contents_of(context: &Context<'_>, nvmrc: &Path, transcript: &mut Transcript) -> Option<String> {
+    context
+        .fs
+        .read_to_string(nvmrc)
+        .map_err(|error| {
+            let path = nvmrc.display();
+            transcript.err(format!("nvm: warning: {path} cannot be read: {error}"));
+        })
+        .ok()
+}
+
 /// Like [`read`], but in an advisory context an error is a warning and the
 /// result is empty.
 pub fn read_for(
     context: &Context<'_>,
     transcript: &mut Transcript,
 ) -> Result<ProjectPins, CliError> {
-    match read(context) {
+    match read(context, transcript) {
         Err(error) if context.is_advisory() => {
             let message = error.to_string();
             let text = message.strip_prefix("nvm: ").unwrap_or(&message);
@@ -137,7 +150,7 @@ mod tests {
     #[test]
     fn no_nvmrc_means_no_pins() {
         let (fs, env) = (FakeFileSystem::default(), env());
-        let found = read(&Context::new(&fs, &env)).unwrap();
+        let found = read(&Context::new(&fs, &env), &mut Transcript::default()).unwrap();
         assert_eq!(found, ProjectPins::default());
     }
 
@@ -145,7 +158,7 @@ mod tests {
     fn no_package_json_passes() {
         let fs = FakeFileSystem::default().with_file("/p/.nvmrc", "20\npnpm=9.12.0\n");
         let env = env();
-        let found = read(&Context::new(&fs, &env)).unwrap();
+        let found = read(&Context::new(&fs, &env), &mut Transcript::default()).unwrap();
         assert_eq!(found.nvmrc, Some(PathBuf::from("/p/.nvmrc")));
         assert!(found.pins.pnpm.is_some());
     }
@@ -156,7 +169,7 @@ mod tests {
             .with_file("/p/.nvmrc", "yarn=4.5.1\n")
             .with_file("/p/package.json", r#"{"packageManager": "yarn@4.5.0"}"#);
         let env = env();
-        let error = read(&Context::new(&fs, &env)).unwrap_err();
+        let error = read(&Context::new(&fs, &env), &mut Transcript::default()).unwrap_err();
         assert_eq!(error.exit_code(), NvmExitCode::InvalidVersion);
         assert_eq!(
             error.to_string(),
@@ -199,7 +212,9 @@ mod tests {
             if let Some(text) = package_json {
                 fs = fs.with_file("/p/package.json", text);
             }
-            let message = read(&Context::new(&fs, &env)).unwrap_err().to_string();
+            let message = read(&Context::new(&fs, &env), &mut Transcript::default())
+                .unwrap_err()
+                .to_string();
             assert!(message.starts_with(expected), "{message}");
         }
     }
@@ -218,5 +233,18 @@ mod tests {
         );
         let strict = Context::new(&fs, &env);
         assert!(read_for(&strict, &mut Transcript::default()).is_err());
+    }
+
+    #[test]
+    fn an_unreadable_nvmrc_is_a_warning_and_no_pins() {
+        let fs = FakeFileSystem::default().with_bytes("/p/.nvmrc", &[0xff, b'\n']);
+        let env = env();
+        let mut transcript = Transcript::default();
+        let found = read_for(&Context::new(&fs, &env), &mut transcript).unwrap();
+        assert_eq!(found, ProjectPins::default());
+        assert_eq!(
+            transcript.finish(NvmExitCode::Success).stderr,
+            "nvm: warning: /p/.nvmrc cannot be read: stream did not contain valid UTF-8"
+        );
     }
 }

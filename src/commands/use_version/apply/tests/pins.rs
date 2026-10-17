@@ -50,6 +50,17 @@ fn now_using_shows_the_pinned_npm() {
 }
 
 #[test]
+fn an_unreadable_nvmrc_warns_and_use_switches_without_pins() {
+    let fs = lab().with_bytes("/proj/.nvmrc", &[0xff, b'\n']);
+    let output = use_in(&fs, &env_on(BASE_PATH), &npm_versions(), &["20"]);
+    assert_eq!(output.status, NvmExitCode::Success);
+    let text = "nvm: warning: /proj/.nvmrc cannot be read: stream did not contain valid UTF-8";
+    assert_eq!(output.stderr, text);
+    let expected = format!("export PATH='{N20}/bin:{BASE_PATH}'\n{HASH}");
+    assert!(output.script.render().starts_with(&expected));
+}
+
+#[test]
 fn use_system_adds_no_pins() {
     let nvmrc = lab().with_file("/proj/.nvmrc", "system\npnpm=9.12.0\n");
     let fs = with_tool(nvmrc, "pnpm", "9.12.0").with_executable("/sys/bin/node", "");
