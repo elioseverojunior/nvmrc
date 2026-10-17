@@ -6,7 +6,8 @@
 //! here every argument after the subcommand reaches `node`.
 
 use crate::commands::Output;
-use crate::commands::exec::{fallback_warning, run_after};
+use crate::commands::exec::{fallback_warning, run_after_from};
+use crate::commands::policy::enforce::Origin;
 use crate::commands::rc_version::{RcVersion, rc_version};
 use crate::commands::transcript::Transcript;
 use crate::commands::use_version::target::lookup::{Resolution, ensure_installed, nvm_version};
@@ -29,7 +30,7 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
     let mut transcript = Transcript::default();
     match plan(context, &options, &mut transcript)? {
         Plan::Stop(status) => Ok(transcript.finish(status)),
-        Plan::Exec(exec_args) => run_after(context, &exec_args, transcript),
+        Plan::Exec(exec_args, origin) => run_after_from(context, &exec_args, transcript, origin),
     }
 }
 
@@ -65,7 +66,7 @@ fn parse(args: &[String]) -> Options {
 enum Plan {
     Stop(NvmExitCode),
     /// The arguments of the `nvm exec` to hand over to.
-    Exec(Vec<String>),
+    Exec(Vec<String>, Option<Origin>),
 }
 
 fn plan(
@@ -74,7 +75,8 @@ fn plan(
     transcript: &mut Transcript,
 ) -> Result<Plan, CliError> {
     if let Some(lts) = &options.lts {
-        return Ok(exec(options, format!("--lts={lts}"), "node", &options.rest));
+        let lead = format!("--lts={lts}");
+        return Ok(exec(options, lead, "node", &options.rest, None));
     }
     let Some((first, rest)) = options.rest.split_first() else {
         return alone(context, options, transcript);
@@ -84,7 +86,7 @@ fn plan(
         return given(context, first, &resolution, (options, rest), transcript);
     }
     // `IS_VERSION_FROM_NVMRC=1` even for the active-version fallback.
-    let provided = rc_or_current(context, options.silent, transcript)?;
+    let (provided, origin) = rc_or_current(context, options.silent, transcript)?;
     let resolution = nvm_version(context, &provided)?;
     if resolution == Resolution::NotAvailable {
         ensure_installed(context, &provided, true, transcript)?;
@@ -95,6 +97,7 @@ fn plan(
         resolution.text(),
         program(&resolution),
         &options.rest,
+        Some(origin),
     ))
 }
 
@@ -110,7 +113,13 @@ fn given(
         ensure_installed(context, provided, false, transcript)?;
         return Ok(Plan::Stop(NvmExitCode::Failure));
     }
-    Ok(exec(options, resolution.text(), program(resolution), rest))
+    Ok(exec(
+        options,
+        resolution.text(),
+        program(resolution),
+        rest,
+        None,
+    ))
 }
 
 /// No argument: the `.nvmrc` version, or the usage and 127.
@@ -119,10 +128,12 @@ fn alone(
     options: &Options,
     transcript: &mut Transcript,
 ) -> Result<Plan, CliError> {
-    if let RcVersion::Found { version, .. } = rc_version(context, options.silent, transcript) {
+    if let RcVersion::Found { path, version } = rc_version(context, options.silent, transcript) {
         let resolution = nvm_version(context, &version)?;
         if resolution != Resolution::NotAvailable {
-            return Ok(exec(options, resolution.text(), program(&resolution), &[]));
+            let origin = Some(Origin::Nvmrc(path));
+            let program = program(&resolution);
+            return Ok(exec(options, resolution.text(), program, &[], origin));
         }
     }
     USAGE.into_iter().for_each(|line| transcript.err(line));
@@ -135,16 +146,16 @@ fn rc_or_current(
     context: &Context<'_>,
     silent: bool,
     transcript: &mut Transcript,
-) -> Result<String, CliError> {
-    if let RcVersion::Found { version, .. } = rc_version(context, silent, transcript) {
-        return Ok(version);
+) -> Result<(String, Origin), CliError> {
+    if let RcVersion::Found { path, version } = rc_version(context, silent, transcript) {
+        return Ok((version, Origin::Nvmrc(path)));
     }
     if !silent {
         fallback_warning("run")
             .into_iter()
             .for_each(|line| transcript.err(line));
     }
-    Ok(nvm_version(context, "current")?.text())
+    Ok((nvm_version(context, "current")?.text(), Origin::Active))
 }
 
 fn program(resolution: &Resolution) -> &'static str {
@@ -157,16 +168,21 @@ fn program(resolution: &Resolution) -> &'static str {
 
 /// `nvm exec [--silent] <lead> <program> <rest>`, where `lead` is the
 /// version or `--lts=<name>`.
-fn exec(options: &Options, lead: String, program: &str, rest: &[String]) -> Plan {
+fn exec(
+    options: &Options,
+    lead: String,
+    program: &str,
+    rest: &[String],
+    origin: Option<Origin>,
+) -> Plan {
     let silent = options.silent.then(|| "--silent".to_owned());
     let words = [lead, program.to_owned()];
-    Plan::Exec(
-        silent
-            .into_iter()
-            .chain(words)
-            .chain(rest.iter().cloned())
-            .collect(),
-    )
+    let args = silent
+        .into_iter()
+        .chain(words)
+        .chain(rest.iter().cloned())
+        .collect();
+    Plan::Exec(args, origin)
 }
 
 #[cfg(test)]

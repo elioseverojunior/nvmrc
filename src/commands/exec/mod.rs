@@ -12,6 +12,7 @@ mod options;
 mod select;
 
 use crate::commands::Output;
+use crate::commands::policy::enforce::Origin;
 use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::error::CliError;
@@ -32,7 +33,21 @@ pub fn run(context: &Context<'_>, args: &[String]) -> Result<Output, CliError> {
 pub fn run_after(
     context: &Context<'_>,
     args: &[String],
+    transcript: Transcript,
+) -> Result<Output, CliError> {
+    run_after_from(context, args, transcript, None)
+}
+
+/// [`run_after`], with the policy origin of the version when the caller
+/// already resolved it (`nvm run` hands over the version it picked).
+///
+/// # Errors
+/// As [`run`].
+pub fn run_after_from(
+    context: &Context<'_>,
+    args: &[String],
     mut transcript: Transcript,
+    origin: Option<Origin>,
 ) -> Result<Output, CliError> {
     let options = match options::parse(args) {
         Ok(options) => options,
@@ -41,7 +56,10 @@ pub fn run_after(
             return Ok(transcript.finish(error.exit_code()));
         }
     };
-    let selection = select::select(context, &options, &mut transcript)?;
+    let mut selection = select::select(context, &options, &mut transcript)?;
+    if let Some(origin) = origin {
+        selection.origin = origin;
+    }
     launch::launch(context, &options, selection, transcript)
 }
 

@@ -97,3 +97,40 @@ fn use_system_without_a_policy_never_asks_the_system_node() {
     let output = switch_under(&[], "/sys/bin:/usr/bin:/bin", &npm_versions(), &["system"]);
     assert_eq!(output.status, NvmExitCode::Success);
 }
+
+#[test]
+fn use_from_an_nvmrc_names_the_file_in_the_message() {
+    let (fs, env, process) = (
+        lab().with_file("/proj/.nvmrc", "20\n"),
+        env_on(BASE_PATH),
+        npm_versions(),
+    );
+    let context = Context::new(&fs, &env)
+        .with_process(&process)
+        .with_policy_flags(policy_flags(&["--min-node", "22"]));
+    let output = run_and_target(&context, &[]).unwrap().0;
+    assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
+    let header = "node v20.11.1 (from /proj/.nvmrc) is not allowed by policy:";
+    assert!(output.stderr.contains(header), "{}", output.stderr);
+}
+
+#[test]
+fn an_unresolvable_nvm_dir_is_a_warning_on_an_automatic_path() {
+    use crate::commands::policy::enforce::Gate;
+    use crate::commands::policy::gate::gate_system;
+    use crate::commands::transcript::Transcript;
+    use crate::error::CliError;
+    let (fs, env) = (lab(), crate::fakes::FakeEnv::default());
+    let flags = policy_flags(&["--min-node", "20"]);
+    let base = Context::new(&fs, &env).with_policy_flags(flags);
+    let explicit = gate_system(&base, &mut Transcript::default());
+    assert!(
+        matches!(explicit, Err(CliError::NvmDirUnresolved)),
+        "{explicit:?}"
+    );
+    let mut transcript = Transcript::default();
+    let automatic = gate_system(&base.clone().advisory(), &mut transcript);
+    assert!(matches!(automatic, Ok(Gate::Pass)), "{automatic:?}");
+    let stderr = transcript.finish(NvmExitCode::Success).stderr;
+    assert!(stderr.starts_with("nvm: warning:"), "{stderr}");
+}

@@ -3,6 +3,7 @@
 
 use super::fallback_warning;
 use super::options::Options;
+use crate::commands::policy::enforce::Origin;
 use crate::commands::rc_version::{RcVersion, rc_version};
 use crate::commands::transcript::Transcript;
 use crate::commands::use_version::target::lookup::{Resolution, nvm_version};
@@ -19,6 +20,8 @@ pub(super) struct Selection {
     /// `NODE_VERSION`: resolved, or `lts/<name>` as given.
     pub version: String,
     pub command: Vec<String>,
+    /// Where the version came from, for the policy messages.
+    pub origin: Origin,
 }
 
 pub(super) fn select(
@@ -33,6 +36,7 @@ pub(super) fn select(
             version: provided.clone(),
             provided,
             command,
+            origin: Origin::Argument,
         });
     }
     if let Some(selection) = from_first_word(context, options, transcript)? {
@@ -44,7 +48,12 @@ pub(super) fn select(
             .for_each(|line| transcript.err(line));
     }
     let resolution = nvm_version(context, "current")?;
-    Ok(selection("current".to_owned(), &resolution, command))
+    Ok(selection(
+        "current".to_owned(),
+        &resolution,
+        command,
+        Origin::Active,
+    ))
 }
 
 /// The first word when it resolves or looks like a version; otherwise it
@@ -59,17 +68,33 @@ fn from_first_word(
     };
     let resolution = nvm_version(context, first)?;
     if resolution != Resolution::NotAvailable || is_valid_version(first) {
-        return Ok(Some(selection(first.clone(), &resolution, rest.to_vec())));
+        return Ok(Some(selection(
+            first.clone(),
+            &resolution,
+            rest.to_vec(),
+            Origin::Argument,
+        )));
     }
-    let RcVersion::Found { version, .. } = rc_version(context, options.silent, transcript) else {
+    let RcVersion::Found { path, version } = rc_version(context, options.silent, transcript) else {
         return Ok(None);
     };
     let resolution = nvm_version(context, &version)?;
-    Ok(Some(selection(version, &resolution, options.rest.clone())))
+    Ok(Some(selection(
+        version,
+        &resolution,
+        options.rest.clone(),
+        Origin::Nvmrc(path),
+    )))
 }
 
-fn selection(provided: String, resolution: &Resolution, command: Vec<String>) -> Selection {
+fn selection(
+    provided: String,
+    resolution: &Resolution,
+    command: Vec<String>,
+    origin: Origin,
+) -> Selection {
     Selection {
+        origin,
         provided,
         version: resolution.text(),
         command,

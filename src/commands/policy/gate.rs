@@ -54,17 +54,29 @@ pub fn gate_system(context: &Context<'_>, transcript: &mut Transcript) -> Result
     if !policy_mode_requested(context) {
         return Ok(Gate::Pass);
     }
-    let version = system_version(context)?.and_then(|text| text.parse::<Version>().ok());
+    let version = match system_version(context) {
+        Ok(text) => text.and_then(|text| text.parse::<Version>().ok()),
+        Err(error) => return unknown_system(context, error, transcript),
+    };
     match version {
         Some(version) => gate_installed(context, &version, Origin::System, transcript),
-        None => unknown_system(context, transcript),
+        None => unknown_system(context, unreadable(), transcript),
     }
 }
 
-fn unknown_system(context: &Context<'_>, transcript: &mut Transcript) -> Result<Gate, CliError> {
-    let error = CliError::Policy(PolicyError::ReleaseInfoUnavailable(
+fn unreadable() -> CliError {
+    CliError::Policy(PolicyError::ReleaseInfoUnavailable(
         SYSTEM_VERSION.to_owned(),
-    ));
+    ))
+}
+
+/// The system version could not be known: an error, or in an advisory
+/// context a warning and a pass.
+fn unknown_system(
+    context: &Context<'_>,
+    error: CliError,
+    transcript: &mut Transcript,
+) -> Result<Gate, CliError> {
     if !context.is_advisory() {
         return Err(error);
     }

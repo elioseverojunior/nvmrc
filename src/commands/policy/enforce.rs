@@ -20,6 +20,8 @@ const SECONDS_PER_DAY: i64 = 86_400;
 pub enum Origin {
     Nvmrc(PathBuf),
     Argument,
+    /// The version already active, when none was asked for.
+    Active,
     System,
 }
 
@@ -146,6 +148,7 @@ fn origin_text(origin: &Origin) -> String {
     match origin {
         Origin::Nvmrc(path) => format!("(from {})", path.display()),
         Origin::Argument => "(from the command line)".to_owned(),
+        Origin::Active => "(the active version)".to_owned(),
         Origin::System => "(system)".to_owned(),
     }
 }

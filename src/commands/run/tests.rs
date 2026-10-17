@@ -275,3 +275,17 @@ fn run_goes_through_the_same_policy_gate() {
     assert_eq!(output.spawn, None);
     assert_eq!(output.stdout, "");
 }
+
+#[test]
+fn run_from_an_nvmrc_names_the_file_in_the_policy_message() {
+    let (env, process) = (env_on(BASE_PATH), npm_versions());
+    let fs = with_nvmrc("20");
+    let context = Context::new(&fs, &env)
+        .with_process(&process)
+        .with_policy_flags(policy_flags(&["--min-node", "22"]));
+    let output = run(&context, &strings(&["app.js"])).expect("nvm run runs");
+    assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
+    assert_eq!(output.spawn, None);
+    let header = "node v20.11.1 (from /proj/.nvmrc) is not allowed by policy:";
+    assert!(output.stderr.contains(header), "{}", output.stderr);
+}

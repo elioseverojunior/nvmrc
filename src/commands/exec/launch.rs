@@ -6,7 +6,7 @@ use super::options::Options;
 use super::select::Selection;
 use crate::commands::Output;
 use crate::commands::install::place::version_path;
-use crate::commands::policy::enforce::{Gate, Origin};
+use crate::commands::policy::enforce::Gate;
 use crate::commands::policy::gate::{gate_installed, gate_system};
 use crate::commands::transcript::Transcript;
 use crate::commands::use_version::apply::{Switch, link_current, npm_suffix};
@@ -27,7 +27,8 @@ pub(super) fn launch(
     }
     match nvm_version(context, &selection.version)? {
         Resolution::Version(version) => {
-            let gate = gate_installed(context, &version, Origin::Argument, &mut transcript)?;
+            let gate =
+                gate_installed(context, &version, selection.origin.clone(), &mut transcript)?;
             if let Gate::Stop(status) = gate {
                 return Ok(transcript.finish(status));
             }

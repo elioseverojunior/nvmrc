@@ -39,3 +39,33 @@ fn exec_system_checks_the_system_node_version() {
     assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
     assert_eq!(output.spawn, None);
 }
+
+fn exec_in_under(fs: &FakeFileSystem, path: &str, args: &[&str]) -> Output {
+    let (env, process) = (env_on(path), npm_versions());
+    let context = Context::new(fs, &env)
+        .with_process(&process)
+        .with_policy_flags(policy_flags(&["--min-node", "22"]));
+    run(&context, &strings(args)).expect("nvm exec runs")
+}
+
+#[test]
+fn exec_from_an_nvmrc_names_the_file_in_the_message() {
+    let fs = lab().with_file("/proj/.nvmrc", "20\n");
+    let output = exec_in_under(&fs, BASE_PATH, &["npm", "-v"]);
+    assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
+    let header = "node v20.11.1 (from /proj/.nvmrc) is not allowed by policy:";
+    assert!(output.stderr.contains(header), "{}", output.stderr);
+    assert!(
+        output
+            .stderr
+            .ends_with("Raise /proj/.nvmrc to an allowed version.")
+    );
+}
+
+#[test]
+fn exec_of_the_active_version_says_so() {
+    let output = exec_in_under(&lab(), ACTIVE_18, &[]);
+    assert_eq!(output.status, NvmExitCode::BelowVersionFloor);
+    let header = "node v18.20.4 (the active version) is not allowed by policy:";
+    assert!(output.stderr.contains(header), "{}", output.stderr);
+}
