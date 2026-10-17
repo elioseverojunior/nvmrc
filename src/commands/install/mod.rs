@@ -31,7 +31,7 @@ use crate::error::{CliError, NvmExitCode};
 use flow::{Halt, Step, Target};
 use nvmrc_version::with_nvmrc_version;
 use options::Options;
-use resolve::{check_floor, resolve};
+use resolve::{check_version, resolve};
 
 /// No version and no usable `.nvmrc` is not an error but an [`Output`] with
 /// the usage on stderr and status 127.
@@ -54,7 +54,7 @@ fn install(context: &Context<'_>, given: &Options, transcript: &mut Transcript) 
     let options = &with_nvmrc_version(context, no_source_fallback(context, given)?, transcript)?;
     announce(options, transcript);
     let version = resolve(context, options, transcript)?;
-    check_floor(context, &version, transcript)?;
+    check_version(context, given, options, &version, transcript)?;
     let path = place::version_path(context, &version)?;
     let source = reinstall_source(context, options, &version, transcript)?;
     let target = Target {

@@ -2,6 +2,7 @@ use std::path::Path;
 
 use super::*;
 use crate::domain::fixtures::index_text;
+use crate::domain::policy::PolicyFlags;
 use crate::fakes::{
     FakeArchive, FakeDigest, FakeEnv, FakeFileSystem, FakeHttp, FakeProcess, FakeScriptChannel,
     FakeSleeper,
@@ -24,6 +25,7 @@ struct World {
     sleeper: FakeSleeper,
     env: FakeEnv,
     process: FakeProcess,
+    policy_flags: PolicyFlags,
     /// Run in the `nvm` function: with its channel open.
     in_function: bool,
 }
@@ -43,6 +45,7 @@ impl World {
             sleeper: FakeSleeper::default(),
             env: FakeEnv::default().with_var("NVM_DIR", "/n"),
             process: FakeProcess::default(),
+            policy_flags: PolicyFlags::default(),
             in_function: false,
         }
     }
@@ -73,7 +76,8 @@ impl World {
             .with_digest(&self.digest)
             .with_archive(&archive)
             .with_sleeper(&self.sleeper)
-            .with_process(&self.process);
+            .with_process(&self.process)
+            .with_policy_flags(self.policy_flags.clone());
         let channel = FakeScriptChannel::default();
         if self.in_function {
             return super::run(&context.with_script_channel(&channel), words);
@@ -110,6 +114,7 @@ mod hook;
 mod npm;
 mod nvmrc;
 mod offline_and_save;
+mod policy;
 mod source;
 
 #[test]

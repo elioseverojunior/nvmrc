@@ -4,12 +4,15 @@
 use crate::commands::install::flow::{Halt, Step};
 use crate::commands::install::offline::cached_version;
 use crate::commands::install::options::Options;
+use crate::commands::policy::enforce::{Gate, Origin, Requested, enforce_node};
+use crate::commands::policy::policy_mode_requested;
 use crate::commands::resolve::{Resolved, resolve_installed};
 use crate::commands::transcript::Transcript;
 use crate::commands::version_remote::lookup;
 use crate::context::Context;
 use crate::domain::alias::{AliasStore, resolve as resolve_alias};
 use crate::domain::floor::VersionFloor;
+use crate::domain::nvmrc::find_nvmrc;
 use crate::domain::remote::Query;
 use crate::domain::version::Version;
 use crate::error::NvmExitCode;
@@ -112,11 +115,40 @@ fn not_found_message(options: &Options) -> String {
 /// How the floor messages name the file before the real path replaces it.
 const MIN_VERSION_FILE: &str = "$NVM_DIR/min-version";
 
-pub(super) fn check_floor(
+/// The policy gate when one is configured, else the version floor.
+pub(super) fn check_version(
     context: &Context<'_>,
+    given: &Options,
+    options: &Options,
     version: &Version,
     transcript: &mut Transcript,
 ) -> Step<()> {
+    if !policy_mode_requested(context) {
+        return check_floor(context, version, transcript);
+    }
+    let requested = Requested {
+        version: *version,
+        origin: origin_of(context, given),
+        offline: options.offline,
+    };
+    match enforce_node(context, &requested, transcript)? {
+        Gate::Pass => Ok(()),
+        Gate::Stop(status) => Err(Halt::Exit(status)),
+    }
+}
+
+/// `.nvmrc` when the version was left to it (no version and no `--lts`).
+fn origin_of(context: &Context<'_>, given: &Options) -> Origin {
+    if !given.version.is_empty() || given.lts.is_some() {
+        return Origin::Argument;
+    }
+    context
+        .working_directory()
+        .and_then(|directory| find_nvmrc(context.fs, &directory))
+        .map_or(Origin::Argument, Origin::Nvmrc)
+}
+
+fn check_floor(context: &Context<'_>, version: &Version, transcript: &mut Transcript) -> Step<()> {
     let file = context.nvm_dir()?.join("min-version");
     let from_file = context.fs.read_to_string(&file).ok();
     let from_env = context.env.var("NVM_MIN_VERSION");

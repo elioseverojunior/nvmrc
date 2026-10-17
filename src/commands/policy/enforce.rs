@@ -1,0 +1,156 @@
+//! The gate a node version passes before it is installed: the merged policy
+//! against the version, with the release index consulted only when a rule
+//! needs it.
+
+use std::path::PathBuf;
+
+use super::mode::{Mode, resolve_mode};
+use crate::commands::remote_index;
+use crate::commands::transcript::Transcript;
+use crate::context::Context;
+use crate::domain::mirror;
+use crate::domain::policy::{NodePolicy, ReleaseInfo, Violation};
+use crate::domain::version::{Flavor, Version};
+use crate::error::{CliError, NvmExitCode, PolicyError};
+
+const SECONDS_PER_DAY: i64 = 86_400;
+
+/// Where the version being checked came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Origin {
+    Nvmrc(PathBuf),
+    Argument,
+    System,
+}
+
+/// The version to check, where it came from and whether the network is off.
+#[derive(Debug, Clone)]
+pub struct Requested {
+    pub version: Version,
+    pub origin: Origin,
+    pub offline: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Gate {
+    Pass,
+    Stop(NvmExitCode),
+}
+
+/// Checks `requested` against the policy that applies, printing what it
+/// found on `transcript`. In an advisory context a finding is a warning and
+/// the gate passes.
+///
+/// # Errors
+/// [`CliError::Policy`] when the policy cannot be read or checked, unless the
+/// context is advisory.
+pub fn enforce_node(
+    context: &Context<'_>,
+    requested: &Requested,
+    transcript: &mut Transcript,
+) -> Result<Gate, CliError> {
+    match check(context, requested, transcript) {
+        Err(error) if context.is_advisory() => {
+            transcript.err(format!("nvm: warning: {error}"));
+            Ok(Gate::Pass)
+        }
+        Err(error) => Err(error.into()),
+        Ok(violations) => Ok(report(context, requested, &violations, transcript)),
+    }
+}
+
+fn check(
+    context: &Context<'_>,
+    requested: &Requested,
+    transcript: &mut Transcript,
+) -> Result<Vec<Violation>, PolicyError> {
+    let (mode, warnings) = resolve_mode(context)?;
+    warnings.into_iter().for_each(|line| transcript.err(line));
+    let Mode::Enforced(policy) = mode else {
+        return Ok(Vec::new());
+    };
+    let release = release_info(context, requested, &policy)?;
+    let today = context.clock().unix_seconds().div_euclid(SECONDS_PER_DAY);
+    policy
+        .violations(&requested.version, release.as_ref(), today)
+        .map_err(|_| PolicyError::ReleaseInfoUnavailable(index_location(context)))
+}
+
+/// The index entry of the version, fetched only for rules that need it.
+fn release_info(
+    context: &Context<'_>,
+    requested: &Requested,
+    policy: &NodePolicy,
+) -> Result<Option<ReleaseInfo>, PolicyError> {
+    if !policy.needs_release_info() || requested.version.flavor != Flavor::Node {
+        return Ok(None);
+    }
+    if requested.offline {
+        return Err(PolicyError::ReleaseInfoUnavailable("offline".to_owned()));
+    }
+    let unavailable = || PolicyError::ReleaseInfoUnavailable(index_location(context));
+    let fetched = remote_index::fetch(context, Flavor::Node).map_err(|_| unavailable())?;
+    fetched
+        .releases
+        .unwrap_or_default()
+        .into_iter()
+        .find(|release| release.version == requested.version)
+        .map(|release| ReleaseInfo {
+            lts: release.lts,
+            published_day: release.published_day,
+        })
+        .map(Some)
+        .ok_or_else(unavailable)
+}
+
+fn index_location(context: &Context<'_>) -> String {
+    mirror::from_env(context.env, Flavor::Node).map_or_else(
+        |_| "the release index".to_owned(),
+        |mirror| mirror.index_url(),
+    )
+}
+
+fn report(
+    context: &Context<'_>,
+    requested: &Requested,
+    violations: &[Violation],
+    transcript: &mut Transcript,
+) -> Gate {
+    if violations.is_empty() {
+        return Gate::Pass;
+    }
+    let prefix = if context.is_advisory() {
+        "nvm: warning: node"
+    } else {
+        "nvm: node"
+    };
+    transcript.err(format!(
+        "{prefix} {} {} is not allowed by policy:",
+        requested.version,
+        origin_text(&requested.origin)
+    ));
+    for violation in violations {
+        transcript.err(format!("  - {violation}"));
+    }
+    transcript.err(fix_text(&requested.origin));
+    if context.is_advisory() {
+        Gate::Pass
+    } else {
+        Gate::Stop(NvmExitCode::BelowVersionFloor)
+    }
+}
+
+fn origin_text(origin: &Origin) -> String {
+    match origin {
+        Origin::Nvmrc(path) => format!("(from {})", path.display()),
+        Origin::Argument => "(from the command line)".to_owned(),
+        Origin::System => "(system)".to_owned(),
+    }
+}
+
+fn fix_text(origin: &Origin) -> String {
+    match origin {
+        Origin::Nvmrc(path) => format!("Raise {} to an allowed version.", path.display()),
+        _ => "Use an allowed version.".to_owned(),
+    }
+}
