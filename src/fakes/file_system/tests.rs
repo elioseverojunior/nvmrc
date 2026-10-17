@@ -166,3 +166,13 @@ fn fake_file_system_tells_the_same_directory_through_a_symlink() {
         !same("/other", "/real") && !same("/gone", "/gone") && !same("/real/sub/f", "/real/sub/f")
     );
 }
+
+#[test]
+fn a_write_failure_lets_the_given_number_of_writes_through() {
+    let fs = FakeFileSystem::default().with_write_failure("/f", 1);
+    assert!(fs.write_file(Path::new("/f"), "1").is_ok());
+    let error = fs.write_file(Path::new("/f"), "2").unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    assert_eq!(fs.read_to_string(Path::new("/f")).unwrap(), "1");
+    assert!(fs.write_file(Path::new("/g"), "3").is_ok());
+}

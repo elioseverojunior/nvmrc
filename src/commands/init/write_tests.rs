@@ -59,3 +59,38 @@ fn node_alone_leaves_package_json_untouched() {
     assert_eq!(output.stdout, "Wrote /p/.nvmrc: node v22.11.0");
     assert_eq!(file(&fs, "/p/package.json").as_deref(), Some(package_json));
 }
+
+fn denied(path: &str) -> String {
+    let error = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+    format!("{path}: {error}")
+}
+
+#[test]
+fn a_failed_nvmrc_write_restores_package_json() {
+    let package_json = "{\n  \"name\": \"app\"\n}\n";
+    let (fs, env) = project(&[("/p/package.json", package_json)], "");
+    let fs = fs.with_write_failure("/p/.nvmrc", 0);
+    let output = init(&fs, &env, &served(), &["--pnpm"]);
+    assert_eq!(output.status.code(), 1);
+    assert_eq!(output.stdout, "");
+    assert_eq!(output.stderr, denied("/p/.nvmrc"));
+    assert_eq!(file(&fs, "/p/package.json").as_deref(), Some(package_json));
+    assert_eq!(file(&fs, "/p/.nvmrc"), None);
+}
+
+#[test]
+fn a_failed_restore_says_package_json_was_updated() {
+    let (fs, env) = project(&[("/p/package.json", "{}")], "");
+    let fs = fs
+        .with_write_failure("/p/.nvmrc", 0)
+        .with_write_failure("/p/package.json", 1);
+    let output = init(&fs, &env, &served(), &["--pnpm"]);
+    assert_eq!(output.status.code(), 1);
+    assert_eq!(
+        output.stderr,
+        format!(
+            "{}\nnvm init: /p/package.json was already updated to \"pnpm@9.12.0\".",
+            denied("/p/.nvmrc")
+        )
+    );
+}

@@ -86,7 +86,13 @@ fn set_up(
     let chosen = choose(context, request, transcript)?;
     let nvmrc_text = new_nvmrc(current, &chosen);
     let package_edit = new_package_json(context, &files.package_json, &chosen)?;
-    save(context, &files, &nvmrc_text, package_edit.as_ref())?;
+    save(
+        context,
+        &files,
+        &nvmrc_text,
+        package_edit.as_ref(),
+        transcript,
+    )?;
     let nvmrc = files.nvmrc.display();
     transcript.out(format!("Wrote {nvmrc}: {}", listed(&chosen)));
     if let Some(edit) = package_edit {

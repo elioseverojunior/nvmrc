@@ -15,6 +15,8 @@ pub struct FakeFileSystem {
     links: RefCell<BTreeMap<PathBuf, PathBuf>>,
     replaced: RefCell<Vec<PathBuf>>,
     temporaries: Cell<u64>,
+    /// Paths whose writes fail once this many more have succeeded.
+    failing_writes: RefCell<BTreeMap<PathBuf, usize>>,
 }
 
 impl FakeFileSystem {
@@ -56,6 +58,16 @@ impl FakeFileSystem {
     #[must_use]
     pub fn replaced(&self) -> Vec<PathBuf> {
         self.replaced.borrow().clone()
+    }
+
+    /// Writes to `path` fail (permission denied) after `succeeding` more
+    /// have gone through.
+    #[must_use]
+    pub fn with_write_failure(mut self, path: &str, succeeding: usize) -> Self {
+        self.failing_writes
+            .get_mut()
+            .insert(PathBuf::from(path), succeeding);
+        self
     }
 
     /// An explicit, possibly empty, directory. Parents of files exist already.
@@ -149,6 +161,12 @@ impl FileSystem for FakeFileSystem {
     }
 
     fn write_bytes(&self, path: &Path, contents: &[u8]) -> io::Result<()> {
+        if let Some(left) = self.failing_writes.borrow_mut().get_mut(path) {
+            if *left == 0 {
+                return Err(io::Error::from(io::ErrorKind::PermissionDenied));
+            }
+            *left -= 1;
+        }
         self.files
             .borrow_mut()
             .insert(path.to_path_buf(), contents.to_vec());

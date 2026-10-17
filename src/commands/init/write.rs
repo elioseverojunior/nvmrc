@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use super::project::Stop;
+use crate::commands::transcript::Transcript;
 use crate::context::Context;
 use crate::domain::nvmrc::{with_pin, with_version};
 use crate::domain::package_json::{
@@ -29,9 +30,10 @@ impl ProjectFiles {
     }
 }
 
-/// A change to `package.json`: its new text, the `packageManager` value
-/// set and the one it replaced, if any.
+/// A change to `package.json`: its text before and after, the
+/// `packageManager` value set and the one it replaced, if any.
 pub struct PackageEdit {
+    original: String,
     text: String,
     field: String,
     previous: Option<String>,
@@ -88,6 +90,7 @@ pub fn new_package_json(
         })
     })?;
     Ok(Some(PackageEdit {
+        original,
         text,
         field,
         previous,
@@ -110,7 +113,10 @@ impl PackageEdit {
     }
 }
 
-/// Writes `package.json` (when it changes) and then the `.nvmrc`.
+/// Writes `package.json` (when it changes) and then the `.nvmrc`. When the
+/// `.nvmrc` cannot be written, `package.json` gets its original text back,
+/// so a failure leaves both files as they were; the failure is printed, with
+/// a line naming the update should the restore fail too.
 ///
 /// # Errors
 /// [`Stop`] with the failed write.
@@ -119,12 +125,25 @@ pub fn save(
     files: &ProjectFiles,
     nvmrc_text: &str,
     package_edit: Option<&PackageEdit>,
+    transcript: &mut Transcript,
 ) -> Result<(), Stop> {
     if let Some(edit) = package_edit {
         write(context, &files.package_json, &edit.text)?;
     }
-    write(context, &files.nvmrc, nvmrc_text)?;
-    Ok(())
+    let Err(error) = write(context, &files.nvmrc, nvmrc_text) else {
+        return Ok(());
+    };
+    transcript.err(error.to_string());
+    let unrestored =
+        package_edit.filter(|edit| write(context, &files.package_json, &edit.original).is_err());
+    if let Some(edit) = unrestored {
+        let path = files.package_json.display();
+        let field = &edit.field;
+        transcript.err(format!(
+            "nvm init: {path} was already updated to \"{field}\"."
+        ));
+    }
+    Err(Stop::Refused(error.exit_code()))
 }
 
 /// The text of the file at `path`; `None` when there is none.
