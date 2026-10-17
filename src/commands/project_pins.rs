@@ -177,37 +177,40 @@ mod tests {
         );
     }
 
+    /// Each `.nvmrc`, the `package.json` beside it if any, and the start of
+    /// the error it gives.
+    const PIN_ERRORS: [(&str, Option<&str>, &str); 5] = [
+        (
+            "pnpm=9.12\n",
+            None,
+            "nvm: /p/.nvmrc: 'pnpm=9.12' is not an exact version (major.minor.patch).",
+        ),
+        (
+            "yarn=4.5.0\npnpm=9.12.0\n",
+            None,
+            "nvm: /p/.nvmrc pins both yarn and pnpm; pin at most one.",
+        ),
+        (
+            "npm=10.9.0\nnpm=10.8.0\n",
+            None,
+            "nvm: /p/.nvmrc pins npm more than once; keep one npm= line.",
+        ),
+        (
+            "pnpm=9.12.0\n",
+            Some("{}"),
+            "nvm: /p/package.json has no packageManager; set it to \"pnpm@9.12.0\" to match /p/.nvmrc.",
+        ),
+        (
+            "pnpm=9.12.0\n",
+            Some("{"),
+            "nvm: /p/package.json cannot be read as JSON: ",
+        ),
+    ];
+
     #[test]
     fn the_other_pin_errors_print_their_messages() {
         let env = env();
-        let cases = [
-            (
-                "pnpm=9.12\n",
-                None,
-                "nvm: /p/.nvmrc: 'pnpm=9.12' is not an exact version (major.minor.patch).",
-            ),
-            (
-                "yarn=4.5.0\npnpm=9.12.0\n",
-                None,
-                "nvm: /p/.nvmrc pins both yarn and pnpm; pin at most one.",
-            ),
-            (
-                "npm=10.9.0\nnpm=10.8.0\n",
-                None,
-                "nvm: /p/.nvmrc pins npm more than once; keep one npm= line.",
-            ),
-            (
-                "pnpm=9.12.0\n",
-                Some("{}"),
-                "nvm: /p/package.json has no packageManager; set it to \"pnpm@9.12.0\" to match /p/.nvmrc.",
-            ),
-            (
-                "pnpm=9.12.0\n",
-                Some("{"),
-                "nvm: /p/package.json cannot be read as JSON: ",
-            ),
-        ];
-        for (nvmrc, package_json, expected) in cases {
+        for (nvmrc, package_json, expected) in PIN_ERRORS {
             let mut fs = FakeFileSystem::default().with_file("/p/.nvmrc", nvmrc);
             if let Some(text) = package_json {
                 fs = fs.with_file("/p/package.json", text);
