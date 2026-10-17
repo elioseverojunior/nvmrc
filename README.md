@@ -196,11 +196,83 @@ For `doctor` and `migrate`: `ENV`, `ZDOTDIR`, `XDG_CONFIG_HOME`,
 The version floor (`NVM_MIN_VERSION`, `$NVM_DIR/min-version`) comes from
 the author's fork of nvm, not from nvm-sh/nvm.
 
-nvmrc's own: `NVMRC_SCRIPT_FD`, `NVMRC_SHELL_KIND`, `NVMRC_SHELL`.
+nvmrc's own: `NVMRC_SCRIPT_FD`, `NVMRC_SHELL_KIND`, `NVMRC_SHELL`, and
+`NVMRC_POLICY` (the central security policy, see
+[Security policy](#security-policy)).
 
 Not supported: `NVM_NO_PROGRESS` (there is no progress bar), `NVM_OFFLINE`
 (use `--offline`), curl and wget settings (downloads use ureq; proxies come
 from the usual `*_PROXY` variables).
+
+## Security policy
+
+A security team can decide which Node versions a pipeline may use. The
+policy is a JSON file, checked against
+[schemas/nvmrc-policy.v1.schema.json](schemas/nvmrc-policy.v1.schema.json);
+the design is in
+[docs/superpowers/specs/2026-10-17-security-policy-design.md](docs/superpowers/specs/2026-10-17-security-policy-design.md).
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/elioseverojunior/nvmrc/main/schemas/nvmrc-policy.v1.schema.json",
+  "schemaVersion": 1,
+  "tools": {
+    "node": {
+      "minimum": "20.11.1",
+      "allow": ">=20 <25",
+      "deny": ["20.12.0", "22.3.0"],
+      "ltsOnly": true,
+      "minimumReleaseAgeDays": 14
+    }
+  }
+}
+```
+
+Only the node rules are enforced: `minimum`, `allow` (an npm-style range),
+`deny`, `ltsOnly` and `minimumReleaseAgeDays`. An unknown field is an
+error, never ignored. There is no CVE check yet, and the npm, yarn and pnpm
+sections are accepted but not enforced.
+
+Where a policy comes from, from the loosest source to the strictest:
+
+- `NVMRC_POLICY` or `--policy <path|https-url>`: the central policy. A path
+  is read from the working directory; `https://` is fetched; `http://` is
+  rejected.
+- `.nvmrc-policy.json`, found from the working directory upward like
+  `.nvmrc`: the repository policy.
+- `--min-node <version>`, which feeds `NVM_MIN_VERSION`.
+
+The flags go before the subcommand or right after it
+(`nvm --policy p use 20`, `nvm use --min-node 20 20`); a later occurrence,
+such as inside the command of `exec`, is left alone. A flag with no value
+fails with `nvm: <flag> needs a value.` and status 127.
+
+The sources only tighten each other: the highest minimum wins, the allowed
+ranges all apply, the deny lists add up, `ltsOnly` is on when any source
+sets it, and the largest release age wins. A source that asks for less is
+ignored with a warning.
+
+Two modes:
+
+- Legacy: only `NVM_MIN_VERSION` or `$NVM_DIR/min-version`. This is exactly
+  the old behaviour, checked in `install` alone.
+- Policy: any central policy, repository policy or policy flag. The rules
+  are enforced in `install`, `use` (`use system` included), `exec` and
+  `run`. The shell startup (`__auto`) only warns and goes on.
+
+A violation stops with status 7:
+
+```text
+nvm: node v18.19.0 (from /w/app/.nvmrc) is not allowed by policy:
+  - below the minimum v20.11.1 (from --min-node)
+Raise /w/app/.nvmrc to an allowed version.
+```
+
+The version comes from the `.nvmrc` path, `the command line`, `system` or
+`the active version`. A policy that cannot be checked is never let through:
+an unreadable or invalid policy, an unreachable index for a release-date or
+LTS rule, `--offline` with such a rule, an unreadable system node version
+or `min-version` file all stop with status 9.
 
 ## Commands
 
@@ -234,8 +306,10 @@ together.
 - 4: `--reinstall-packages-from` the version being installed.
 - 5: `--reinstall-packages-from` a version not installed.
 - 6: options that cannot be combined.
-- 7: below the version floor, or an invalid floor.
+- 7: below the version floor, or not allowed by the policy; or an invalid
+  floor.
 - 8: alias loop.
+- 9: the policy could not be checked (see [Security policy](#security-policy)).
 - 11: an npm prefix setting nvm cannot work with.
 - 33: the third-party install hook claimed success.
 - 55: unsupported option.

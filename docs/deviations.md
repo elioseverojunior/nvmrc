@@ -101,6 +101,51 @@ own:
 - Non-UTF-8 arguments are replaced lossily.
 - The function needs `/dev/fd`.
 
+### Security policy
+
+nvmrc additions with no nvm.sh counterpart; without a policy, a policy flag
+or `NVMRC_POLICY`, nothing changes (pinned by
+`legacy_mode_without_any_new_configuration` in
+`src/commands/policy/tests/mode.rs`).
+
+- `--policy` and `--min-node` are taken before the subcommand or right after
+  it; a later occurrence is left alone. An empty or blank value is
+  `nvm: <flag> needs a value.`, status 127.
+  (`flags_before_the_subcommand_are_taken`,
+  `flags_after_the_first_argument_are_left_alone`,
+  `an_empty_or_blank_value_is_an_error` in
+  `src/domain/policy/flags_tests.rs`; `a_flag_error_is_a_usage_error`,
+  `stripped_flags_do_not_reach_clap` in `src/cli/tests/policy.rs`)
+- `.nvmrc-policy.json` is found upward from the working directory.
+  (`a_repository_policy_is_found_above_the_working_directory_and_enforces`)
+- In policy mode `install`, `use`, `exec` and `run` check the node rules;
+  `__auto` warns and goes on.
+  (`install_below_a_policy_minimum_stops_before_downloading`,
+  `use_of_a_disallowed_installed_version_stops_without_switching`,
+  `exec_with_a_disallowed_version_runs_nothing`,
+  `run_goes_through_the_same_policy_gate`,
+  `auto_install_of_a_disallowed_version_warns_and_goes_on`,
+  `auto_use_with_an_unreadable_policy_warns_and_switches`)
+- The violation message names the version, its origin and each rule with its
+  source. (`a_violation_stops_with_7_and_names_everything`,
+  `run_from_an_nvmrc_names_the_file_in_the_policy_message`)
+- Sources only tighten; a looser one warns.
+  (`the_highest_minimum_wins_and_names_its_source`,
+  `a_lower_override_loses_with_a_warning`)
+- Exit 9 means the policy could not be checked, and exit 7 also covers a
+  version the policy does not allow.
+  (`an_invalid_central_policy_is_a_failure_to_know`,
+  `an_unreachable_index_is_a_failure_to_know`,
+  `offline_with_a_release_rule_is_a_failure_to_know`,
+  `a_min_version_file_that_cannot_be_read_is_an_error`)
+- `use system` is checked only in policy mode.
+  (`use_system_without_a_policy_never_asks_the_system_node`)
+- `http://` policy locations are rejected. (`an_http_location_is_rejected`)
+- The shell function skips leading policy flags to find the subcommand.
+  (`every_function_routes_on_the_first_argument_that_is_not_a_policy_flag`,
+  `use_after_leading_policy_flags_switches_the_shell` in
+  `tests/init_policy_cli.rs`)
+
 ### Colors
 
 - An invalid `NVM_COLORS` letter warns once; an unknown `TERM` is silent.
