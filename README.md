@@ -228,10 +228,10 @@ the design is in
 }
 ```
 
-Only the node rules are enforced: `minimum`, `allow` (an npm-style range),
-`deny`, `ltsOnly` and `minimumReleaseAgeDays`. An unknown field is an
-error, never ignored. There is no CVE check yet, and the npm, yarn and pnpm
-sections are accepted but not enforced.
+The node rules are `minimum`, `allow` (an npm-style range), `deny`,
+`ltsOnly` and `minimumReleaseAgeDays`; the `cve` settings are described in
+[CVE check](#cve-check). An unknown field is an error, never ignored. The
+npm, yarn and pnpm sections are accepted but not enforced.
 
 These sources take part, in this order:
 
@@ -286,6 +286,62 @@ The version comes from the `.nvmrc` path, `the command line`, `system` or
 an unreadable or invalid policy, an unreachable index for a release-date or
 LTS rule, `--offline` with such a rule, an unreadable system node version
 or `min-version` file all stop with status 9.
+
+### CVE check
+
+In policy mode, `install`, `use`, `exec` and `run` also look the node
+version up in the Node.js security advisories. The policy can set:
+
+```json
+{
+  "schemaVersion": 1,
+  "cve": { "failOnSeverity": "high", "source": "vuln/index.json" }
+}
+```
+
+A version is affected by an advisory when it is in `vulnerable` and not in
+`patched`. An advisory that lists `affectedEnvironments` counts only when it
+names `all` or this OS; with no known platform, or an empty list, it counts.
+A missing or `unknown` severity is `high`; any other value that is not
+`critical`, `high`, `medium` or `low` means the index cannot be understood.
+An advisory without CVE ids is named `advisory <id>`. io.js versions are not
+checked.
+
+The limit is the lowest severity that fails. It comes from
+`--fail-on-severity <critical|high|medium|low|none>`,
+`NVMRC_FAIL_ON_SEVERITY`, and `cve.failOnSeverity` in the central and the
+repository policy. The strictest wins (`low` is stricter than `high`, `none`
+is the loosest), the default is `high`, and a looser source is ignored with
+a warning. A non-blank `NVMRC_FAIL_ON_SEVERITY` turns policy mode on, as a
+flag does.
+
+```text
+nvm: node v22.20.0 (from the command line) is not allowed by policy:
+  - CVE-2026-58043 (high); the limit is high (from NVMRC_FAIL_ON_SEVERITY)
+Use an allowed version.
+```
+
+A finding at or above the limit stops with status 7. Findings below it only
+print `nvm: warning: node vX has known vulnerabilities below the limit
+<limit>: ...` and the status is unchanged; with `none`, every finding is
+reported that way.
+
+The index is
+`https://raw.githubusercontent.com/nodejs/security-wg/main/vuln/core/index.json`
+unless `cve.source` (a URL or a path) says otherwise. When a central policy
+exists, only its `cve.source` counts, even if the repository policy names
+one; without a central policy the repository policy's is used. A relative
+`cve.source` is read next to the policy file that holds it, and is invalid
+in a policy fetched over https. `use --save` in policy mode writes `.nvmrc`
+only after the policy allows the version.
+
+An index that cannot be read or understood stops with status 9
+(`nvm: cannot check the policy: the vulnerability index <location> is not
+valid: ...` when it is invalid). If node rules already fail, the status stays
+7 and a `nvm: warning: cannot check known vulnerabilities: ...` is added.
+`--offline` with an https index stops with status 9 before any request; a
+local index works offline. The shell startup (`__auto`) warns and goes on.
+Legacy mode never fetches the index.
 
 ## Commands
 

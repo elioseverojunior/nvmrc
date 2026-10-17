@@ -169,6 +169,61 @@ or `NVMRC_POLICY`, nothing changes (pinned by
   (`every_function_routes_on_the_first_argument_that_is_not_a_policy_flag`,
   `use_after_leading_policy_flags_switches_the_shell` in
   `tests/init_policy_cli.rs`)
+- The CVE check reads the Node.js security-wg index: affected means in
+  `vulnerable` and not in `patched`, filtered by `affectedEnvironments`;
+  a missing or `unknown` severity is `high`, any other unknown value is a
+  failure to know; an advisory without CVE ids is `advisory <id>`; io.js is
+  skipped. (`a_vulnerable_unpatched_version_is_affected`,
+  `a_patched_version_is_not_affected`,
+  `a_platform_specific_advisory_counts_only_on_its_platform`,
+  `an_advisory_without_cve_ids_is_named_by_id`,
+  `unknown_and_missing_severities_count_as_high`,
+  `anything_else_is_a_failure_to_know` in
+  `src/domain/policy/advisories_tests.rs`;
+  `iojs_versions_skip_the_cve_check` in
+  `src/commands/policy/tests/advisories.rs`)
+- `--fail-on-severity`, `NVMRC_FAIL_ON_SEVERITY` and `cve.failOnSeverity`
+  tighten each other (default `high`, `none` the loosest, a looser one
+  warns); the variable turns policy mode on.
+  (`without_any_setting_the_limit_is_high_and_the_index_is_the_default`,
+  `the_strictest_limit_wins_and_a_looser_override_warns`,
+  `none_is_the_loosest_limit` in `src/domain/policy/cve_tests.rs`;
+  `the_severity_flag_and_variable_turn_policy_mode_on`,
+  `the_severity_flag_can_only_tighten` in
+  `src/commands/policy/tests/mode.rs`)
+- The index is the central policy's `cve.source`, else the default even when
+  the repository names one; the repository's counts only without a central
+  policy. A relative source is read next to its policy file and is invalid in
+  an https policy. (`the_central_index_wins_and_the_repository_index_counts_only_alone`
+  in `src/domain/policy/cve_tests.rs`;
+  `a_relative_index_location_is_read_next_to_its_policy`,
+  `a_relative_index_in_a_central_file_is_read_next_to_it`,
+  `a_relative_index_in_a_remote_policy_is_invalid` in
+  `src/commands/policy/tests/mode.rs`)
+- A finding at or above the limit is status 7; below it, a warning only (all
+  findings with `none`). (`a_finding_at_the_limit_stops_with_7`,
+  `findings_below_the_limit_only_warn`, `limit_none_reports_and_passes`,
+  `a_patched_version_passes_quietly`,
+  `findings_below_the_limit_are_also_named_when_the_gate_stops` in
+  `src/commands/policy/tests/advisories.rs`)
+- An unreadable or invalid index is status 9, or a warning when node rules
+  already stop with 7. `--offline` with an https index is 9 before any
+  request; a local index works offline. Automatic paths warn and pass;
+  legacy mode never fetches. (`an_unreachable_index_is_a_failure_to_know`,
+  `an_invalid_index_names_its_location`,
+  `offline_with_a_remote_index_is_a_failure_to_know`,
+  `offline_with_a_local_index_is_checked`,
+  `an_automatic_path_warns_on_a_finding_and_passes`,
+  `legacy_mode_never_fetches_the_index` in
+  `src/commands/policy/tests/advisories.rs`;
+  `a_node_violation_still_stops_with_7_when_the_index_is_unreachable`,
+  `a_node_violation_still_stops_with_7_offline_with_a_remote_index` in
+  `src/commands/policy/tests/unknown_index.rs`)
+- `use --save` in policy mode writes `.nvmrc` only after the policy allows
+  the version; the legacy order is unchanged.
+  (`a_refused_use_save_leaves_nvmrc_untouched`,
+  `an_allowed_use_save_still_writes_nvmrc` in
+  `src/commands/use_version/tests.rs`)
 
 ### Colors
 
