@@ -472,8 +472,10 @@ run = '''
 set -Eeuo pipefail
 
 # The token comes first, before any xtrace, so --verbose never prints it.
-# CI passes GITHUB_TOKEN or GH_TOKEN; an interactive shell falls back to gh.
-if [ -z "${GITHUB_TOKEN:-}${GH_TOKEN:-}" ] && [ -t 0 ] && command -v gh >/dev/null 2>&1; then
+# CI passes GITHUB_TOKEN or GH_TOKEN; elsewhere a logged-in gh supplies one
+# (`gh auth token` never prompts). Without a token the API's anonymous limit
+# runs out after a few workflows and the script sleeps for an hour.
+if [ -z "${GITHUB_TOKEN:-}${GH_TOKEN:-}" ] && command -v gh >/dev/null 2>&1; then
   GH_TOKEN="$(gh auth token 2>/dev/null || true)"
   export GH_TOKEN
 fi
