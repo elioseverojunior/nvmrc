@@ -651,12 +651,19 @@ flag "--container" help="Build inside the rust image (a Linux target from macOS)
 
 [tasks."release:build:container"]
 alias = ["rbc"]
-description = "Build a Linux target inside the official rust image of the pinned channel"
+description = "Build a Linux musl target inside the official rust image of the pinned channel"
 run = '''
 #!/usr/bin/env bash
 
 set -Eeuo pipefail
 
+# The rust image's glibc is newer than the README's floor, so a glibc build
+# made here would always fail release:build:glibc; CI builds those on
+# ubuntu-22.04 instead.
+case "$target" in *-linux-musl) ;; *)
+  echo "release:build:container: $target is not a musl target; glibc builds run on CI (ubuntu-22.04)" >&2
+  exit 1 ;;
+esac
 [ "${usage_verbose:-false}" = "true" ] && set -x
 
 target="${usage_target:?}"
@@ -671,7 +678,7 @@ docker run --rm --platform "$platform" -v "$PWD:/work" -w /work -e TARGET="$targ
 shell = "bash -c"
 usage = '''
 flag "-v --verbose" help="Enable verbose (debug) output"
-flag "--target <triple>" help="The Linux target triple to build" required=#true
+flag "--target <triple>" help="The Linux musl target triple to build" required=#true
 '''
 
 [tasks."release:build:glibc"]
