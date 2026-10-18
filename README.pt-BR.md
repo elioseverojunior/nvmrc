@@ -97,11 +97,11 @@ uma execução manual ou outro workflow tenha atestado passa. Com o GitHub CLI:
 ```sh
 release=(--repo elioseverojunior/nvmrc
   --signer-workflow elioseverojunior/nvmrc/.github/workflows/release.yml
-  --source-ref refs/tags/v0.0.1)
-gh attestation verify nvmrc-0.0.1-x86_64-unknown-linux-musl.tar.gz "${release[@]}"
+  --source-ref refs/tags/v0.0.2)
+gh attestation verify nvmrc-0.0.2-x86_64-unknown-linux-musl.tar.gz "${release[@]}"
 gh attestation verify /usr/bin/nvm "${release[@]}"
-gh attestation verify oci://ghcr.io/elioseverojunior/nvmrc:0.0.1 "${release[@]}"
-gh attestation verify nvmrc_0.0.1-1_amd64.deb "${release[@]}" \
+gh attestation verify oci://ghcr.io/elioseverojunior/nvmrc:0.0.2 "${release[@]}"
+gh attestation verify nvmrc_0.0.2-1_amd64.deb "${release[@]}" \
   --predicate-type https://spdx.dev/Document/v2.3
 ```
 
@@ -115,7 +115,7 @@ issuer=https://token.actions.githubusercontent.com
 cosign verify-blob --bundle SHA256SUMS.sigstore.json \
   --certificate-identity-regexp "$identity" --certificate-oidc-issuer "$issuer" SHA256SUMS
 shasum -a 256 --check --ignore-missing SHA256SUMS # macOS and Linux
-cosign verify ghcr.io/elioseverojunior/nvmrc:0.0.1 \
+cosign verify ghcr.io/elioseverojunior/nvmrc:0.0.2 \
   --certificate-identity-regexp "$identity" --certificate-oidc-issuer "$issuer"
 ```
 
