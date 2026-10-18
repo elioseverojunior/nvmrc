@@ -1,5 +1,7 @@
 # Releasing nvmrc
 
+English | [Português (Brasil)](release.pt-BR.md)
+
 How a release is built, and what it trusts. The commands to install and to
 verify a release are in the [README](../README.md).
 

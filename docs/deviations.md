@@ -1,5 +1,7 @@
 # Deviations from nvm.sh
 
+English | [Português (Brasil)](deviations.pt-BR.md)
+
 Each item is pinned by a test; the contract scenarios that pin one name its
 id.
 

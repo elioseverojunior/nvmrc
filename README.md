@@ -1,5 +1,7 @@
 # nvmrc
 
+English | [Português (Brasil)](README.pt-BR.md)
+
 A native Rust port of [nvm](https://github.com/nvm-sh/nvm). Three binaries are
 built from one library: `nvmrc`, `nvm` (the same program, under the name
 scripts, CI and tools call) and `nvm-exec`.
