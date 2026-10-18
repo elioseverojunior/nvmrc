@@ -9,9 +9,9 @@ repository = "https://github.com/elioseverojunior/nvmrc"
 readme = "README.md"
 keywords = ["nvm", "node", "nodejs", "version-manager", "shell"]
 categories = ["command-line-utilities", "development-tools"]
-# Never published to crates.io, by the owner's decision (docs/release.md);
-# `cargo publish` refuses while this is false.
-publish = false
+# The crate ships what `cargo install nvmrc` builds; tests, fixtures, CI and
+# packaging stay in the repository.
+include = ["/src/**/*.rs", "/schemas/**", "/Cargo.toml", "/Cargo.lock", "/README.md", "/LICENSE"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

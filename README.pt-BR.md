@@ -18,13 +18,10 @@ Os releases são gerados a partir de uma tag `v*` por
 `.github/workflows/release.yml`, em runners nativos. A versão é a que
 `nvm --version` imprime.
 
-O repositório é privado, e mesmo assim um release publica seus arquivos: o
-release do GitHub, a imagem do GHCR e, depois de configurada, a fórmula do
-Homebrew, cada um legível apenas por quem pode ler o repositório. Enquanto ele
-for privado, um release tem apenas checksums: atestados de proveniência e
-assinaturas ficam indisponíveis até o repositório se tornar público (veja
-"Verificando um release"). Ainda não há nenhum release publicado, e os canais
-abaixo descrevem o que um release conterá.
+Um release publica o release do GitHub, a imagem do GHCR, o crate no
+crates.io e a fórmula do Homebrew. O `v0.0.1` foi lançado quando o repositório
+era privado, então tem apenas checksums; todo release posterior é assinado e
+atestado (veja "Verificando um release").
 
 - Arquivos, `nvmrc-<version>-<target>.tar.gz`, cada um com `nvmrc`, `nvm`,
   `nvm-exec`, `LICENSE` e `README.md`:
@@ -53,12 +50,17 @@ abaixo descrevem o que um release conterá.
   `COPY --from=ghcr.io/elioseverojunior/nvmrc:<version> /usr/bin/nvm* /usr/local/bin/`.
 - Nix: `nix profile install github:elioseverojunior/nvmrc`, ou
   `nix run github:elioseverojunior/nvmrc -- --version`.
-- Homebrew: cada release renderiza uma fórmula; ela é enviada ao tap indicado
-  pela variável de repositório `NVMRC_HOMEBREW_TAP` assim que o proprietário a
-  define. Nenhuma foi publicada ainda.
+- Homebrew: `brew install elioseverojunior/tools/nvmrc` baixa o código-fonte
+  com tag do GitHub e o compila com `cargo` (`rust` é uma dependência apenas de
+  compilação); `brew install --HEAD elioseverojunior/tools/nvmrc` compila a
+  branch `main`. O tap renderiza a fórmula após cada release.
+- crates.io: `cargo install --locked nvmrc` instala os três binários em
+  `~/.cargo/bin`. O perfil de release abaixo está em `.cargo/config.toml`, que
+  uma instalação pelo crates.io não lê, então essa compilação usa o perfil de
+  release padrão do Cargo.
 - A partir do código-fonte: `cargo install --locked --git
   https://github.com/elioseverojunior/nvmrc` instala os três binários em
-  `~/.cargo/bin` (o nvmrc nunca é publicado no crates.io), ou
+  `~/.cargo/bin`, ou
   `cargo build --release --locked` a partir de um clone os coloca em
   `target/release/`. Rust 1.85 ou mais novo (MSRV); o desenvolvimento usa o
   toolchain 1.99 de `rust-toolchain.toml`. O perfil de release (LTO fat,
@@ -74,9 +76,9 @@ abaixo descrevem o que um release conterá.
 
 ## Verificando um release
 
-Um release feito enquanto o repositório é privado é verificado apenas com seus
-checksums, a partir de um download por HTTPS autenticado; isso prova que os
-arquivos correspondem ao `SHA256SUMS` do release, não quem os gerou
+O `v0.0.1`, lançado quando o repositório era privado, é verificado apenas com
+seus checksums; isso prova que os arquivos correspondem ao `SHA256SUMS` do
+release, não quem os gerou
 ([docs/release.pt-BR.md](docs/release.pt-BR.md) tem a decisão):
 
 ```sh
@@ -84,7 +86,7 @@ gh release download v0.0.1 --repo elioseverojunior/nvmrc
 shasum -a 256 --check --ignore-missing SHA256SUMS # macOS and Linux
 ```
 
-Quando o repositório se tornar público, cada arquivo de um release será
+A partir do primeiro release após o `v0.0.1`, cada arquivo de um release será
 atestado pelo GitHub (proveniência de build SLSA), cada binário dentro dos
 arquivos será atestado individualmente, e o SBOM
 (`nvmrc-<version>.spdx.json`, o grafo de dependências do `Cargo.lock`) será
@@ -124,7 +126,7 @@ verificá-lo, rode `xattr -d com.apple.quarantine nvmrc nvm nvm-exec` nos
 binários descompactados.
 
 Nenhuma dessas verificações pode ser executada antes do primeiro release
-publicado; os comandos são os que as identidades e os nomes de arquivo do
+assinado; os comandos são os que as identidades e os nomes de arquivo do
 workflow produzem. Como o release é gerado e no que ele confia:
 [docs/release.pt-BR.md](docs/release.pt-BR.md).
 

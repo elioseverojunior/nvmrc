@@ -559,9 +559,6 @@ set -Eeuo pipefail
 
 # Cargo.toml is the source of truth: `nvm --version` prints this version.
 version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
-# nvmrc is never published to crates.io (docs/release.md).
-grep -qx 'publish = false' Cargo.toml ||
-  { echo "release:check: Cargo.toml must keep publish = false" >&2; exit 1; }
 tag="${usage_tag:-}"
 # In a workflow run of a tag, that tag; else a v* tag pointing at HEAD itself.
 [ -n "$tag" ] || [ "${GITHUB_REF_TYPE:-}" != tag ] || tag="$GITHUB_REF_NAME"
@@ -610,7 +607,7 @@ shell = "bash -c"
 usage = '''
 flag "-v --verbose" help="Enable verbose (debug) output"
 flag "--dry-run <bool>" help="true for a manual dry run" default="true"
-flag "--private <bool>" help="true when the repository is private" default="true"
+flag "--private <bool>" help="true when the repository is private" default="false"
 flag "--default-branch <branch>" help="The branch a released commit must be on" default="main"
 '''
 
@@ -657,6 +654,9 @@ run = '''
 
 set -Eeuo pipefail
 
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+target="${usage_target:?}"
 # The rust image's glibc is newer than the README's floor, so a glibc build
 # made here would always fail release:build:glibc; CI builds those on
 # ubuntu-22.04 instead.
@@ -664,9 +664,6 @@ case "$target" in *-linux-musl) ;; *)
   echo "release:build:container: $target is not a musl target; glibc builds run on CI (ubuntu-22.04)" >&2
   exit 1 ;;
 esac
-[ "${usage_verbose:-false}" = "true" ] && set -x
-
-target="${usage_target:?}"
 channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)"
 case "$target" in x86_64-*) platform=linux/amd64 ;; *) platform=linux/arm64 ;; esac
 # The target reaches the container's shell as $TARGET, never inside its script.
@@ -1006,48 +1003,7 @@ flag "--binaries <dir>" help="Where the archives are unpacked for attestation" d
 
 [tasks."release:homebrew"]
 alias = ["rh"]
-description = "Render the Homebrew formula of the release from SHA256SUMS"
-run = '''
-#!/usr/bin/env bash
-
-set -Eeuo pipefail
-
-[ "${usage_verbose:-false}" = "true" ] && set -x
-
-dist="${usage_dist:?}"
-repository="${usage_repository:?}"
-output="${usage_output:?}"
-mkdir -p "$(dirname "$output")"
-version="$(mise run -q release:check)"
-sum() { # <target>: the SHA-256 of that archive, or fail
-  local file="nvmrc-$version-$1.tar.gz" digest
-  digest="$(awk -v file="$file" '$2 == file { print $1 }' "$dist/SHA256SUMS")"
-  [ -n "$digest" ] || { echo "release:homebrew: $file is not in SHA256SUMS" >&2; return 1; }
-  echo "$digest"
-}
-arm_mac="$(sum aarch64-apple-darwin)"
-intel_mac="$(sum x86_64-apple-darwin)"
-arm_linux="$(sum aarch64-unknown-linux-musl)"
-intel_linux="$(sum x86_64-unknown-linux-musl)"
-sed -e "s|@REPOSITORY@|$repository|g" -e "s|@VERSION@|$version|g" \
-  -e "s|@URL@|https://github.com/$repository/releases/download/v$version|g" \
-  -e "s|@SHA_AARCH64_APPLE_DARWIN@|$arm_mac|" -e "s|@SHA_X86_64_APPLE_DARWIN@|$intel_mac|" \
-  -e "s|@SHA_AARCH64_UNKNOWN_LINUX_MUSL@|$arm_linux|" \
-  -e "s|@SHA_X86_64_UNKNOWN_LINUX_MUSL@|$intel_linux|" \
-  packaging/homebrew/nvmrc.rb.in > "$output"
-echo "release:homebrew: wrote $output"
-'''
-shell = "bash -c"
-usage = '''
-flag "-v --verbose" help="Enable verbose (debug) output"
-flag "--dist <dir>" help="The directory of release files" default="dist"
-flag "--repository <owner/name>" help="The GitHub repository of the release" default="elioseverojunior/nvmrc"
-flag "--output <file>" help="Where the formula is written" default="target/homebrew/nvmrc.rb"
-'''
-
-[tasks."release:homebrew:tap"]
-alias = ["rht"]
-description = "Commit the rendered formula to a checked-out tap and push it; no-op when unchanged"
+description = "Ask the Homebrew tap to render the formula of the new release"
 run = '''
 #!/usr/bin/env bash
 
@@ -1056,26 +1012,36 @@ set -Eeuo pipefail
 [ "${usage_verbose:-false}" = "true" ] && set -x
 
 tap="${usage_tap:?}"
-formula="${usage_formula:?}"
-version="$(mise run -q release:check)"
-mkdir -p "$tap/Formula"
-cp "$formula" "$tap/Formula/nvmrc.rb"
-git -C "$tap" add Formula/nvmrc.rb
-# A re-run finds the formula already pushed: nothing to commit.
-if git -C "$tap" diff --cached --quiet; then
-  echo "release:homebrew:tap: Formula/nvmrc.rb is up to date"
-  exit 0
-fi
-git -C "$tap" -c user.name="github-actions[bot]" \
-  -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-  commit -q -m "nvmrc $version"
-git -C "$tap" push -q
+# The tap owns the formula: its bump workflow renders it from the tagged
+# source tarball (Homebrew builds nvmrc with cargo) and opens a pull request.
+gh workflow run bump.yml --repo "$tap"
+echo "release:homebrew: asked $tap to render the formula"
 '''
 shell = "bash -c"
 usage = '''
 flag "-v --verbose" help="Enable verbose (debug) output"
-flag "--tap <dir>" help="The tap repository's checkout" required=#true
-flag "--formula <file>" help="The formula release:homebrew rendered" default="target/homebrew/nvmrc.rb"
+flag "--tap <owner/name>" help="The tap repository" default="elioseverojunior/homebrew-tools"
+'''
+
+[tasks."release:crate"]
+alias = ["rcr"]
+description = "Publish the crate to crates.io (--dry-run packages and builds it only)"
+run = '''
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+[ "${usage_verbose:-false}" = "true" ] && set -x
+
+args=(--locked)
+# A dry run also packages a working tree with uncommitted changes.
+[ "${usage_dry_run:-false}" = "true" ] && args+=(--dry-run --allow-dirty)
+cargo publish "${args[@]}"
+'''
+shell = "bash -c"
+usage = '''
+flag "-v --verbose" help="Enable verbose (debug) output"
+flag "--dry-run" help="Package and build the crate without uploading it"
 '''
 
 [tasks."release:github:draft"]
@@ -1111,7 +1077,7 @@ flag "--notes <file>" help="The release notes release:notes rendered" default="t
 
 [tasks."release:snapshot"]
 alias = ["rs"]
-description = "Run the whole release locally into dist/: build, package, smoke, image"
+description = "Run the whole release locally into dist/: build, package, smoke, image, crate"
 run = '''
 #!/usr/bin/env bash
 
@@ -1131,6 +1097,7 @@ mise run release:smoke --arch arm64
 mise run release:image --arch amd64
 mise run release:image --arch arm64
 mise run release:notes
+mise run release:crate --dry-run
 ls -1 dist
 '''
 shell = "bash -c"

@@ -16,13 +16,10 @@ codes, checked against the test scenarios of the author's fork of nvm
 Releases are built from a `v*` tag by `.github/workflows/release.yml`, on
 native runners. The version is the one `nvm --version` prints.
 
-The repository is private, and a release publishes its files anyway: the
-GitHub release, the GHCR image and, once configured, the Homebrew formula,
-each readable only by those who can read the repository. While it is
-private, a release has checksums only: provenance attestations and
-signatures are unavailable until the repository is public (see "Verifying
-a release"). There is no published release yet, and the channels below
-describe what a release will contain.
+A release publishes the GitHub release, the GHCR image, the crate on
+crates.io and the Homebrew formula. `v0.0.1` was released while the
+repository was private, so it has checksums only; every later release is
+signed and attested (see "Verifying a release").
 
 - Archives, `nvmrc-<version>-<target>.tar.gz`, each with `nvmrc`, `nvm`,
   `nvm-exec`, `LICENSE` and `README.md`:
@@ -51,12 +48,17 @@ describe what a release will contain.
   `COPY --from=ghcr.io/elioseverojunior/nvmrc:<version> /usr/bin/nvm* /usr/local/bin/`.
 - Nix: `nix profile install github:elioseverojunior/nvmrc`, or
   `nix run github:elioseverojunior/nvmrc -- --version`.
-- Homebrew: each release renders a formula; it is pushed to the tap named
-  by the repository variable `NVMRC_HOMEBREW_TAP` once the owner sets it.
-  None is published yet.
+- Homebrew: `brew install elioseverojunior/tools/nvmrc` downloads the tagged
+  source from GitHub and builds it with `cargo` (`rust` is a build-only
+  dependency); `brew install --HEAD elioseverojunior/tools/nvmrc` builds
+  the `main` branch. The tap renders the formula after each release.
+- crates.io: `cargo install --locked nvmrc` installs the three binaries into
+  `~/.cargo/bin`. The release profile below lives in `.cargo/config.toml`,
+  which a crates.io install does not read, so that build uses Cargo's
+  default release profile.
 - From source: `cargo install --locked --git
   https://github.com/elioseverojunior/nvmrc` installs the three binaries
-  into `~/.cargo/bin` (nvmrc is never published to crates.io),
+  into `~/.cargo/bin`,
   or `cargo build --release --locked` from a clone puts them in
   `target/release/`. Rust 1.85 or newer (MSRV); development uses the 1.99
   toolchain of `rust-toolchain.toml`. The release profile (fat LTO,
@@ -72,17 +74,16 @@ describe what a release will contain.
 
 ## Verifying a release
 
-A release made while the repository is private is checked with its
-checksums only, from a download over authenticated HTTPS; it proves the
-files match the release's `SHA256SUMS`, not who built them
-([docs/release.md](docs/release.md) has the ruling):
+`v0.0.1`, released while the repository was private, is checked with its
+checksums only; it proves the files match the release's `SHA256SUMS`, not
+who built them ([docs/release.md](docs/release.md) has the ruling):
 
 ```sh
 gh release download v0.0.1 --repo elioseverojunior/nvmrc
 shasum -a 256 --check --ignore-missing SHA256SUMS # macOS and Linux
 ```
 
-Once the repository is public, every file of a release is attested by
+From the first release after `v0.0.1`, every file of a release is attested by
 GitHub (SLSA build provenance), each binary inside the archives is
 attested on its own, and the SBOM
 (`nvmrc-<version>.spdx.json`, the dependency graph of `Cargo.lock`) is
@@ -120,9 +121,9 @@ release workflow at a `v*` tag; `gh` checks the exact tag. A macOS archive
 downloaded with a browser is quarantined by Gatekeeper: after verifying it,
 `xattr -d com.apple.quarantine nvmrc nvm nvm-exec` on the unpacked binaries.
 
-None of these can run before the first published release; the commands
-are the ones the workflow's identities and file names produce. How the
-release is built and what it trusts: [docs/release.md](docs/release.md).
+None of these can run before the first signed release; the commands are
+the ones the workflow's identities and file names produce. How the release
+is built and what it trusts: [docs/release.md](docs/release.md).
 
 ## Shell integration
 

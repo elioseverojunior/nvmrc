@@ -16,15 +16,16 @@ para verificar um release estão no [README](../README.pt-BR.md).
 - Uma execução manual é um dry run por padrão: ela compila, empacota e roda os
   smoke tests, e para aí. Somente uma execução que publica assina e atesta,
   de modo que toda assinatura e toda atestação nomeiam um release com tag; um
-  repositório privado publica sem nenhuma das duas (veja "Um repositório
+  repositório privado publicaria sem nenhuma das duas (veja "Um repositório
   privado").
 - A publicação é ordenada para que uma falha nunca deixe um release publicado
   pela metade: o release do GitHub é criado como rascunho
   (`mise run release:github:draft`), depois a imagem é enviada, executada por
-  digest, assinada e atestada (somente em um repositório público), em seguida
-  a fórmula vai para o tap, e o último passo publica o rascunho. Uma nova
-  execução do job atualiza o rascunho (arquivos substituídos com `--clobber`)
-  e encontra a fórmula já commitada.
+  digest, assinada e atestada (somente em um repositório público), e o último
+  passo publica o rascunho. Uma nova execução do job atualiza o rascunho
+  (arquivos substituídos com `--clobber`). Só então o tap é solicitado a gerar
+  a fórmula e o crate é publicado, cada um a partir de um release que já é
+  público.
 - Os pacotes dependem de `ca-certificates`; os smoke tests os instalam com o
   gerenciador de pacotes de cada distribuição e executam `nvm ls-remote` via
   HTTPS no contêiner.
@@ -35,19 +36,27 @@ para verificar um release estão no [README](../README.pt-BR.md).
   restante das tarefas do mise. O GoReleaser compila tudo em um único host,
   enquanto o release compila em runners nativos e atesta os bytes exatos que
   distribui.
-- O tap do Homebrew e seu token não estão configurados, então a publicação de
-  uma fórmula está desabilitada: os passos só executam quando a variável do
-  repositório `NVMRC_HOMEBREW_TAP` está definida.
-- O nvmrc nunca é publicado no crates.io, por decisão do proprietário:
-  `Cargo.toml` mantém `publish = false`, e `release:check` falha sem isso.
+- O tap do Homebrew (`elioseverojunior/homebrew-tools`) é dono da fórmula, que
+  compila o nvmrc a partir do tarball do código-fonte com tag usando `cargo`.
+  `mise run release:homebrew` executa o `bump.yml` do tap, que a renderiza e
+  abre um pull request lá. O passo só executa quando a variável do repositório
+  `NVMRC_HOMEBREW_TAP` está definida, com o secret `HOMEBREW_TAP_TOKEN`
+  autorizado a executar workflows (`actions: write`) no tap.
+- O crate vai para o crates.io com Trusted Publishing: o job `crate` obtém um
+  token de curta duração de `rust-lang/crates-io-auth-action` e executa
+  `mise run release:crate`; nenhum token é armazenado. O crates.io só confia em
+  um workflow para um crate que já existe, então o proprietário publica a
+  primeira versão manualmente (`cargo publish --locked`), adiciona
+  `release.yml` (com o ambiente `crates-io`) como publicador confiável do crate
+  e define a variável do repositório `NVMRC_CRATES_IO` como `true`; até então o
+  job é ignorado. `mise run release:crate --dry-run`, que o `release:snapshot`
+  executa, empacota e compila o crate sem enviá-lo.
 
 ## Um repositório privado
 
-O repositório continua privado, e uma tag ainda publica: o release do GitHub
-com os arquivos compactados, pacotes, SBOM e `SHA256SUMS`, a imagem do GHCR (um
-pacote privado, como o repositório) e, depois de configurada, a fórmula do
-Homebrew. Somente quem pode ler o repositório consegue baixá-los, então as URLs
-da fórmula precisam de um token até o repositório se tornar público.
+O repositório é público. Ele era privado quando o `v0.0.1` foi lançado, e o
+workflow ainda trata um repositório privado da mesma forma: uma tag publica,
+mas somente quem pode ler o repositório consegue baixar os arquivos.
 
 Um release privado tem apenas checksums, sem assinaturas e sem atestações de
 proveniência. `mise run release:check:ci` imprime `provenance=false` quando
@@ -83,9 +92,9 @@ shasum -a 256 --check --ignore-missing SHA256SUMS # macOS and Linux
 Isso mostra que os arquivos correspondem ao `SHA256SUMS` do release, não quem
 os construiu: qualquer pessoa com permissão de escrita no release pode
 substituir ambos. As atestações de proveniência e as assinaturas ficam
-indisponíveis até o repositório se tornar público. Nada no workflow muda
-então: a primeira tag após a mudança é assinada e atestada; os releases
-privados anteriores continuam sem assinatura.
+indisponíveis enquanto o repositório for privado. Nada no workflow mudou quando
+ele se tornou público: a primeira tag após a mudança é assinada e atestada; o
+`v0.0.1` continua sem assinatura.
 
 ## Protegendo as tags
 
@@ -113,8 +122,7 @@ Os jobs de release não restauram nenhum cache: a action da toolchain Rust roda
 sem um, e todo passo `jdx/mise-action` define `cache: false`, de modo que
 cosign, nfpm, syft e git-cliff são baixados e conferidos com o `mise.lock` a
 cada execução. Nada que uma execução anterior tenha deixado pode alcançar um
-arquivo assinado. Os checkouts definem `persist-credentials: false`, exceto o
-checkout do tap, que faz push.
+arquivo assinado. Os checkouts definem `persist-credentials: false`.
 
 Os certificados CA da imagem vêm de `alpine:3.24.2`, fixado por tag de versão
 no `Dockerfile`: um Alpine mais novo é uma atualização revisada, não uma
